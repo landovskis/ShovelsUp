@@ -34,12 +34,32 @@
         fi
     fi
 
-    # --- iOS parity (xcstrings has both languages; warn if file is absent) ---
+    # --- iOS EN/FR parity (xcstrings JSON) ---
     XCSTRINGS="apps/ios/ShovelsUp/Localizable.xcstrings"
-    if [[ ! -f "$XCSTRINGS" ]]; then
+    if [[ -f "$XCSTRINGS" ]]; then
+        check_xcstrings_lang() {
+            local lang="$1"
+            jq -r --arg lang "$lang" '
+                .strings | to_entries[]
+                | select(
+                    (.value.localizations[$lang] == null) or
+                    (.value.localizations[$lang].stringUnit.state != "translated")
+                  )
+                | .key
+            ' "$XCSTRINGS"
+        }
+        IOS_MISSING_FR=$(check_xcstrings_lang "fr")
+        IOS_MISSING_EN=$(check_xcstrings_lang "en")
+        if [[ -n "$IOS_MISSING_FR" || -n "$IOS_MISSING_EN" ]]; then
+            echo ""
+            echo "=== iOS localization gaps ==="
+            [[ -n "$IOS_MISSING_FR" ]] && echo "$IOS_MISSING_FR" | sed 's/^/  Missing FR: /'
+            [[ -n "$IOS_MISSING_EN" ]] && echo "$IOS_MISSING_EN" | sed 's/^/  Missing EN: /'
+        fi
+    else
         echo ""
         echo "=== iOS localization ==="
-        echo "  WARNING: Localizable.xcstrings not found at expected path: $XCSTRINGS"
+        echo "  WARNING: Localizable.xcstrings not found: $XCSTRINGS"
     fi
 
 } >&2

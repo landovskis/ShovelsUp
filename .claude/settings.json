@@ -30,6 +30,16 @@
             "type": "command",
             "command": "bash .claude/hooks/localization-audit.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/ios-localization-audit.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/swiftlint.sh",
+            "timeout": 30
           }
         ]
       }
