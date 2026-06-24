@@ -1,0 +1,50 @@
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+:root {
+    --color-primary: #f97316;
+    --color-primary-dark: #ea580c;
+    --color-bg: #fafaf9;
+    --color-surface: #ffffff;
+    --color-text: #1c1917;
+    --color-text-muted: #78716c;
+    --font-sans: system-ui, -apple-system, sans-serif;
+    --radius: 0.5rem;
+}
+
+body {
+    font-family: var(--font-sans);
+    background: var(--color-bg);
+    color: var(--color-text);
+    line-height: 1.6;
+}
+
+main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+}
+
+.hero {
+    padding: 4rem 0;
+}
+
+.hero h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    margin-bottom: 0.5rem;
+}
+
+.hero p {
+    font-size: 1.125rem;
+    color: var(--color-text-muted);
+}
+
+/* Web Components */
+shovels-header {
+    display: block;
+}
