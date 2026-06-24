@@ -24,9 +24,7 @@ async fn main() {
     let mut env = Environment::new();
     env.set_loader(path_loader("templates"));
 
-    let state = AppState {
-        env: Arc::new(env),
-    };
+    let state = AppState { env: Arc::new(env) };
 
     let app = Router::new()
         .route("/", get(routes::index))
