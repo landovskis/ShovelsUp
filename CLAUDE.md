@@ -19,6 +19,14 @@ apps/
 
 Each app has its own `CLAUDE.md` with stack details and commands.
 
+## Localization
+
+All apps must support **English (EN) and French (FR)**. Montreal is a bilingual city.
+
+- Web: detect `Accept-Language` header in the route; pass translated strings via Minijinja context.
+- Android: `res/values/` (EN default) + `res/values-fr/` resource directories.
+- iOS: `Localizable.xcstrings` String Catalog with `en` and `fr` entries.
+
 ## Design
 
 See [DESIGN.md](DESIGN.md) for color tokens, typography, and per-platform usage.

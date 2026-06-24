@@ -15,7 +15,10 @@ class ShovelsHeader extends HTMLElement {
         const nav = document.createElement('nav');
         nav.style.cssText = 'display:flex;gap:1.5rem;';
 
-        for (const [label, href] of [['Permits', '/permits'], ['Council', '/council']]) {
+        for (const [label, href] of [
+            [this.dataset.permits || 'Permits', '/permits'],
+            [this.dataset.council || 'Council', '/council'],
+        ]) {
             const a = document.createElement('a');
             a.href = href;
             a.textContent = label;
