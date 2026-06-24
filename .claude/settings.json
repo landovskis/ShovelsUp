@@ -38,6 +38,11 @@
           },
           {
             "type": "command",
+            "command": "bash .claude/hooks/swift-build.sh",
+            "timeout": 300
+          },
+          {
+            "type": "command",
             "command": "bash .claude/hooks/swiftlint.sh",
             "timeout": 30
           }
