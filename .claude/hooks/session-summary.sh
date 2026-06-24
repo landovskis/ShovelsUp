@@ -21,8 +21,8 @@
     FR="apps/android/app/src/main/res/values-fr/strings.xml"
 
     if [[ -f "$EN" && -f "$FR" ]]; then
-        EN_KEYS=$(grep -oP 'name="\K[^"]+' "$EN" | sort)
-        FR_KEYS=$(grep -oP 'name="\K[^"]+' "$FR" | sort)
+        EN_KEYS=$(grep -oE 'name="[^"]+"' "$EN" | cut -d'"' -f2 | sort)
+        FR_KEYS=$(grep -oE 'name="[^"]+"' "$FR" | cut -d'"' -f2 | sort)
         MISSING_FR=$(comm -23 <(echo "$EN_KEYS") <(echo "$FR_KEYS"))
         MISSING_EN=$(comm -13 <(echo "$EN_KEYS") <(echo "$FR_KEYS"))
 
