@@ -1,10 +1,29 @@
-*.iml
-.gradle
-/local.properties
-/.idea
-.DS_Store
+# Build output
 /build
-/captures
-.externalNativeBuild
-.cxx
+**/build/
+
+# Gradle
+.gradle/
 local.properties
+
+# IDE
+.idea/
+*.iml
+
+# Android artifacts
+*.apk
+*.aab
+*.ap_
+
+# Captures & profiling
+/captures
+*.hprof
+
+# Native build
+.externalNativeBuild/
+.cxx/
+
+# Signing (never commit)
+keystore.properties
+*.jks
+*.keystore

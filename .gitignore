@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors
+.vscode/
+*.swp
+*.swo
+
+# Playwright MCP
+.playwright-mcp/
