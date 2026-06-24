@@ -5,8 +5,12 @@ class ShovelsHeader extends HTMLElement {
 
         const brand = document.createElement('a');
         brand.href = '/';
-        brand.textContent = 'ShovelsUp';
-        brand.style.cssText = 'font-weight:700;font-size:1.25rem;color:#f97316;text-decoration:none;';
+        brand.style.cssText = 'display:flex;align-items:center;text-decoration:none;';
+        const logo = document.createElement('img');
+        logo.src = '/static/logo.svg';
+        logo.alt = 'ShovelsUp';
+        logo.style.cssText = 'height:36px;width:auto;';
+        brand.appendChild(logo);
 
         const nav = document.createElement('nav');
         nav.style.cssText = 'display:flex;gap:1.5rem;';
