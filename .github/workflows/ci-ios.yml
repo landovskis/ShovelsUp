@@ -1,0 +1,42 @@
+name: CI — iOS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/ios/**"
+      - ".github/workflows/ci-ios.yml"
+  pull_request:
+    paths:
+      - "apps/ios/**"
+      - ".github/workflows/ci-ios.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: build
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xcpretty
+        run: gem install xcpretty --no-document
+
+      - name: Build
+        run: |
+          xcodebuild build \
+            -project apps/ios/ShovelsUp.xcodeproj \
+            -scheme ShovelsUp \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            SKIP_INSTALL=YES \
+            | xcpretty
+        env:
+          NSUnbufferedIO: YES
