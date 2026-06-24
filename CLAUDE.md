@@ -18,3 +18,7 @@ apps/
 ```
 
 Each app has its own `CLAUDE.md` with stack details and commands.
+
+## Design
+
+See [DESIGN.md](DESIGN.md) for color tokens, typography, and per-platform usage.
