@@ -7,7 +7,7 @@ struct ContentView: View {
                 Text("ShovelsUp")
                     .font(.largeTitle)
                     .fontWeight(.bold)
-                    .foregroundStyle(Color.orange)
+                    .foregroundStyle(.brandPrimary)
                 Text("Construction permit tracking")
                     .font(.body)
                     .foregroundStyle(.secondary)

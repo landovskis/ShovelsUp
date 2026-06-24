@@ -5,11 +5,10 @@
 }
 
 :root {
-    --color-primary: #f97316;
-    --color-primary-dark: #ea580c;
+    --color-primary: #E84E0F;
     --color-bg: #fafaf9;
     --color-surface: #ffffff;
-    --color-text: #1c1917;
+    --color-text: #1B1F22;
     --color-text-muted: #78716c;
     --font-sans: system-ui, -apple-system, sans-serif;
     --radius: 0.5rem;
