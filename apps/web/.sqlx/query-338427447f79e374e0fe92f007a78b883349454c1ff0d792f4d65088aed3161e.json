@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE fetch_jobs SET status = 'pending', attempts = 0, last_error = NULL, updated_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "338427447f79e374e0fe92f007a78b883349454c1ff0d792f4d65088aed3161e"
+}
