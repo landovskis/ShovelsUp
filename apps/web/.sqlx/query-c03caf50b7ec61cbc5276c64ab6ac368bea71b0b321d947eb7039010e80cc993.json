@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO project_mentions (document_chunk_id, physical_work, civic_address, normalized_status, scale_units) VALUES ($1, true, $2, $3, 1) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c03caf50b7ec61cbc5276c64ab6ac368bea71b0b321d947eb7039010e80cc993"
+}

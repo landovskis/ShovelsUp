@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pm.civic_address, pm.normalized_status, dc.source_document_id FROM project_mentions pm JOIN document_chunks dc ON dc.id = pm.document_chunk_id WHERE pm.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "civic_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "normalized_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "source_document_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "348269a79187ab34df337bfa1aa4436fed2bcb3d2dd7cc2b8d31761f0c94d0af"
+}

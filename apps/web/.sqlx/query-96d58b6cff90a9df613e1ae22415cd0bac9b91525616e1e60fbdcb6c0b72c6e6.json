@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT phrase, normalized_status FROM status_vocabulary WHERE language = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "phrase",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "normalized_status",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "96d58b6cff90a9df613e1ae22415cd0bac9b91525616e1e60fbdcb6c0b72c6e6"
+}

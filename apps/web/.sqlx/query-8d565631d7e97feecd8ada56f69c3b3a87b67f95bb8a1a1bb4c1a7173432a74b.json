@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pm.id, pm.normalized_status as status FROM project_mentions pm JOIN document_chunks dc ON dc.id = pm.document_chunk_id WHERE dc.source_document_id = $1 AND pm.civic_address = $2 AND pm.normalized_status IS NOT NULL AND pm.normalized_status != $3 AND pm.id != $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "8d565631d7e97feecd8ada56f69c3b3a87b67f95bb8a1a1bb4c1a7173432a74b"
+}

@@ -6,6 +6,7 @@ pub mod validator;
 
 use uuid::Uuid;
 
+use crate::pipeline::normalizer;
 use llm::LlmProvider;
 use schema::{ExtractionResult, RawExtraction};
 
@@ -92,8 +93,8 @@ pub async fn extract_and_store(
     };
 
     let mention_id = match outcome {
-        Ok(Some(extraction)) => Some(
-            sqlx::query_scalar!(
+        Ok(Some(extraction)) => {
+            let mention_id = sqlx::query_scalar!(
                 "INSERT INTO project_mentions \
                  (document_chunk_id, physical_work, project_name, civic_address, project_type, \
                   scale_units, scale_gfa_sqm, scale_storeys, approval_status_raw) \
@@ -109,8 +110,38 @@ pub async fn extract_and_store(
                 extraction.approval_status_raw,
             )
             .fetch_one(pool)
-            .await?,
-        ),
+            .await?;
+
+            // REQ-004: normalize the raw status and flag any same-document
+            // conflict, wired directly into the extraction output path
+            // (IMP-REQ-004-06) rather than as a separate later pass.
+            if let Some(raw_status) = &extraction.approval_status_raw {
+                let language: Option<String> = sqlx::query_scalar!(
+                    "SELECT language FROM document_chunks WHERE id = $1",
+                    document_chunk_id
+                )
+                .fetch_one(pool)
+                .await?;
+
+                if let Some(language) = language {
+                    if let Some(normalized) =
+                        normalizer::normalize_status(pool, raw_status, &language).await?
+                    {
+                        sqlx::query!(
+                            "UPDATE project_mentions SET normalized_status = $1 WHERE id = $2",
+                            normalized,
+                            mention_id
+                        )
+                        .execute(pool)
+                        .await?;
+
+                        normalizer::detect_and_flag_status_conflict(pool, mention_id).await?;
+                    }
+                }
+            }
+
+            Some(mention_id)
+        }
         _ => None,
     };
 
