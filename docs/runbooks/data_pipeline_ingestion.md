@@ -39,3 +39,22 @@ calendar integration not specified in the PRD (see the Scheduler module doc
 comment). Until that worker and URL-resolution strategy are added, this
 flag does not yet gate any live fetching — it is documented ahead of that
 work per the task's own scope (docs-only, validated by manual review).
+
+### Municipal calendar systems (researched 2026-07-10)
+
+None of the three launch municipalities exposes an iCal/RSS/JSON feed of
+council meetings — resolving a `source_url` per meeting means scraping an
+HTML calendar page for each city. This is real scope for a future task, not
+something this run fabricated a stand-in for.
+
+| Municipality | Calendar system | Machine-readable feed? | Confirmed document domains |
+| --- | --- | --- | --- |
+| Toronto | TMMIS (`app.toronto.ca/tmmis/`) | No | `toronto.ca`, `app.toronto.ca` |
+| Vancouver | `covapp.vancouver.ca` interactive portal | No (the `opendata.vancouver.ca` minutes dataset only covers the 1970s, TXT format) | `vancouver.ca`, `covapp.vancouver.ca` |
+| Montreal | `montreal.ca/conseils-decisionnels/conseil-municipal`; a session-*date* dataset exists at `donnees.montreal.ca` but not one for agenda/minutes documents | No (dates only) | `montreal.ca`, `ville.montreal.qc.ca`, `portail-m4s.s3.montreal.ca` (S3-backed asset host) |
+
+Migration `004_expand_municipality_allowlists.sql` updates the domain
+allowlists to the confirmed values above — the original placeholder
+(`{municipality}.ca` only) would have rejected real agenda/minutes URLs on
+Toronto and Montreal, both of which serve documents from a different
+domain than the city's main site.
