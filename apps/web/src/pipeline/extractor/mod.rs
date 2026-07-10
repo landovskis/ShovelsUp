@@ -254,6 +254,30 @@ mod tests {
         assert_eq!(status, "extracted");
     }
 
+    /// reference_number (added for REQ-005's cross-reference matcher) must
+    /// round-trip through extract_and_store, not just parse.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn extract_and_store_persists_reference_number(pool: PgPool) {
+        let chunk_id = seed_chunk(&pool).await;
+        let llm = FixedResponseProvider::new(
+            r#"{"has_mention":true,"physical_work":true,"project_name":"Riverside Commons","civic_address":"123 Main St","project_type":"residential","scale_units":48,"scale_gfa_sqm":null,"scale_storeys":6,"approval_status_raw":"Approved","reference_number":"Application No. 2026-045"}"#,
+        );
+
+        let mention_id = extract_and_store(&pool, chunk_id, "chunk text", &llm)
+            .await
+            .unwrap()
+            .expect("expected a qualifying mention");
+
+        let reference_number: Option<String> = sqlx::query_scalar!(
+            "SELECT reference_number FROM project_mentions WHERE id = $1",
+            mention_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(reference_number.as_deref(), Some("Application No. 2026-045"));
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn extract_and_store_marks_no_mention_without_inserting(pool: PgPool) {
         let chunk_id = seed_chunk(&pool).await;
