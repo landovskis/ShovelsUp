@@ -26,6 +26,10 @@ pub fn app(state: AppState) -> Router {
             "/admin/fetch_jobs/:id/reprocess",
             post(routes::admin::reprocess_fetch_job),
         )
+        .route(
+            "/admin/source_documents/:id/reprocess",
+            post(routes::admin::reprocess_source_document),
+        )
         .layer(axum_middleware::from_fn(
             middleware::admin_auth::require_admin,
         ));

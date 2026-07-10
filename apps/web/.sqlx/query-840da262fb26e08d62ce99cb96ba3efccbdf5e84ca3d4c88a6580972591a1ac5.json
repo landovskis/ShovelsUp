@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO document_chunks (source_document_id, chunk_index, content, language, parse_method) VALUES ($1, $2, $3, $4, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "840da262fb26e08d62ce99cb96ba3efccbdf5e84ca3d4c88a6580972591a1ac5"
+}

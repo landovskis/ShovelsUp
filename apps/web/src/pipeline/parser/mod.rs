@@ -1,6 +1,7 @@
 pub mod html;
 pub mod lang;
 pub mod ocr;
+pub mod orchestrate;
 pub mod plaintext;
 pub mod pdf;
 

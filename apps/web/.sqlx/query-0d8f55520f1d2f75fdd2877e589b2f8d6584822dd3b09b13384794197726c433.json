@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE source_documents SET parser_status = 'parsed' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0d8f55520f1d2f75fdd2877e589b2f8d6584822dd3b09b13384794197726c433"
+}
