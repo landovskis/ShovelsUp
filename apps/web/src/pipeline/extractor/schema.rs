@@ -18,6 +18,15 @@ pub struct RawExtraction {
     pub scale_gfa_sqm: Option<f64>,
     pub scale_storeys: Option<i32>,
     pub approval_status_raw: Option<String>,
+    /// An explicit application/permit/file reference number (e.g.
+    /// "Application No. 2026-045") — added for REQ-005's cross-reference
+    /// matcher (RULE-003), which needs a concrete signal to match mentions
+    /// of the same project across separate agenda items. `serde(default)`
+    /// so hand-written test JSON fixtures predating this field don't need
+    /// updating — the real API always includes it (the JSON Schema below
+    /// still marks it required for structured-output responses).
+    #[serde(default)]
+    pub reference_number: Option<String>,
 }
 
 /// A validated extraction ready to persist as a `project_mentions` row.
@@ -31,6 +40,7 @@ pub struct ExtractionResult {
     pub scale_gfa_sqm: Option<f64>,
     pub scale_storeys: Option<i32>,
     pub approval_status_raw: Option<String>,
+    pub reference_number: Option<String>,
 }
 
 /// JSON Schema sent as `output_config.format` on the Anthropic Messages API
@@ -60,12 +70,16 @@ pub fn extraction_json_schema() -> serde_json::Value {
             "approval_status_raw": {
                 "anyOf": [{ "type": "string" }, { "type": "null" }],
                 "description": "the approval status exactly as it appears in the source text, unmodified"
+            },
+            "reference_number": {
+                "anyOf": [{ "type": "string" }, { "type": "null" }],
+                "description": "an explicit application, permit, or file reference number if one is stated (e.g. \"Application No. 2026-045\"), otherwise null"
             }
         },
         "required": [
             "has_mention", "physical_work", "project_name", "civic_address",
             "project_type", "scale_units", "scale_gfa_sqm", "scale_storeys",
-            "approval_status_raw"
+            "approval_status_raw", "reference_number"
         ],
         "additionalProperties": false
     })

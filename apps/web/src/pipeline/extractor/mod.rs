@@ -63,6 +63,7 @@ pub async fn extract_entities(
         scale_gfa_sqm: raw.scale_gfa_sqm,
         scale_storeys: raw.scale_storeys,
         approval_status_raw: raw.approval_status_raw,
+        reference_number: raw.reference_number,
     }))
 }
 
@@ -97,8 +98,8 @@ pub async fn extract_and_store(
             let mention_id = sqlx::query_scalar!(
                 "INSERT INTO project_mentions \
                  (document_chunk_id, physical_work, project_name, civic_address, project_type, \
-                  scale_units, scale_gfa_sqm, scale_storeys, approval_status_raw) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
+                  scale_units, scale_gfa_sqm, scale_storeys, approval_status_raw, reference_number) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
                 document_chunk_id,
                 extraction.physical_work,
                 extraction.project_name,
@@ -108,6 +109,7 @@ pub async fn extract_and_store(
                 extraction.scale_gfa_sqm,
                 extraction.scale_storeys,
                 extraction.approval_status_raw,
+                extraction.reference_number,
             )
             .fetch_one(pool)
             .await?;
