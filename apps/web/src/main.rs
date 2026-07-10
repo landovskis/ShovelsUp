@@ -1,15 +1,10 @@
-use axum::{
-    middleware as axum_middleware,
-    routing::{get, post},
-    Router,
-};
 use minijinja::{path_loader, Environment};
 use sqlx::postgres::PgPoolOptions;
 use std::{net::SocketAddr, sync::Arc};
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use shovelsup_web::{middleware, routes, AppState};
+use shovelsup_web::AppState;
 
 #[tokio::main]
 async fn main() {
@@ -41,21 +36,9 @@ async fn main() {
         db,
     };
 
-    let admin_routes = Router::new()
-        .route(
-            "/admin/fetch_jobs/:id/reprocess",
-            post(routes::admin::reprocess_fetch_job),
-        )
-        .layer(axum_middleware::from_fn(
-            middleware::admin_auth::require_admin,
-        ));
-
-    let app = Router::new()
-        .route("/", get(routes::index))
-        .merge(admin_routes)
+    let app = shovelsup_web::app(state)
         .nest_service("/static", ServeDir::new("static"))
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
+        .layer(TraceLayer::new_for_http());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::info!("listening on {addr}");

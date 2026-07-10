@@ -3,6 +3,8 @@ use minijinja::context;
 
 use crate::AppState;
 
+pub mod admin;
+
 fn detect_lang(headers: &HeaderMap) -> &'static str {
     let accept = headers
         .get("accept-language")
