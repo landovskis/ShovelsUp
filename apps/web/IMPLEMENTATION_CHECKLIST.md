@@ -65,24 +65,39 @@ and the response's Content-Type header.
 
 ## REQ-003 — Extract Construction Project Entities
 
+⚠️ **Open risk (real, measured — see tests/pipeline_extraction.rs header):**
+field completeness against the labelled set is ~85%, stable across repeated
+real-API runs, below the plan's own 90% interim gate. The gap is
+specifically `approval_status_raw` (a short trailing decision clause is
+inconsistently extracted). Six rounds of real prompt iteration (worked
+example, effort=high, field reordering) were tried; classification accuracy
+(has_mention/physical_work) is 97-100%. Left unresolved rather than
+weakening the assertion — matches the plan's own Open Risk on this exact
+threshold (Founder, target 2026-07-20).
+
+⚠️ **Scope reduction (flagged, not silent):** the ≥200-item hand-labelled,
+3-municipality fixture set (IMP-REQ-003-08) requires real scraped documents
+with human ground truth, which cannot be authentically fabricated. Built a
+30-item clearly-synthetic set instead — see tests/pipeline_extraction.rs.
+
 ### Loop A — Test Plan Implementation Breakdown
-- [ ] TC-REQ-003-1 — Qualifying project extracts all 5 fields
-- [ ] TC-REQ-003-2 — Single scale-indicator fixture accepted
-- [ ] TC-REQ-003-3 — Rezoning-only motion excluded despite LLM hallucination
-- [ ] TC-REQ-003-4 — Malformed LLM JSON discarded, not persisted
-- [ ] TC-REQ-003-5 — LLM 503 retried, succeeds on 3rd attempt
+- [x] TC-REQ-003-1 — Qualifying project extracts all 5 fields ⚠️ Needs Human Review: real field-completeness is ~85%, not the required ≥90% for all 5 fields — see risk note above
+- [x] TC-REQ-003-2 — Single scale-indicator fixture accepted
+- [x] TC-REQ-003-3 — Rezoning-only motion excluded despite LLM hallucination
+- [x] TC-REQ-003-4 — Malformed LLM JSON discarded, not persisted
+- [x] TC-REQ-003-5 — LLM 503 retried, succeeds on 3rd attempt
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-003-01 — `project_mentions` migration with scale-indicator CHECK
-- [ ] IMP-REQ-003-02 — Extraction JSON schema + versioned EN prompt
-- [ ] IMP-REQ-003-03 — Deterministic RULE-001 validator
-- [ ] IMP-REQ-003-04 — Scale-indicator extraction / "at least one" acceptance
-- [ ] IMP-REQ-003-05 — Wire `extract_entities` dispatch end-to-end
-- [ ] IMP-REQ-003-06 — Retry/backoff for LLM transient failures
-- [ ] IMP-REQ-003-07 — Handle malformed/truncated LLM JSON
-- [ ] IMP-REQ-003-08 — Assemble ≥200-item labelled fixture set (3 municipalities)
-- [ ] IMP-REQ-003-09 — Integration test: ≥90% field-completeness on labelled set
+- [x] IMP-REQ-003-01 — `project_mentions` migration with scale-indicator CHECK
+- [x] IMP-REQ-003-02 — Extraction JSON schema + versioned EN prompt
+- [x] IMP-REQ-003-03 — Deterministic RULE-001 validator
+- [x] IMP-REQ-003-04 — Scale-indicator extraction / "at least one" acceptance
+- [x] IMP-REQ-003-05 — Wire `extract_entities` dispatch end-to-end
+- [x] IMP-REQ-003-06 — Retry/backoff for LLM transient failures
+- [x] IMP-REQ-003-07 — Handle malformed/truncated LLM JSON
+- [ ] IMP-REQ-003-08 — Assemble ≥200-item labelled fixture set (3 municipalities) ⚠️ Needs Human Review: scope-reduced to a 30-item synthetic set, see risk note above
+- [ ] IMP-REQ-003-09 — Integration test: ≥90% field-completeness on labelled set ⚠️ Test unresolved: real measured completeness is ~85%, below the 90% gate — see risk note above
 
 ## REQ-004 — Normalize Approval Status in English and French
 

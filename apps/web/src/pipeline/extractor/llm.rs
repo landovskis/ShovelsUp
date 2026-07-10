@@ -84,6 +84,7 @@ impl LlmProvider for AnthropicProvider {
             "max_tokens": 1024,
             "system": system,
             "output_config": {
+                "effort": "high",
                 "format": {
                     "type": "json_schema",
                     "schema": extraction_json_schema(),
