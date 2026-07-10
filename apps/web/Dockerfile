@@ -8,6 +8,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY . .
+# sqlx's query!/query_scalar! macros normally verify SQL against a live DB at
+# compile time; SQLX_OFFLINE builds against the committed .sqlx/ cache
+# instead (regenerate it with `cargo sqlx prepare` after changing a query).
+ENV SQLX_OFFLINE=true
 RUN cargo build --release --bin shovelsup-web
 
 ## Runtime stage
