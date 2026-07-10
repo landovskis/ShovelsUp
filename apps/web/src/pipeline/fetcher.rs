@@ -13,6 +13,8 @@ pub enum FetchError {
     MunicipalityNotFound(Uuid),
     #[error("http error after retries: {0}")]
     Http(#[from] reqwest::Error),
+    #[error("refused to follow redirect (status {status}) from `{url}`")]
+    UnexpectedRedirect { url: String, status: u16 },
     #[error("database error: {0}")]
     Db(#[from] sqlx::Error),
 }
@@ -38,7 +40,17 @@ impl Default for Fetcher {
 impl Fetcher {
     pub fn new() -> Self {
         Self {
-            client: reqwest::Client::new(),
+            // Redirects are not followed: a redirect target is not re-checked
+            // against the domain allowlist, so following one would let an
+            // allowlisted host redirect the fetcher to an arbitrary
+            // (including internal/private) address — an SSRF vector. Municipal
+            // agenda pages are fetched by direct URL, so this is not expected
+            // to affect legitimate fetches; a redirect response instead
+            // surfaces as an HTTP error via `error_for_status`.
+            client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .expect("reqwest client with no-redirect policy must build"),
         }
     }
 
@@ -64,10 +76,7 @@ impl Fetcher {
         .await?
         .ok_or(FetchError::MunicipalityNotFound(municipality_id))?;
 
-        let allowed = allowlist
-            .iter()
-            .any(|domain| host == *domain || host.ends_with(&format!(".{domain}")));
-        if !allowed {
+        if !is_allowlisted(&host, &allowlist) {
             return Err(FetchError::NotAllowlisted(host));
         }
 
@@ -102,8 +111,10 @@ impl Fetcher {
 
     /// GET `url` with exponential backoff on transient (5xx / network) failures.
     /// Returns the response body once a non-5xx response is received, or the
-    /// last error after `MAX_ATTEMPTS` attempts.
-    async fn fetch_with_retry(&self, url: &str) -> Result<String, reqwest::Error> {
+    /// last error after `MAX_ATTEMPTS` attempts. Redirects are never followed
+    /// (see the SSRF note on `Fetcher::new`) and are rejected outright rather
+    /// than treated as a successful response.
+    async fn fetch_with_retry(&self, url: &str) -> Result<String, FetchError> {
         let mut attempt = 0u32;
         loop {
             attempt += 1;
@@ -111,11 +122,17 @@ impl Fetcher {
                 Ok(resp) if resp.status().is_server_error() && attempt < MAX_ATTEMPTS => {
                     tokio::time::sleep(backoff_delay(attempt)).await;
                 }
-                Ok(resp) => return resp.error_for_status()?.text().await,
+                Ok(resp) if resp.status().is_redirection() => {
+                    return Err(FetchError::UnexpectedRedirect {
+                        url: url.to_string(),
+                        status: resp.status().as_u16(),
+                    });
+                }
+                Ok(resp) => return Ok(resp.error_for_status()?.text().await?),
                 Err(_err) if attempt < MAX_ATTEMPTS => {
                     tokio::time::sleep(backoff_delay(attempt)).await;
                 }
-                Err(err) => return Err(err),
+                Err(err) => return Err(err.into()),
             }
         }
     }
@@ -123,4 +140,53 @@ impl Fetcher {
 
 fn backoff_delay(attempt: u32) -> Duration {
     Duration::from_millis(50u64 * 2u64.pow(attempt))
+}
+
+fn is_allowlisted(host: &str, allowlist: &[String]) -> bool {
+    allowlist
+        .iter()
+        .any(|domain| host == *domain || host.ends_with(&format!(".{domain}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backoff_delay_grows_exponentially() {
+        assert_eq!(backoff_delay(1), Duration::from_millis(100));
+        assert_eq!(backoff_delay(2), Duration::from_millis(200));
+        assert_eq!(backoff_delay(3), Duration::from_millis(400));
+        assert_eq!(backoff_delay(4), Duration::from_millis(800));
+    }
+
+    #[test]
+    fn is_allowlisted_matches_exact_domain() {
+        let allowlist = vec!["toronto.ca".to_string()];
+        assert!(is_allowlisted("toronto.ca", &allowlist));
+    }
+
+    #[test]
+    fn is_allowlisted_matches_subdomain() {
+        let allowlist = vec!["toronto.ca".to_string()];
+        assert!(is_allowlisted("app.toronto.ca", &allowlist));
+    }
+
+    #[test]
+    fn is_allowlisted_rejects_similar_but_different_domain() {
+        let allowlist = vec!["toronto.ca".to_string()];
+        assert!(!is_allowlisted("not-toronto.ca", &allowlist));
+        assert!(!is_allowlisted("toronto.ca.evil.example", &allowlist));
+    }
+
+    #[test]
+    fn is_allowlisted_rejects_unrelated_domain() {
+        let allowlist = vec!["toronto.ca".to_string()];
+        assert!(!is_allowlisted("vancouver.ca", &allowlist));
+    }
+
+    #[test]
+    fn is_allowlisted_empty_list_rejects_everything() {
+        assert!(!is_allowlisted("toronto.ca", &[]));
+    }
 }
