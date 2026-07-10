@@ -36,25 +36,32 @@ not silently worked around.
 
 ## REQ-002 — Surface Projects Across Document Formats
 
+⚠️ **Prerequisite fix (not a plan task, discovered during Loop B):** REQ-001's
+Fetcher discarded the fetched body after checksumming — `source_documents`
+had no content column at all — and decoded every response as UTF-8 text,
+which would corrupt PDF bytes. Fixed via migration 005 + Fetcher changes
+before REQ-002 work started (see git history); Fetcher now stores raw bytes
+and the response's Content-Type header.
+
 ### Loop A — Test Plan Implementation Breakdown
-- [ ] TC-REQ-002-1 — Native-text PDF/HTML parses into correctly ordered chunks
-- [ ] TC-REQ-002-2 — Empty document produces zero chunks without error
-- [ ] TC-REQ-002-3 — Unsupported MIME type rejected before handler dispatch
-- [ ] TC-REQ-002-4 — OCR worker unavailability is retryable, not permanent failure
-- [ ] TC-REQ-002-5 — Sustained parsing throughput across mixed formats
+- [x] TC-REQ-002-1 — Native-text PDF/HTML parses into correctly ordered chunks
+- [x] TC-REQ-002-2 — Empty document produces zero chunks without error
+- [x] TC-REQ-002-3 — Unsupported MIME type rejected before handler dispatch
+- [x] TC-REQ-002-4 — OCR worker unavailability is retryable, not permanent failure
+- [x] TC-REQ-002-5 — Sustained parsing throughput across mixed formats ⚠️ k6 script exercises parse_and_store indirectly via the admin reprocess endpoint (see loadtest/parse_load.js header), same limitation as REQ-001's fetch_load.js
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-002-01 — Add `document_chunks` migration, `source_documents` columns
-- [ ] IMP-REQ-002-02 — `ParseError`/`ParseOutcome` types and dispatch by `content_type`
-- [ ] IMP-REQ-002-03 — HTML handler (semantic extraction, boilerplate removal)
-- [ ] IMP-REQ-002-04 — Native-text PDF handler via `pdftotext`
-- [ ] IMP-REQ-002-05 — Scanned-PDF OCR fallback trigger + handler
-- [ ] IMP-REQ-002-06 — Plain-text handler with UTF-8/Latin-1 fallback
-- [ ] IMP-REQ-002-07 — Per-chunk language detection (EN/FR)
-- [ ] IMP-REQ-002-08 — Admin reprocess endpoint for parsing
-- [ ] IMP-REQ-002-09 — Wire retry queue for transient (503-class) handler failures
-- [ ] IMP-REQ-002-10 — System throughput verification (mixed-format batch)
+- [x] IMP-REQ-002-01 — Add `document_chunks` migration, `source_documents` columns
+- [x] IMP-REQ-002-02 — `ParseError`/`ParseOutcome` types and dispatch by `content_type`
+- [x] IMP-REQ-002-03 — HTML handler (semantic extraction, boilerplate removal)
+- [x] IMP-REQ-002-04 — Native-text PDF handler via `pdftotext`
+- [x] IMP-REQ-002-05 — Scanned-PDF OCR fallback trigger + handler (swappable `OcrProvider` trait; `TesseractOcrProvider` default per Autonomous Execution Notes)
+- [x] IMP-REQ-002-06 — Plain-text handler with UTF-8/Latin-1 fallback
+- [x] IMP-REQ-002-07 — Per-chunk language detection (EN/FR)
+- [x] IMP-REQ-002-08 — Admin reprocess endpoint for parsing
+- [x] IMP-REQ-002-09 — Wire retry queue for transient (503-class) handler failures (`parser_status = 'reprocessing'` on transient Pdf/Ocr errors, `'failed'` on permanent UnsupportedContentType)
+- [x] IMP-REQ-002-10 — System throughput verification (mixed-format batch)
 
 ## REQ-003 — Extract Construction Project Entities
 
