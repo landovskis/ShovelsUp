@@ -101,21 +101,27 @@ with human ground truth, which cannot be authentically fabricated. Built a
 
 ## REQ-004 — Normalize Approval Status in English and French
 
+⚠️ **Gap (documented, not silently assumed):** conflict resolution uses
+mention insertion order as an interim proxy for "the later, more specific
+dated event" — no per-agenda-item event date exists in the schema yet
+(pending REQ-006 timeline work). Every conflict is still flagged into
+`review_candidates` regardless, so a wrong auto-resolution stays reviewable.
+
 ### Loop A — Test Plan Implementation Breakdown
-- [ ] TC-REQ-004-1 — English synonyms map to correct enum value
-- [ ] TC-REQ-004-2 — French synonyms map to same enum value as EN
-- [ ] TC-REQ-004-3 — Unrecognized phrase not silently defaulted
-- [ ] TC-REQ-004-4 — Conflicting same-document status resolved + flagged
+- [x] TC-REQ-004-1 — English synonyms map to correct enum value
+- [x] TC-REQ-004-2 — French synonyms map to same enum value as EN
+- [x] TC-REQ-004-3 — Unrecognized phrase not silently defaulted
+- [x] TC-REQ-004-4 — Conflicting same-document status resolved + flagged
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-004-01 — `status_vocabulary` migration + `project_mentions` status columns
-- [ ] IMP-REQ-004-02 — Seed EN status vocabulary v1
-- [ ] IMP-REQ-004-03 — Seed FR status vocabulary v1
-- [ ] IMP-REQ-004-04 — Implement `normalize_status` deterministic lookup
-- [ ] IMP-REQ-004-05 — Same-document conflict detection + review-candidate flag
-- [ ] IMP-REQ-004-06 — Wire normalization into extraction output path
-- [ ] IMP-REQ-004-07 — Integration test: bilingual parity across launch municipalities
+- [x] IMP-REQ-004-01 — `status_vocabulary` migration + `project_mentions` status columns
+- [x] IMP-REQ-004-02 — Seed EN status vocabulary v1
+- [x] IMP-REQ-004-03 — Seed FR status vocabulary v1
+- [x] IMP-REQ-004-04 — Implement `normalize_status` deterministic lookup
+- [x] IMP-REQ-004-05 — Same-document conflict detection + review-candidate flag
+- [x] IMP-REQ-004-06 — Wire normalization into extraction output path
+- [x] IMP-REQ-004-07 — Integration test: bilingual parity across launch municipalities (deterministic, 100% non-null on both EN/FR fixture sets)
 
 ## REQ-005 — Associate Multiple Mentions Into Tracked Records
 
