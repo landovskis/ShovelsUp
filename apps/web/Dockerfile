@@ -17,9 +17,15 @@ RUN cargo build --release --bin shovelsup-web
 ## Runtime stage
 FROM debian:bookworm-slim
 
+## REQ-002: pdftotext/pdftoppm (poppler-utils) and tesseract (with English +
+## French language data, since REQ-007 requires French extraction) are
+## shelled out to by src/pipeline/parser/pdf.rs and ocr.rs at runtime.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libssl3 \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-fra \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --create-home --shell /usr/sbin/nologin appuser
 
