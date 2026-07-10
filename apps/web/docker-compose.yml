@@ -1,0 +1,55 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      PORT: 3000
+      RUST_LOG: ${RUST_LOG:-shovelsup_web=debug,tower_http=debug}
+      DATABASE_URL: postgres://${POSTGRES_USER:-shovelsup}:${POSTGRES_PASSWORD:-shovelsup}@postgres:5432/${POSTGRES_DB:-shovelsup}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_USER: ${ADMIN_USER}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}
+      REVIEW_API_KEY: ${REVIEW_API_KEY}
+      REVIEW_API_KEY_IDENTITY: ${REVIEW_API_KEY_IDENTITY:-api}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-http://localhost:9999/sla-alert}
+      ENABLE_TEST_ENDPOINTS: ${ENABLE_TEST_ENDPOINTS:-0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "${POSTGRES_HOST_PORT:-5434}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-shovelsup}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shovelsup}
+      POSTGRES_DB: ${POSTGRES_DB:-shovelsup}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shovelsup}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_HOST_PORT:-6380}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:

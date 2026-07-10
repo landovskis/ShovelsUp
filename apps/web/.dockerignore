@@ -1,0 +1,8 @@
+target
+tests
+.env
+.env.example
+*.md
+docs
+.git
+.gitignore
