@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO source_documents (municipality_id, source_url, checksum) VALUES ($1, $2, $3) RETURNING id",
+  "query": "INSERT INTO source_documents (municipality_id, source_url, checksum, content, content_type) VALUES ($1, $2, $3, $4, $5) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -13,6 +13,8 @@
       "Left": [
         "Uuid",
         "Text",
+        "Text",
+        "Bytea",
         "Text"
       ]
     },
@@ -20,5 +22,5 @@
       false
     ]
   },
-  "hash": "c17fe6cb5e206f1c4521aa81d62317ddb3a8e22a19a5a3d212899d04ba68f1bf"
+  "hash": "d6a8bcfdd6400bd3243a2e84445d5f83278783dea3d5b07d4115ebfc0ba9538f"
 }

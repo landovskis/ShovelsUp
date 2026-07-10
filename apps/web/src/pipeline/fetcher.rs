@@ -80,8 +80,8 @@ impl Fetcher {
             return Err(FetchError::NotAllowlisted(host));
         }
 
-        let body = self.fetch_with_retry(url).await?;
-        let checksum = format!("{:x}", Sha256::digest(body.as_bytes()));
+        let (body, content_type) = self.fetch_with_retry(url).await?;
+        let checksum = format!("{:x}", Sha256::digest(&body));
 
         if let Some(existing_id) = sqlx::query_scalar!(
             "SELECT id FROM source_documents WHERE municipality_id = $1 AND checksum = $2",
@@ -97,11 +97,13 @@ impl Fetcher {
         }
 
         let document_id = sqlx::query_scalar!(
-            "INSERT INTO source_documents (municipality_id, source_url, checksum) \
-             VALUES ($1, $2, $3) RETURNING id",
+            "INSERT INTO source_documents (municipality_id, source_url, checksum, content, content_type) \
+             VALUES ($1, $2, $3, $4, $5) RETURNING id",
             municipality_id,
             url,
-            checksum
+            checksum,
+            body,
+            content_type,
         )
         .fetch_one(pool)
         .await?;
@@ -110,11 +112,13 @@ impl Fetcher {
     }
 
     /// GET `url` with exponential backoff on transient (5xx / network) failures.
-    /// Returns the response body once a non-5xx response is received, or the
-    /// last error after `MAX_ATTEMPTS` attempts. Redirects are never followed
-    /// (see the SSRF note on `Fetcher::new`) and are rejected outright rather
-    /// than treated as a successful response.
-    async fn fetch_with_retry(&self, url: &str) -> Result<String, FetchError> {
+    /// Returns the raw response body (never decoded as text — REQ-002 parses
+    /// PDFs, which are binary) plus its declared `Content-Type`, once a
+    /// non-5xx response is received, or the last error after `MAX_ATTEMPTS`
+    /// attempts. Redirects are never followed (see the SSRF note on
+    /// `Fetcher::new`) and are rejected outright rather than treated as a
+    /// successful response.
+    async fn fetch_with_retry(&self, url: &str) -> Result<(Vec<u8>, Option<String>), FetchError> {
         let mut attempt = 0u32;
         loop {
             attempt += 1;
@@ -128,7 +132,16 @@ impl Fetcher {
                         status: resp.status().as_u16(),
                     });
                 }
-                Ok(resp) => return Ok(resp.error_for_status()?.text().await?),
+                Ok(resp) => {
+                    let resp = resp.error_for_status()?;
+                    let content_type = resp
+                        .headers()
+                        .get(reqwest::header::CONTENT_TYPE)
+                        .and_then(|v| v.to_str().ok())
+                        .map(|s| s.to_string());
+                    let bytes = resp.bytes().await?.to_vec();
+                    return Ok((bytes, content_type));
+                }
                 Err(_err) if attempt < MAX_ATTEMPTS => {
                     tokio::time::sleep(backoff_delay(attempt)).await;
                 }
