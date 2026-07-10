@@ -1,0 +1,3 @@
+%PDF-1.4
+this is not a valid PDF object stream at all, just garbage bytes
+that pdftotext should fail to parse and exit non-zero on.
