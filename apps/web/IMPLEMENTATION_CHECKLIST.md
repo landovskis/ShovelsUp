@@ -126,22 +126,22 @@ dated event" — no per-agenda-item event date exists in the schema yet
 ## REQ-005 — Associate Multiple Mentions Into Tracked Records
 
 ### Loop A — Test Plan Implementation Breakdown
-- [ ] TC-REQ-005-1 — Matching address+type links to existing project
-- [ ] TC-REQ-005-2 — Near-miss address does not auto-link
-- [ ] TC-REQ-005-3 — Zero-match mention creates a new project
-- [ ] TC-REQ-005-4 — Multi-match on address+type creates a review candidate
-- [ ] TC-REQ-005-5 — DB unavailability during resolution is retryable, not dropped
+- [x] TC-REQ-005-1 — Matching address+type links to existing project
+- [x] TC-REQ-005-2 — Near-miss address does not auto-link
+- [x] TC-REQ-005-3 — Zero-match mention creates a new project
+- [x] TC-REQ-005-4 — Multi-match on address+type creates a review candidate
+- [x] TC-REQ-005-5 — DB unavailability during resolution is retryable, not dropped (unit-tested via extracted `retry_transient` seam + injected `sqlx::Error`, no real DB outage needed — see resolver/mod.rs retry_tests)
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-005-01 — Partial unique index on `projects`; coordinate `review_candidates` migration with REQ-009
-- [ ] IMP-REQ-005-02 — Explicit cross-reference matcher
-- [ ] IMP-REQ-005-03 — Address+type matcher (using REQ-007 normalizer)
-- [ ] IMP-REQ-005-04 — `resolve_mention` orchestration (priority order)
-- [ ] IMP-REQ-005-05 — Wire resolution as automatic post-extraction step
-- [ ] IMP-REQ-005-06 — Integration test: multi-mention project history
-- [ ] IMP-REQ-005-07 — Concurrency test: simultaneous resolution of same mention
-- [ ] IMP-REQ-005-08 — Retry/backoff for `resolve_mention` DB transient failures
+- [x] IMP-REQ-005-01 — Partial unique index on `projects`; coordinate `review_candidates` migration with REQ-009
+- [x] IMP-REQ-005-02 — Explicit cross-reference matcher
+- [x] IMP-REQ-005-03 — Address+type matcher (using REQ-007 normalizer)
+- [x] IMP-REQ-005-04 — `resolve_mention` orchestration (priority order)
+- [x] IMP-REQ-005-05 — Wire resolution as automatic post-extraction step
+- [x] IMP-REQ-005-06 — Integration test: multi-mention project history
+- [x] IMP-REQ-005-07 — Concurrency test: simultaneous resolution of same mention
+- [x] IMP-REQ-005-08 — Retry/backoff for `resolve_mention` DB transient failures
 
 ## REQ-006 — Display Chronological Project Timeline
 

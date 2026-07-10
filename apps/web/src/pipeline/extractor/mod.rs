@@ -142,6 +142,18 @@ pub async fn extract_and_store(
                 }
             }
 
+            // REQ-005: automatically resolve the new mention into a
+            // tracked project (IMP-REQ-005-05). A resolver error is
+            // reported here but does not unwind extraction — the mention
+            // itself was already persisted successfully.
+            if let Err(err) = crate::pipeline::resolver::resolve_mention(pool, mention_id).await {
+                tracing::warn!(
+                    mention_id = %mention_id,
+                    error = %err,
+                    "resolve_mention failed after extraction"
+                );
+            }
+
             Some(mention_id)
         }
         _ => None,
