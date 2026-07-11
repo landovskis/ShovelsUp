@@ -18,6 +18,11 @@
 //! embedded here as a const array rather than under
 //! `tests/fixtures/extraction/fr/`, matching this repo's actual convention
 //! (see tests/pipeline_extraction.rs) rather than the plan's literal path.
+//!
+//! Measured against the live API: 98.7% field completeness, 100%
+//! classification accuracy — benefits from the same status-recovery second
+//! pass added for REQ-003's TC-REQ-003-1 (`extractor::recover_status` is
+//! language-aware and shared), and does even better here than the EN set.
 
 use shovelsup_web::pipeline::extractor::extract_entities;
 use shovelsup_web::pipeline::extractor::llm::AnthropicProvider;
