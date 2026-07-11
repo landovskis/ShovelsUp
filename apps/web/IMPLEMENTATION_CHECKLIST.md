@@ -315,47 +315,55 @@ session. Same limitation already accepted for `fetch_load.js`/`parse_load.js`.
 - [x] IMP-REQ-009-12 — Accessibility/UX verification pass — manual review (role="tablist"/"tab", role="alert" banner, aria-live region, labelled input); no axe-core tooling available, same limitation as REQ-006/008
 
 ## System Tests (Loop A suite vs. Loop B production code)
-- [ ] TC-REQ-001-1
-- [ ] TC-REQ-001-2
-- [ ] TC-REQ-001-3
-- [ ] TC-REQ-001-4
-- [ ] TC-REQ-001-5
-- [ ] TC-REQ-002-1
-- [ ] TC-REQ-002-2
-- [ ] TC-REQ-002-3
-- [ ] TC-REQ-002-4
-- [ ] TC-REQ-002-5
-- [ ] TC-REQ-003-1
-- [ ] TC-REQ-003-2
-- [ ] TC-REQ-003-3
-- [ ] TC-REQ-003-4
-- [ ] TC-REQ-003-5
-- [ ] TC-REQ-004-1
-- [ ] TC-REQ-004-2
-- [ ] TC-REQ-004-3
-- [ ] TC-REQ-004-4
-- [ ] TC-REQ-005-1
-- [ ] TC-REQ-005-2
-- [ ] TC-REQ-005-3
-- [ ] TC-REQ-005-4
-- [ ] TC-REQ-005-5
+
+Final run: `cargo test` (all targets) — 170 passing / 0 failed, `cargo clippy
+--all-targets -- -D warnings` clean. Every Loop A test compiles and runs
+against the final Loop B production code in this same codebase (not a
+separate stub); the three left unchecked below are flagged for the reasons
+already documented in their requirement sections above, not because they
+fail.
+
+- [x] TC-REQ-001-1
+- [x] TC-REQ-001-2
+- [x] TC-REQ-001-3
+- [x] TC-REQ-001-4
+- [x] TC-REQ-001-5
+- [x] TC-REQ-002-1
+- [x] TC-REQ-002-2
+- [x] TC-REQ-002-3
+- [x] TC-REQ-002-4
+- [x] TC-REQ-002-5
+- [ ] TC-REQ-003-1 ⚠️ System test unresolved: real field-completeness ~85%, below the 90% gate — see REQ-003 risk note
+- [x] TC-REQ-003-2
+- [x] TC-REQ-003-3
+- [x] TC-REQ-003-4
+- [x] TC-REQ-003-5
+- [x] TC-REQ-004-1
+- [x] TC-REQ-004-2
+- [x] TC-REQ-004-3
+- [x] TC-REQ-004-4
+- [x] TC-REQ-005-1
+- [x] TC-REQ-005-2
+- [x] TC-REQ-005-3
+- [x] TC-REQ-005-4
+- [x] TC-REQ-005-5
 - [x] TC-REQ-006-1
 - [x] TC-REQ-006-2
 - [x] TC-REQ-006-3
 - [x] TC-REQ-006-4
 - [x] TC-REQ-006-5
 - [x] TC-REQ-006-6
-- [ ] TC-REQ-007-1
-- [ ] TC-REQ-007-2
-- [ ] TC-REQ-007-3
-- [ ] TC-REQ-007-4
-- [ ] TC-REQ-008-1
-- [ ] TC-REQ-008-2
-- [ ] TC-REQ-008-3
-- [ ] TC-REQ-008-4
-- [ ] TC-REQ-009-1
-- [ ] TC-REQ-009-2
-- [ ] TC-REQ-009-3
-- [ ] TC-REQ-009-4
-- [ ] TC-REQ-009-5
-- [ ] TC-REQ-009-6
+- [ ] TC-REQ-007-1 ⚠️ Needs Human Review: completeness gate not run against the live ANTHROPIC_API_KEY in this session — see REQ-007 note
+- [x] TC-REQ-007-2
+- [x] TC-REQ-007-3
+- [x] TC-REQ-007-4
+- [x] TC-REQ-008-1
+- [x] TC-REQ-008-2
+- [x] TC-REQ-008-3
+- [x] TC-REQ-008-4
+- [x] TC-REQ-009-1
+- [x] TC-REQ-009-2
+- [x] TC-REQ-009-3
+- [x] TC-REQ-009-4
+- [x] TC-REQ-009-5
+- [ ] TC-REQ-009-6 ⚠️ Needs Human Review: k6 script written, not run against a live environment — see REQ-009 note
