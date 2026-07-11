@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}{% if project is defined and project.title is defined %}{{ project.title }}{% else %}Project details{% endif %} | ShovelsUp{% endblock %}
+
+{% block content %}
+<section class="project-detail" aria-labelledby="project-title">
+    <h1 id="project-title">{% if project is defined and project.title is defined %}{{ project.title }}{% else %}Project details{% endif %}</h1>
+
+    <section aria-labelledby="timeline-title">
+        <h2 id="timeline-title">Project timeline</h2>
+
+        <div id="project-timeline" aria-live="polite" aria-busy="{{ timeline_loading | default(false) }}">
+            {% if timeline_error | default(false) %}
+            <div class="timeline-error" role="alert">
+                <p>We couldn’t load this project’s timeline.</p>
+                <button
+                    type="button"
+                    hx-get="{{ timeline_retry_url | default(timeline_url | default('', true), true) }}"
+                    hx-target="#project-timeline"
+                    hx-swap="innerHTML"
+                >{{ retry_label | default("Retry timeline", true) }}</button>
+            </div>
+            {% elif timeline_loading | default(false) %}
+            <p class="timeline-loading" role="status">Loading timeline…</p>
+            {% elif timeline_events is defined and timeline_events | length > 0 %}
+            <ol class="timeline-events">
+                {% for event in timeline_events %}
+                <li class="timeline-event">
+                    <time datetime="{{ event.event_date }}">{{ event.event_date }}</time>
+                    <span>{{ event.normalized_status | default("Update recorded", true) }}</span>
+                </li>
+                {% endfor %}
+            </ol>
+            {% else %}
+            <p class="timeline-empty">No timeline events have been recorded for this project yet.</p>
+            {% endif %}
+        </div>
+    </section>
+</section>
+{% endblock %}

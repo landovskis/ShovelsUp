@@ -160,7 +160,7 @@ dated event" — no per-agenda-item event date exists in the schema yet
 - [ ] IMP-REQ-006-03 — 503 handling for DB failures on timeline endpoint ⚠️ Needs Human Review: focused closed-pool test passes; full target remains blocked by the missing project-detail template
 - [ ] IMP-REQ-006-07 — Integration test: resolver write → timeline reflects it
 #### Frontend Engineer
-- [ ] IMP-REQ-006-04 — Project-detail timeline template (Minijinja)
+- [ ] IMP-REQ-006-04 — Project-detail timeline template (Minijinja) ⚠️ Test unresolved: template unit coverage passes; focused DB integration run was interrupted during approval
 - [ ] IMP-REQ-006-05 — EN/FR strings for timeline labels
 - [ ] IMP-REQ-006-06 — Accessibility pass (focus, contrast, aria-disabled)
 - [ ] IMP-REQ-006-08 — E2E state verification (loaded/loading/empty/error)
