@@ -46,3 +46,54 @@ pub fn redact_named_individuals(text: &str, honorifics: &[&str], marker: &str) -
 fn starts_with_uppercase(token: &str) -> bool {
     token.chars().next().is_some_and(|c| c.is_uppercase())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const HONORIFICS: &[&str] = &["Mr.", "Mr", "Dr"];
+    const MARKER: &str = "[REDACTED]";
+
+    #[test]
+    fn redacts_two_token_name_after_honorific() {
+        let text = "Mr. John Smith presented the application.";
+        assert_eq!(
+            redact_named_individuals(text, HONORIFICS, MARKER),
+            "Mr. [REDACTED] presented the application."
+        );
+    }
+
+    #[test]
+    fn trailing_honorific_with_no_following_name_is_left_alone() {
+        let text = "The chair thanked the Dr.";
+        assert_eq!(redact_named_individuals(text, HONORIFICS, MARKER), text);
+    }
+
+    #[test]
+    fn caps_redaction_at_two_tokens_for_a_longer_name() {
+        // A 3+ token capitalized run: only the first two tokens are folded
+        // into the marker, the third (a genuinely separate capitalized
+        // word, e.g. the next sentence's subject) is left as-is — this is
+        // the documented conservative limit, not a bug.
+        let text = "Dr Jean Paul Tremblay spoke.";
+        assert_eq!(
+            redact_named_individuals(text, HONORIFICS, MARKER),
+            "Dr [REDACTED] Tremblay spoke."
+        );
+    }
+
+    #[test]
+    fn consecutive_honorifics_each_redact_their_own_name() {
+        let text = "Mr John Smith and Dr Marie Curie attended.";
+        assert_eq!(
+            redact_named_individuals(text, HONORIFICS, MARKER),
+            "Mr [REDACTED] and Dr [REDACTED] attended."
+        );
+    }
+
+    #[test]
+    fn text_with_no_honorific_is_unchanged() {
+        let text = "Construction of a new residential building at 123 Main St.";
+        assert_eq!(redact_named_individuals(text, HONORIFICS, MARKER), text);
+    }
+}

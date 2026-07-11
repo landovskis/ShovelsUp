@@ -221,9 +221,9 @@ clearly-synthetic set instead — see `tests/pipeline_extraction_fr.rs`.
 ### Loop B — Task Breakdown
 #### Backend Engineer
 - [x] IMP-REQ-007-01 — Author FR prompt template mirroring EN schema
-- [x] IMP-REQ-007-02 — French-Quebec address normalization ruleset (wired into `resolver::try_resolve`'s language dispatch, see gap note above)
+- [x] IMP-REQ-007-02 — French-Quebec address normalization ruleset (wired into `resolver::try_resolve`'s language dispatch, verified end to end via `french_mention_addresses_resolve_via_the_french_normalizer`, not just the standalone normalizer function)
 - [x] IMP-REQ-007-03 — Wire per-language routing into extraction dispatch
-- [x] IMP-REQ-007-04 — Extend French named-individual redaction rules (built the missing EN-baseline dispatcher alongside it, see gap note above)
+- [x] IMP-REQ-007-04 — Extend French named-individual redaction rules (built the missing EN-baseline dispatcher alongside it; wired into `extract_entities` to strip named individuals from `project_name` on the FR path, verified end to end)
 - [x] IMP-REQ-007-05 — Per-language field-completeness/confidence metric
 - [x] IMP-REQ-007-06 — Assemble ≥100-item labelled French fixture subset ⚠️ Needs Human Review: scope-reduced to a 20-item synthetic set, see risk note above
 - [ ] IMP-REQ-007-07 — Integration test: FR parity vs EN ⚠️ Needs Human Review: written and passing structurally, but the live-API completeness assertion wasn't run against the real API in this session, see note above

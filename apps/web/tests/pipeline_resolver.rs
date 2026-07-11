@@ -29,6 +29,32 @@ async fn seed_document_chunk(pool: &PgPool) -> Uuid {
     .unwrap()
 }
 
+async fn seed_document_chunk_fr(pool: &PgPool) -> Uuid {
+    let municipality_id = sqlx::query_scalar!(
+        "INSERT INTO municipalities (name, slug, domain_allowlist) \
+         VALUES ('Ville Test', 'ville-test', ARRAY['ville-test.example']) RETURNING id"
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let doc_id = sqlx::query_scalar!(
+        "INSERT INTO source_documents (municipality_id, source_url, checksum, content, content_type) \
+         VALUES ($1, 'https://ville-test.example/doc', 'chk', ''::bytea, 'text/html') RETURNING id",
+        municipality_id
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query_scalar!(
+        "INSERT INTO document_chunks (source_document_id, chunk_index, content, language) \
+         VALUES ($1, 0, 'texte du fragment', 'fr') RETURNING id",
+        doc_id
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
 async fn insert_mention(
     pool: &PgPool,
     chunk_id: Uuid,
@@ -284,4 +310,44 @@ async fn concurrent_resolution_of_new_address_produces_one_project(pool: PgPool)
     .unwrap()
     .unwrap();
     assert_eq!(both_linked, 1, "both mentions must link to the same project");
+}
+
+/// IMP-REQ-007-02 wiring: `resolve_mention` dispatches to the French-Quebec
+/// address normalizer (not the English one) for a mention whose source
+/// chunk is language='fr', so two differently-formatted French addresses
+/// for the same civic location link to one project. Exercises
+/// `resolve_mention`/`try_resolve` directly, not just the standalone
+/// `normalize_address_fr` function.
+#[sqlx::test(migrations = "./migrations")]
+async fn french_mention_addresses_resolve_via_the_french_normalizer(pool: PgPool) {
+    let chunk_id = seed_document_chunk_fr(&pool).await;
+    let m1 = insert_mention(&pool, chunk_id, Some("456, boul. Saint-Laurent"), Some("residential"), None).await;
+    let m2 = insert_mention(&pool, chunk_id, Some("456 Boulevard Saint-Laurent"), Some("residential"), None).await;
+
+    let outcome1 = resolve_mention(&pool, m1).await.unwrap();
+    let project_id = match outcome1 {
+        ResolutionOutcome::NewProject { project_id } => project_id,
+        other => panic!("expected NewProject, got {other:?}"),
+    };
+
+    let outcome2 = resolve_mention(&pool, m2).await.unwrap();
+    match outcome2 {
+        ResolutionOutcome::Linked { project_id: linked_id } => {
+            assert_eq!(linked_id, project_id, "the comma/abbreviation variant must normalize to the same project as the first mention");
+        }
+        other => panic!("expected Linked to the existing project, got {other:?}"),
+    }
+
+    let normalized: String = sqlx::query_scalar!(
+        "SELECT civic_address_normalized FROM projects WHERE id = $1",
+        project_id
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap()
+    .expect("normalized address must be set");
+    assert_eq!(
+        normalized, "456 boulevard saint-laurent",
+        "must use the French normalizer's canonical form, not the English one"
+    );
 }

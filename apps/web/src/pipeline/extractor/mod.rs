@@ -6,7 +6,7 @@ pub mod validator;
 
 use uuid::Uuid;
 
-use crate::pipeline::normalizer;
+use crate::pipeline::{normalizer, redaction};
 use llm::LlmProvider;
 use schema::{ExtractionResult, RawExtraction};
 
@@ -63,9 +63,18 @@ pub async fn extract_entities(
         return Ok(None);
     }
 
+    // IMP-REQ-007-04: strip named individuals the LLM may have captured
+    // into project_name (e.g. "Demande de Jean Tremblay pour...") before
+    // persisting — a project's *name* should never carry a person's name
+    // through to a public-facing record.
+    let project_name = match language {
+        "fr" => raw.project_name.map(|name| redaction::fr::redact(&name)),
+        _ => raw.project_name,
+    };
+
     Ok(Some(ExtractionResult {
         physical_work,
-        project_name: raw.project_name,
+        project_name,
         civic_address: raw.civic_address,
         project_type: raw.project_type,
         scale_units: raw.scale_units,
@@ -237,6 +246,29 @@ mod tests {
         .await
         .unwrap();
         assert!(result.is_none());
+    }
+
+    /// IMP-REQ-007-04: a named individual the LLM captures into
+    /// `project_name` is redacted before the `ExtractionResult` is built —
+    /// exercised through `extract_entities`, not just the `redaction`
+    /// module in isolation, to confirm the wiring actually runs.
+    #[tokio::test]
+    async fn extract_entities_redacts_named_individual_from_french_project_name() {
+        let llm = FixedResponseProvider::new(
+            r#"{"has_mention":true,"physical_work":true,"project_name":"Demande de M. Jean Tremblay","civic_address":"123, rue Principale","project_type":"résidentiel","scale_units":48,"scale_gfa_sqm":null,"scale_storeys":6,"approval_status_raw":"Approuvé"}"#,
+        );
+        let result = extract_entities(
+            "Point 4 : Demande de M. Jean Tremblay pour la construction d'un nouveau bâtiment résidentiel au 123, rue Principale, 48 logements, 6 étages. Approuvé.",
+            "fr",
+            &llm,
+        )
+        .await
+        .unwrap();
+        let extraction = result.expect("expected a qualifying extraction");
+        assert_eq!(
+            extraction.project_name.as_deref(),
+            Some("Demande de M. [nom retiré]")
+        );
     }
 
     /// TC-REQ-007-1: French proceedings extract all 5 fields at EN parity —
