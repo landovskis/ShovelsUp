@@ -156,7 +156,7 @@ dated event" — no per-agenda-item event date exists in the schema yet
 ### Loop B — Task Breakdown
 #### Backend Engineer
 - [ ] IMP-REQ-006-01 — NOT NULL + index hardening on `project_timeline_events` ⚠️ Test unresolved: local database validation was interrupted before completion
-- [ ] IMP-REQ-006-02 — `GET /api/v1/projects/{id}/timeline` handler with tie-break sort
+- [ ] IMP-REQ-006-02 — `GET /api/v1/projects/{id}/timeline` handler with tie-break sort ⚠️ Test unresolved: 7 backend timeline tests pass; Loop A's missing-template UI test remains out of scope for this handler
 - [ ] IMP-REQ-006-03 — 503 handling for DB failures on timeline endpoint
 - [ ] IMP-REQ-006-07 — Integration test: resolver write → timeline reflects it
 #### Frontend Engineer
