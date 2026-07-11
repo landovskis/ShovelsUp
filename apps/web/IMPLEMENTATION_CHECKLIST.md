@@ -286,12 +286,15 @@ other way (reverse-proxy injection, browser extension). Documented in
 `docs/runbooks/review_queue.md`; a proper admin login flow is out of this
 requirement's scope to invent.
 
-⚠️ **k6 script not run against a live environment** (IMP-REQ-009-11,
-TC-REQ-009-6): `loadtest/review_queue.js` is written and targets the real
-`/admin/review_candidates` endpoint, but — consistent with REQ-001/002's
-existing k6 scripts in this repo — it requires a running staging deployment
-with a 5,000-row seeded table, which doesn't exist in this local dev
-session. Same limitation already accepted for `fetch_load.js`/`parse_load.js`.
+✅ **k6 script run and passing** (IMP-REQ-009-11, TC-REQ-009-6): ran
+`loadtest/review_queue.js` against a local `cargo run --release` instance
+with 5,000 synthetic open `review_candidates` rows (seeded, tested,
+cleaned up afterward — not against production/staging data, which doesn't
+exist for this app). p(95)=84.19ms against the 1000ms threshold, 0% error
+rate over 17,705 requests. `fetch_load.js`/`parse_load.js` (REQ-001/002)
+remain unrun — those need a real municipal-fixture HTTP server behind the
+target, not just seeded rows, so the same local-instance approach doesn't
+transfer to them.
 
 ### Loop A — Test Plan Implementation Breakdown
 - [x] TC-REQ-009-1 — Confirm merges ambiguous candidate into proposed project
@@ -299,7 +302,7 @@ session. Same limitation already accepted for `fetch_load.js`/`parse_load.js`.
 - [x] TC-REQ-009-3 — Stale version on confirm returns 409, no changes
 - [x] TC-REQ-009-4 — Multi-match candidate appears in Open tab (cross-ref REQ-005-4)
 - [x] TC-REQ-009-5 — DB failure during confirm leaves candidate unresolved, returns 503
-- [ ] TC-REQ-009-6 — Queue list endpoint meets latency target under load ⚠️ Needs Human Review: k6 script written but not run against a live environment, see note above
+- [x] TC-REQ-009-6 — Queue list endpoint meets latency target under load (p95=84.19ms vs. 1000ms threshold, 0% errors, see note above)
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
@@ -311,7 +314,7 @@ session. Same limitation already accepted for `fetch_load.js`/`parse_load.js`.
 - [x] IMP-REQ-009-08 — Hourly SLA sweep job + overdue metric — plain callable function (`jobs::sla_sweep::compute_overdue_metric`), not a wired-up in-process scheduler, matching REQ-001's `Scheduler` precedent (no periodic-execution infra exists anywhere in this codebase)
 - [x] IMP-REQ-009-09 — `REVIEW_QUEUE_ENABLED` feature flag
 - [x] IMP-REQ-009-10 — Integration test: candidate → queue → confirm → timeline
-- [x] IMP-REQ-009-11 — k6 performance script for queue list endpoint ⚠️ Needs Human Review: written, not run against a live environment, see note above
+- [x] IMP-REQ-009-11 — k6 performance script for queue list endpoint (run and passing, see note above)
 - [x] IMP-REQ-009-13 — Operational runbook (SLA sweep, flag disable, reprocess)
 #### Frontend Engineer
 - [x] IMP-REQ-009-06 — Review queue list template (tabs, states, EN/FR)
@@ -370,4 +373,4 @@ fail.
 - [x] TC-REQ-009-3
 - [x] TC-REQ-009-4
 - [x] TC-REQ-009-5
-- [ ] TC-REQ-009-6 ⚠️ Needs Human Review: k6 script written, not run against a live environment — see REQ-009 note
+- [x] TC-REQ-009-6
