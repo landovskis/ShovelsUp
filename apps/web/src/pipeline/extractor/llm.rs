@@ -21,8 +21,25 @@ pub enum LlmError {
 #[async_trait::async_trait]
 pub trait LlmProvider: Send + Sync {
     /// Sends `system` + `user_content` and returns the raw JSON text of the
-    /// model's structured-output response.
+    /// model's structured-output response, constrained to the extraction
+    /// JSON schema.
     async fn complete(&self, system: &str, user_content: &str) -> Result<String, LlmError>;
+
+    /// Sends `system` + `user_content` and returns free-form text, with no
+    /// JSON schema constraint — used by the status-recovery second pass
+    /// (`extractor::recover_status`), which asks for a short plain-text
+    /// answer ("Approved." or "NONE"), not a structured extraction. Bug
+    /// this method exists to fix: `complete`'s schema constraint, if
+    /// applied here too, makes the model re-emit a full JSON extraction
+    /// object instead of following the plain-text instruction — observed
+    /// directly against the live API, not theoretical.
+    ///
+    /// Default implementation delegates to `complete` so existing
+    /// `LlmProvider` test doubles (which don't distinguish response
+    /// formats) don't need updating.
+    async fn complete_text(&self, system: &str, user_content: &str) -> Result<String, LlmError> {
+        self.complete(system, user_content).await
+    }
 }
 
 const MAX_ATTEMPTS: u32 = 5;
@@ -76,20 +93,13 @@ struct ContentBlock {
     text: Option<String>,
 }
 
-#[async_trait::async_trait]
-impl LlmProvider for AnthropicProvider {
-    async fn complete(&self, system: &str, user_content: &str) -> Result<String, LlmError> {
+impl AnthropicProvider {
+    async fn send(&self, system: &str, user_content: &str, output_config: serde_json::Value) -> Result<String, LlmError> {
         let body = serde_json::json!({
             "model": MODEL,
             "max_tokens": 1024,
             "system": system,
-            "output_config": {
-                "effort": "high",
-                "format": {
-                    "type": "json_schema",
-                    "schema": extraction_json_schema(),
-                }
-            },
+            "output_config": output_config,
             "messages": [
                 { "role": "user", "content": user_content }
             ]
@@ -132,6 +142,31 @@ impl LlmProvider for AnthropicProvider {
                 Err(err) => return Err(LlmError::RequestFailed(err.to_string())),
             }
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl LlmProvider for AnthropicProvider {
+    async fn complete(&self, system: &str, user_content: &str) -> Result<String, LlmError> {
+        self.send(
+            system,
+            user_content,
+            serde_json::json!({
+                "effort": "high",
+                "format": {
+                    "type": "json_schema",
+                    "schema": extraction_json_schema(),
+                }
+            }),
+        )
+        .await
+    }
+
+    async fn complete_text(&self, system: &str, user_content: &str) -> Result<String, LlmError> {
+        // No `format` constraint — a plain-text response, not a structured
+        // extraction (see the trait doc comment for why this matters).
+        self.send(system, user_content, serde_json::json!({ "effort": "high" }))
+            .await
     }
 }
 

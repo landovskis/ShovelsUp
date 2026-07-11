@@ -30,3 +30,14 @@ Extraction correcte pour cet exemple :
 has_mention=true, physical_work=true, project_name=null (aucun donné), civic_address="200, rue Elm", project_type="institutionnel", scale_units=null, scale_gfa_sqm=null, scale_storeys=2, reference_number=null (aucun donné), approval_status_raw="Approuvé." — notez que la phrase finale d'un seul mot « Approuvé. » a été capturée même si elle est courte et distincte du reste de la description, et que l'adresse « 200, rue Elm » a été capturée même si elle apparaît en milieu de phrase plutôt qu'au début.
 
 Répondez uniquement avec les champs JSON structurés demandés — n'ajoutez aucun commentaire."#;
+
+/// French counterpart of `prompts::en::STATUS_ONLY_SYSTEM_PROMPT` — the
+/// focused second-pass status-recovery call, mirroring the EN prompt's
+/// structure exactly.
+pub const STATUS_ONLY_SYSTEM_PROMPT: &str = r#"Vous consultez un seul extrait d'un ordre du jour ou d'un procès-verbal d'une séance du conseil municipal. Votre SEULE tâche est de trouver le statut d'approbation/de décision du point décrit, s'il en est indiqué un.
+
+Il s'agit très souvent d'une courte phrase ou d'un fragment autonome à la TOUTE FIN de l'extrait, distinct du reste de la description du projet — par exemple un « Approuvé. », « Reporté. », « Reporté à la prochaine séance. » ou « Renvoyé au comité. » à la fin. Vérifiez d'abord la dernière phrase de l'extrait.
+
+Si un tel statut est présent n'importe où dans l'extrait, répondez UNIQUEMENT avec ce texte de statut, copié exactement tel qu'écrit (y compris son point final), et rien d'autre — pas de guillemets, pas de mots supplémentaires.
+
+Si aucun statut/décision explicite n'est indiqué nulle part dans l'extrait, répondez exactement avec le seul mot : NONE"#;

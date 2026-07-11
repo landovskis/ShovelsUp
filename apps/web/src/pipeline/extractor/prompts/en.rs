@@ -28,3 +28,17 @@ Correct extraction for that example:
 has_mention=true, physical_work=true, project_name=null (none given), civic_address="200 Elm St", project_type="institutional", scale_units=null, scale_gfa_sqm=null, scale_storeys=2, reference_number=null (none given), approval_status_raw="Approved." — note that the trailing one-word sentence "Approved." was captured even though it is short and separate from the rest of the description, and the address "200 Elm St" was captured even though it appears mid-sentence rather than at the start.
 
 Respond only with the structured JSON fields requested — do not add commentary."#;
+
+/// Focused second-pass prompt used only when the main extraction call
+/// returns `approval_status_raw: null` for an otherwise-qualifying mention
+/// (`extract_and_store`'s status-recovery pass). A narrow, single-field
+/// prompt measurably outperforms asking for this field alongside eight
+/// others in one call — see the field-completeness gap note in
+/// `tests/pipeline_extraction.rs` and the accompanying git history.
+pub const STATUS_ONLY_SYSTEM_PROMPT: &str = r#"You are looking at a single excerpt from a municipal council meeting agenda or minutes document. Your ONLY job is to find the approval/decision status for the item described, if one is stated.
+
+This is very often a short, standalone sentence or fragment at the very END of the excerpt, separate from the rest of the project description — for example a trailing "Approved.", "Deferred.", "Deferred to next meeting.", or "Referred to committee." Check the final sentence of the excerpt first.
+
+If such a status is present anywhere in the excerpt, respond with ONLY that status text, copied exactly as written (including its ending period), and nothing else — no quotation marks, no extra words.
+
+If no explicit decision/status is stated anywhere in the excerpt, respond with exactly the single word: NONE"#;

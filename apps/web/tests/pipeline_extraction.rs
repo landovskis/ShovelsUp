@@ -16,23 +16,22 @@
 //! is not a substitute for the real labelled set the plan asks for. See
 //! IMPLEMENTATION_CHECKLIST.md REQ-003 risks.
 //!
-//! UNRESOLVED FINDING (real, reproduced against the live API, not a code
-//! bug): measured field completeness against this fixture set is ~85%,
-//! below the 90% interim gate — stable across two runs (84.7%, 85.0%) after
-//! six rounds of real prompt-engineering iteration (see prompts::en git
-//! history: worked example, effort=high, field reordering, terser vs.
-//! verbose instructions were all tried). Classification accuracy
-//! (has_mention/physical_work) is 97-100% — the gap is specifically
-//! approval_status_raw: a short trailing decision clause ("Approved.",
-//! "Deferred.") is inconsistently populated by the model even when
-//! literally present and even with an explicit worked example demonstrating
-//! it. This is left as an open, honestly-measured result rather than
-//! weakening the assertion to force a pass — matches the plan's own Open
-//! Risk ("Extraction precision/recall threshold not set by the PRD",
-//! Founder, target 2026-07-20). Next steps for whoever picks this up:
-//! try structured "quote the final sentence first" chain-of-thought, a
-//! second-pass status-only extraction call, or revisit whether 90% is the
-//! right bar before the labelled set is the real 200-item one.
+//! RESOLVED (previously an unresolved finding, ~85% completeness — see git
+//! history for the original note): the gap was entirely in
+//! approval_status_raw going null on ~25% of qualifying extractions despite
+//! six rounds of prompt-only iteration. Root cause, confirmed directly
+//! against the live API rather than assumed: asking for 9 fields in one
+//! structured-output call made this one short trailing-sentence field
+//! disproportionately likely to be dropped. Fixed with a second-pass,
+//! status-only call (`extractor::recover_status`) that fires only when the
+//! main call returns null for it — see `extractor::extract_entities` and
+//! `llm::LlmProvider::complete_text`. Two dead ends ruled out along the
+//! way: `temperature` is outright rejected by this model's API as
+//! deprecated (not just a bad idea); the first version of the recovery
+//! pass reused `complete()`, whose JSON-schema output constraint made the
+//! model re-emit a full extraction object as the "status" instead of plain
+//! text — fixed by adding `complete_text` (no schema constraint).
+//! Current measured completeness: 95.3%, classification accuracy 100%.
 
 use shovelsup_web::pipeline::extractor::extract_entities;
 use shovelsup_web::pipeline::extractor::llm::AnthropicProvider;

@@ -65,15 +65,23 @@ and the response's Content-Type header.
 
 ## REQ-003 — Extract Construction Project Entities
 
-⚠️ **Open risk (real, measured — see tests/pipeline_extraction.rs header):**
-field completeness against the labelled set is ~85%, stable across repeated
-real-API runs, below the plan's own 90% interim gate. The gap is
-specifically `approval_status_raw` (a short trailing decision clause is
-inconsistently extracted). Six rounds of real prompt iteration (worked
-example, effort=high, field reordering) were tried; classification accuracy
-(has_mention/physical_work) is 97-100%. Left unresolved rather than
-weakening the assertion — matches the plan's own Open Risk on this exact
-threshold (Founder, target 2026-07-20).
+✅ **Open risk resolved:** field completeness against the labelled set was
+~85% (stable across repeated real-API runs), below the plan's own 90%
+interim gate — specifically `approval_status_raw` going null on ~25% of
+qualifying extractions despite six rounds of prompt-only iteration.
+Root-caused and fixed: asking for 9 fields in one call made this one short
+trailing-sentence field disproportionately likely to be dropped; added a
+second-pass, status-only LLM call (`extractor::recover_status`) that fires
+only when the main call returns null for it. Two dead ends ruled out along
+the way and worth recording so they aren't retried — `temperature` is
+outright rejected by this model's API as deprecated (confirmed directly
+against the live API); the first version of the fix reused `complete()`,
+whose JSON-schema constraint made the model re-emit a full extraction
+object as the "status" text instead of following the plain-text
+instruction, corrupting the field even though the field became non-null
+(caught before shipping — added `LlmProvider::complete_text`, no schema
+constraint, for this call). Current measured completeness: 95.3%,
+classification accuracy 100%. See `tests/pipeline_extraction.rs` header.
 
 ⚠️ **Scope reduction (flagged, not silent):** the ≥200-item hand-labelled,
 3-municipality fixture set (IMP-REQ-003-08) requires real scraped documents
@@ -81,7 +89,7 @@ with human ground truth, which cannot be authentically fabricated. Built a
 30-item clearly-synthetic set instead — see tests/pipeline_extraction.rs.
 
 ### Loop A — Test Plan Implementation Breakdown
-- [x] TC-REQ-003-1 — Qualifying project extracts all 5 fields ⚠️ Needs Human Review: real field-completeness is ~85%, not the required ≥90% for all 5 fields — see risk note above
+- [x] TC-REQ-003-1 — Qualifying project extracts all 5 fields (95.3% completeness, 100% classification accuracy against the live API — see resolved risk note above)
 - [x] TC-REQ-003-2 — Single scale-indicator fixture accepted
 - [x] TC-REQ-003-3 — Rezoning-only motion excluded despite LLM hallucination
 - [x] TC-REQ-003-4 — Malformed LLM JSON discarded, not persisted
@@ -97,7 +105,7 @@ with human ground truth, which cannot be authentically fabricated. Built a
 - [x] IMP-REQ-003-06 — Retry/backoff for LLM transient failures
 - [x] IMP-REQ-003-07 — Handle malformed/truncated LLM JSON
 - [ ] IMP-REQ-003-08 — Assemble ≥200-item labelled fixture set (3 municipalities) ⚠️ Needs Human Review: scope-reduced to a 30-item synthetic set, see risk note above
-- [ ] IMP-REQ-003-09 — Integration test: ≥90% field-completeness on labelled set ⚠️ Test unresolved: real measured completeness is ~85%, below the 90% gate — see risk note above
+- [x] IMP-REQ-003-09 — Integration test: ≥90% field-completeness on labelled set (95.3% against the live API, see resolved risk note above)
 
 ## REQ-004 — Normalize Approval Status in English and French
 
@@ -333,7 +341,7 @@ fail.
 - [x] TC-REQ-002-3
 - [x] TC-REQ-002-4
 - [x] TC-REQ-002-5
-- [ ] TC-REQ-003-1 ⚠️ System test unresolved: real field-completeness ~85%, below the 90% gate — see REQ-003 risk note
+- [x] TC-REQ-003-1
 - [x] TC-REQ-003-2
 - [x] TC-REQ-003-3
 - [x] TC-REQ-003-4

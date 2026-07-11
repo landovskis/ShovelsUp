@@ -72,6 +72,21 @@ pub async fn extract_entities(
         _ => raw.project_name,
     };
 
+    // Status-recovery second pass (TC-REQ-003-1 field-completeness fix):
+    // the main call asks for 9 fields at once, and approval_status_raw —
+    // almost always a short trailing sentence separate from the rest of
+    // the excerpt — is disproportionately likely to be missed under that
+    // load even though the same model reliably finds it when it's the
+    // *only* thing being asked for. Only fires when the main pass came back
+    // null, so it costs nothing on the common case where the field was
+    // already found. `temperature` is not a usable lever here — the
+    // Anthropic API rejects it outright as deprecated for this model,
+    // confirmed directly against the live API rather than assumed.
+    let approval_status_raw = match raw.approval_status_raw {
+        Some(status) => Some(status),
+        None => recover_status(chunk_text, language, llm).await,
+    };
+
     Ok(Some(ExtractionResult {
         physical_work,
         project_name,
@@ -80,9 +95,30 @@ pub async fn extract_entities(
         scale_units: raw.scale_units,
         scale_gfa_sqm: raw.scale_gfa_sqm,
         scale_storeys: raw.scale_storeys,
-        approval_status_raw: raw.approval_status_raw,
+        approval_status_raw,
         reference_number: raw.reference_number,
     }))
+}
+
+/// Focused second-pass call for `approval_status_raw` alone, used only
+/// when the main extraction pass returned `null` for it. Failures here
+/// (network error, refusal, an unparseable response) are swallowed to
+/// `None` rather than propagated — this is a best-effort completeness
+/// improvement, not a required step; the mention still persists without a
+/// status either way, exactly as it did before this recovery pass existed.
+async fn recover_status(chunk_text: &str, language: &str, llm: &dyn LlmProvider) -> Option<String> {
+    let system_prompt = match language {
+        "fr" => prompts::fr::STATUS_ONLY_SYSTEM_PROMPT,
+        _ => prompts::en::STATUS_ONLY_SYSTEM_PROMPT,
+    };
+
+    let response = llm.complete_text(system_prompt, chunk_text).await.ok()?;
+    let trimmed = response.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("none") {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 /// Runs extraction for `document_chunk_id`, persists the resulting mention
@@ -269,6 +305,75 @@ mod tests {
             extraction.project_name.as_deref(),
             Some("Demande de M. [nom retiré]")
         );
+    }
+
+    /// Status-recovery second pass: when the main call returns
+    /// `approval_status_raw: null`, a second, status-only call runs and its
+    /// result is used instead of leaving the field null.
+    #[tokio::test]
+    async fn extract_entities_recovers_null_status_via_second_pass() {
+        struct SequencedProvider {
+            responses: std::sync::Mutex<Vec<&'static str>>,
+            prompts_seen: std::sync::Mutex<Vec<String>>,
+        }
+        #[async_trait::async_trait]
+        impl LlmProvider for SequencedProvider {
+            async fn complete(
+                &self,
+                system: &str,
+                _user_content: &str,
+            ) -> Result<String, llm::LlmError> {
+                self.prompts_seen.lock().unwrap().push(system.to_string());
+                Ok(self.responses.lock().unwrap().remove(0).to_string())
+            }
+        }
+        let no_status_json = r#"{"has_mention":true,"physical_work":true,"project_name":"Maple Court","civic_address":"123 Main St","project_type":"residential","scale_units":48,"scale_gfa_sqm":null,"scale_storeys":6,"approval_status_raw":null}"#;
+        let llm = SequencedProvider {
+            responses: std::sync::Mutex::new(vec![no_status_json, "Approved."]),
+            prompts_seen: std::sync::Mutex::new(Vec::new()),
+        };
+
+        let result = extract_entities(
+            "Item 4: construction of a new residential building at 123 Main St, 48 units, 6 storeys. Approved.",
+            "en",
+            &llm,
+        )
+        .await
+        .unwrap();
+
+        let extraction = result.expect("expected a qualifying extraction");
+        assert_eq!(extraction.approval_status_raw.as_deref(), Some("Approved."));
+
+        let prompts_seen = llm.prompts_seen.lock().unwrap();
+        assert_eq!(prompts_seen.len(), 2, "expected exactly one recovery call, not more");
+        assert_eq!(prompts_seen[1], prompts::en::STATUS_ONLY_SYSTEM_PROMPT);
+    }
+
+    /// The recovery pass responding "NONE" leaves the field null rather
+    /// than persisting the literal word.
+    #[tokio::test]
+    async fn extract_entities_leaves_status_null_when_recovery_also_finds_none() {
+        let no_status_json = r#"{"has_mention":true,"physical_work":true,"project_name":"Maple Court","civic_address":"123 Main St","project_type":"residential","scale_units":48,"scale_gfa_sqm":null,"scale_storeys":6,"approval_status_raw":null}"#;
+
+        struct TwoResponseProvider {
+            responses: std::sync::Mutex<Vec<&'static str>>,
+        }
+        #[async_trait::async_trait]
+        impl LlmProvider for TwoResponseProvider {
+            async fn complete(&self, _system: &str, _user_content: &str) -> Result<String, llm::LlmError> {
+                Ok(self.responses.lock().unwrap().remove(0).to_string())
+            }
+        }
+        let llm = TwoResponseProvider {
+            responses: std::sync::Mutex::new(vec![no_status_json, "NONE"]),
+        };
+
+        let result = extract_entities("Item 4: some project text with no stated decision.", "en", &llm)
+            .await
+            .unwrap();
+
+        let extraction = result.expect("expected a qualifying extraction");
+        assert_eq!(extraction.approval_status_raw, None);
     }
 
     /// TC-REQ-007-1: French proceedings extract all 5 fields at EN parity —
