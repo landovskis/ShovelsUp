@@ -83,10 +83,24 @@ instruction, corrupting the field even though the field became non-null
 constraint, for this call). Current measured completeness: 95.3%,
 classification accuracy 100%. See `tests/pipeline_extraction.rs` header.
 
-⚠️ **Scope reduction (flagged, not silent):** the ≥200-item hand-labelled,
-3-municipality fixture set (IMP-REQ-003-08) requires real scraped documents
-with human ground truth, which cannot be authentically fabricated. Built a
-30-item clearly-synthetic set instead — see tests/pipeline_extraction.rs.
+⚠️ **Scope shortfall, now with real documents (flagged, not silent):** the
+≥200-item hand-labelled, 3-municipality fixture set (IMP-REQ-003-08) is 30
+synthetic items + 3 real items (33 total), still far short of 200. Real
+attempt made: `toronto.ca/legdocs` is genuinely reachable — fetched real
+"Report for Action" PDFs (46/48/50/52 Laing Street demolition; 1-97 Dorney
+Court/2-8 Flemington Road/21-39 Varna Drive, part of Lawrence Heights
+Phase 2; 241 Redpath Avenue) with real addresses and unit/storey counts.
+Vancouver is completely inaccessible — `council.vancouver.ca` and
+`rezoning.vancouver.ca` returned HTTP 403 on every path tried (WebFetch,
+direct curl with a browser user agent, Wayback Machine); no browser
+extension was available in this session to work around it. Montreal's real
+items are in REQ-007 below (French). The remaining shortfall is structural,
+not effort: real building-permit decisions with unit/storey/GFA detail are
+made by sub-council bodies (Toronto Community Council, Montreal
+arrondissements) processing many applications per year — reaching 200 real
+items would mean scraping many individual planning applications across
+multiple meetings per city, not "the last meeting," which was the
+explicitly scoped request. See tests/pipeline_extraction.rs header.
 
 ### Loop A — Test Plan Implementation Breakdown
 - [x] TC-REQ-003-1 — Qualifying project extracts all 5 fields (95.3% completeness, 100% classification accuracy against the live API — see resolved risk note above)
@@ -104,7 +118,7 @@ with human ground truth, which cannot be authentically fabricated. Built a
 - [x] IMP-REQ-003-05 — Wire `extract_entities` dispatch end-to-end
 - [x] IMP-REQ-003-06 — Retry/backoff for LLM transient failures
 - [x] IMP-REQ-003-07 — Handle malformed/truncated LLM JSON
-- [ ] IMP-REQ-003-08 — Assemble ≥200-item labelled fixture set (3 municipalities) ⚠️ Needs Human Review: scope-reduced to a 30-item synthetic set, see risk note above
+- [ ] IMP-REQ-003-08 — Assemble ≥200-item labelled fixture set (3 municipalities) ⚠️ Needs Human Review: 33 items (30 synthetic + 3 real from Toronto), still short of 200; Vancouver fully inaccessible, see risk note above
 - [x] IMP-REQ-003-09 — Integration test: ≥90% field-completeness on labelled set (95.3% against the live API, see resolved risk note above)
 
 ## REQ-004 — Normalize Approval Status in English and French
@@ -211,10 +225,21 @@ same status-recovery second pass added for REQ-003's TC-REQ-003-1
 (`extractor::recover_status`, language-aware, shared code path), and does
 even better here than the EN set.
 
-⚠️ **Scope reduction (flagged, matching REQ-003's precedent):** the
-≥100-item hand-labelled French fixture subset (IMP-REQ-007-06) requires
-real scraped Quebec documents with human ground truth. Built a 20-item
-clearly-synthetic set instead — see `tests/pipeline_extraction_fr.rs`.
+⚠️ **Scope shortfall, now with real documents (flagged, not silent):** the
+≥100-item hand-labelled French fixture subset (IMP-REQ-007-06) is 20
+synthetic items + 3 real items (23 total), still far short of 100. Real
+attempt made: fetched the genuine 70-page procès-verbal of the Montreal
+city council's January 26, 2026 ordinary meeting
+(ville.montreal.qc.ca/documents/Adi_Public/CM/CM_PV_ORDI_2026-01-26_13h00_FR.pdf)
+and extracted 3 real resolutions with real addresses and "Adopté à
+l'unanimité" decision text. All 3 are non-qualifying — for different real
+reasons (a land sale enabling future housing construction, administrative;
+a real construction item with no scale indicator stated; a land purchase
+for a future road project, administrative) — because city-level Montreal
+council minutes are dominated by land transactions, financing bylaws, and
+appointments; granular building-permit decisions with unit/storey detail
+are made at the arrondissement (borough) level, a separate system not
+reached in this session. See `tests/pipeline_extraction_fr.rs` header.
 
 ### Loop A — Test Plan Implementation Breakdown
 - [x] TC-REQ-007-1 — French proceedings extract all 5 fields at EN parity (98.7% completeness, 100% classification accuracy against the live API)
@@ -229,7 +254,7 @@ clearly-synthetic set instead — see `tests/pipeline_extraction_fr.rs`.
 - [x] IMP-REQ-007-03 — Wire per-language routing into extraction dispatch
 - [x] IMP-REQ-007-04 — Extend French named-individual redaction rules (built the missing EN-baseline dispatcher alongside it; wired into `extract_entities` to strip named individuals from `project_name` on the FR path, verified end to end)
 - [x] IMP-REQ-007-05 — Per-language field-completeness/confidence metric
-- [x] IMP-REQ-007-06 — Assemble ≥100-item labelled French fixture subset ⚠️ Needs Human Review: scope-reduced to a 20-item synthetic set, see risk note above
+- [x] IMP-REQ-007-06 — Assemble ≥100-item labelled French fixture subset ⚠️ Needs Human Review: 23 items (20 synthetic + 3 real from Montreal), still short of 100, see risk note above
 - [x] IMP-REQ-007-07 — Integration test: FR parity vs EN (98.7% completeness against the live API, exceeding the 90% gate and EN's own 95.3%)
 
 ## REQ-008 — Public Search Without an Account
