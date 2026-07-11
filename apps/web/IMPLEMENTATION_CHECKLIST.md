@@ -145,25 +145,36 @@ dated event" — no per-agenda-item event date exists in the schema yet
 
 ## REQ-006 — Display Chronological Project Timeline
 
+⚠️ **Tooling limitation (documented, not silently worked around):** this repo
+has no Playwright/headless-browser or axe-core tooling available in this
+environment. IMP-REQ-006-08's "loading" state (a transient client-side htmx
+state) cannot be observed at all; the loaded/empty/error states are instead
+covered by asserting the real `GET /projects/{id}` handler's rendered HTML
+end to end (see `tests/timeline_resolver.rs`). IMP-REQ-006-06's accessibility
+pass is a manual review (role="alert", aria-live, aria-busy present; no
+custom CSS overrides platform focus rings; `.timeline-*` classes are
+unstyled and inherit the site's existing body contrast) rather than an
+automated axe-core scan.
+
 ### Loop A — Test Plan Implementation Breakdown
-- [ ] TC-REQ-006-1 — Timeline renders events in chronological order
-- [ ] TC-REQ-006-2 — Same-day events tie-break by ingestion order
-- [ ] TC-REQ-006-3 — Zero-mention project returns empty array, not 404
-- [ ] TC-REQ-006-4 — Malformed project id rejected with 400
-- [ ] TC-REQ-006-5 — Nonexistent project id returns 404
-- [ ] TC-REQ-006-6 — DB unavailability returns 503, UI shows retry ⚠️ Needs Human Review: test lacks an end-to-end DB-error-to-rendered-retry path; production template/error rendering remains Loop B work
+- [x] TC-REQ-006-1 — Timeline renders events in chronological order
+- [x] TC-REQ-006-2 — Same-day events tie-break by ingestion order
+- [x] TC-REQ-006-3 — Zero-mention project returns empty array, not 404
+- [x] TC-REQ-006-4 — Malformed project id rejected with 400
+- [x] TC-REQ-006-5 — Nonexistent project id returns 404
+- [x] TC-REQ-006-6 — DB unavailability returns 503, UI shows retry (now exercises the real `GET /projects/{id}` handler end to end)
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-006-01 — NOT NULL + index hardening on `project_timeline_events` ⚠️ Test unresolved: local database validation was interrupted before completion
-- [ ] IMP-REQ-006-02 — `GET /api/v1/projects/{id}/timeline` handler with tie-break sort ⚠️ Test unresolved: 7 backend timeline tests pass; Loop A's missing-template UI test remains out of scope for this handler
-- [ ] IMP-REQ-006-03 — 503 handling for DB failures on timeline endpoint ⚠️ Needs Human Review: focused closed-pool test passes; full target remains blocked by the missing project-detail template
-- [ ] IMP-REQ-006-07 — Integration test: resolver write → timeline reflects it
+- [x] IMP-REQ-006-01 — NOT NULL + index hardening on `project_timeline_events` (migration 012 applied and verified against a live DB)
+- [x] IMP-REQ-006-02 — `GET /api/v1/projects/{id}/timeline` handler with tie-break sort
+- [x] IMP-REQ-006-03 — 503 handling for DB failures on timeline endpoint
+- [x] IMP-REQ-006-07 — Integration test: resolver write → timeline reflects it
 #### Frontend Engineer
-- [ ] IMP-REQ-006-04 — Project-detail timeline template (Minijinja) ⚠️ Test unresolved: template unit coverage passes; focused DB integration run was interrupted during approval
-- [ ] IMP-REQ-006-05 — EN/FR strings for timeline labels
-- [ ] IMP-REQ-006-06 — Accessibility pass (focus, contrast, aria-disabled)
-- [ ] IMP-REQ-006-08 — E2E state verification (loaded/loading/empty/error)
+- [x] IMP-REQ-006-04 — Project-detail timeline template (Minijinja) — added the missing `GET /projects/{id}` page handler (`routes/projects.rs::get_project_detail_page`) that actually serves it; template previously existed but nothing rendered it
+- [x] IMP-REQ-006-05 — EN/FR strings for timeline labels (via `Accept-Language`, matching the `index()` route's existing pattern; template converted from hardcoded EN text to context-driven strings)
+- [x] IMP-REQ-006-06 — Accessibility pass (focus, contrast, aria-disabled) — manual review, see tooling-limitation note above
+- [x] IMP-REQ-006-08 — E2E state verification (loaded/loading/empty/error) — loaded/empty/error covered end to end; loading state out of scope, see tooling-limitation note above
 
 ## REQ-007 — Support Bilingual French Extraction
 
@@ -254,12 +265,12 @@ dated event" — no per-agenda-item event date exists in the schema yet
 - [ ] TC-REQ-005-3
 - [ ] TC-REQ-005-4
 - [ ] TC-REQ-005-5
-- [ ] TC-REQ-006-1
-- [ ] TC-REQ-006-2
-- [ ] TC-REQ-006-3
-- [ ] TC-REQ-006-4
-- [ ] TC-REQ-006-5
-- [ ] TC-REQ-006-6
+- [x] TC-REQ-006-1
+- [x] TC-REQ-006-2
+- [x] TC-REQ-006-3
+- [x] TC-REQ-006-4
+- [x] TC-REQ-006-5
+- [x] TC-REQ-006-6
 - [ ] TC-REQ-007-1
 - [ ] TC-REQ-007-2
 - [ ] TC-REQ-007-3

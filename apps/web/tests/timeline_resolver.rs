@@ -270,25 +270,117 @@ async fn tc_req_006_6_db_unavailability_returns_503(pool: PgPool) {
     assert!(body.is_empty());
 }
 
-/// TC-REQ-006-6 (UI half): a database outage renders an accessible retry state.
-/// The production template is intentionally absent during Loop A, so this test
-/// fails until IMP-REQ-006-04 through -06 provide it.
-#[test]
-fn tc_req_006_6_db_unavailability_renders_retry_ui() {
-    let mut env = Environment::new();
-    env.set_loader(path_loader("templates"));
-    let template = env
-        .get_template("project_detail.html")
-        .expect("project detail template must exist");
-    let html = template
-        .render(minijinja::context! {
-            timeline_error => true,
-            retry_label => "Retry timeline",
-        })
-        .expect("project detail error state must render");
+/// TC-REQ-006-6 (UI half): a database outage on the project-detail page
+/// (`GET /projects/{id}`) returns 503 and renders an accessible retry state.
+/// Exercises the real handler end to end, not just the template in isolation.
+#[sqlx::test(migrations = "./migrations")]
+async fn tc_req_006_6_db_unavailability_renders_retry_ui(pool: PgPool) {
+    let project_id = seed_project(&pool, "6b outage crescent", "residential").await;
+    pool.close().await;
 
+    let app = app(test_state(pool));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
     assert!(html.contains("Retry timeline"));
-    assert!(html.contains("role=\"alert\"") || html.contains("role='alert'"));
+    assert!(html.contains("role=\"alert\""));
+}
+
+/// IMP-REQ-006-04/-08: the project-detail page renders the empty state
+/// (not the loading or error state) for a project with zero timeline events.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_006_04_project_detail_page_renders_empty_state(pool: PgPool) {
+    let project_id = seed_project(&pool, "8 empty crescent", "residential").await;
+
+    let app = app(test_state(pool));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+    assert!(html.contains("No timeline events have been recorded for this project yet."));
+    assert!(!html.contains("timeline-error"));
+}
+
+/// IMP-REQ-006-04/-08: a project with events renders them in the loaded state.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_006_04_project_detail_page_renders_loaded_state(pool: PgPool) {
+    let project_id = seed_project(&pool, "9 loaded loop", "commercial").await;
+    let chunk_id = seed_document_chunk(&pool).await;
+    let mention_id = insert_mention(&pool, chunk_id, "9 loaded loop", "commercial").await;
+    seed_timeline_event(&pool, project_id, mention_id, chrono::Utc::now(), "approved").await;
+
+    let app = app(test_state(pool));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+    assert!(html.contains("approved"));
+    assert!(html.contains("timeline-event"));
+}
+
+/// IMP-REQ-006-05: FR/EN strings render per `Accept-Language`.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_006_05_project_detail_page_renders_french_labels(pool: PgPool) {
+    let project_id = seed_project(&pool, "10 rue vide", "residential").await;
+
+    let app = app(test_state(pool));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .header("accept-language", "fr-CA,fr;q=0.9")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+    assert!(html.contains("<html lang=\"fr\">"));
+    assert!(html.contains("Historique du projet"));
+    assert!(html.contains("Aucun événement n’a encore été enregistré pour ce projet."));
 }
 
 /// IMP-REQ-006-07: resolver write is immediately visible via the timeline

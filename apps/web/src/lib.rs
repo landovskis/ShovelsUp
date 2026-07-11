@@ -36,6 +36,14 @@ pub fn app(state: AppState) -> Router {
 
     Router::new()
         .route("/", get(routes::index))
+        .route(
+            "/projects/:id",
+            get(routes::projects::get_project_detail_page),
+        )
+        .route(
+            "/api/v1/projects/:id/timeline",
+            get(routes::projects::get_project_timeline),
+        )
         .merge(admin_routes)
         .with_state(state)
 }
