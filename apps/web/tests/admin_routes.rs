@@ -29,10 +29,13 @@ fn basic_auth_header(user: &str, password: &str) -> String {
     )
 }
 
-fn test_state(pool: PgPool) -> AppState {
+async fn test_state(pool: PgPool) -> AppState {
+    let redis_client = redis::Client::open("redis://localhost:6380").unwrap();
+    let redis = redis::aio::ConnectionManager::new(redis_client).await.unwrap();
     AppState {
         env: Arc::new(Environment::new()),
         db: pool,
+        redis,
     }
 }
 
@@ -81,7 +84,7 @@ async fn seed_source_document(pool: &PgPool, content: &[u8], content_type: &str)
 async fn test_reprocess_without_auth_header_is_forbidden(pool: PgPool) {
     ensure_admin_env();
     let job_id = seed_fetch_job(&pool, "failed").await;
-    let router = app(test_state(pool));
+    let router = app(test_state(pool).await);
 
     let response = router
         .oneshot(
@@ -101,7 +104,7 @@ async fn test_reprocess_without_auth_header_is_forbidden(pool: PgPool) {
 async fn test_reprocess_with_wrong_password_is_forbidden(pool: PgPool) {
     ensure_admin_env();
     let job_id = seed_fetch_job(&pool, "failed").await;
-    let router = app(test_state(pool));
+    let router = app(test_state(pool).await);
 
     let response = router
         .oneshot(
@@ -121,7 +124,7 @@ async fn test_reprocess_with_wrong_password_is_forbidden(pool: PgPool) {
 #[sqlx::test(migrations = "./migrations")]
 async fn test_reprocess_missing_job_returns_404(pool: PgPool) {
     ensure_admin_env();
-    let router = app(test_state(pool));
+    let router = app(test_state(pool).await);
     let missing_id = uuid::Uuid::new_v4();
 
     let response = router
@@ -146,7 +149,7 @@ async fn test_reprocess_missing_job_returns_404(pool: PgPool) {
 async fn test_reprocess_pending_job_returns_409(pool: PgPool) {
     ensure_admin_env();
     let job_id = seed_fetch_job(&pool, "pending").await;
-    let router = app(test_state(pool));
+    let router = app(test_state(pool).await);
 
     let response = router
         .oneshot(
@@ -170,7 +173,7 @@ async fn test_reprocess_pending_job_returns_409(pool: PgPool) {
 async fn test_reprocess_failed_job_resets_to_pending(pool: PgPool) {
     ensure_admin_env();
     let job_id = seed_fetch_job(&pool, "failed").await;
-    let router = app(test_state(pool.clone()));
+    let router = app(test_state(pool.clone()).await);
 
     let response = router
         .oneshot(
@@ -200,7 +203,7 @@ async fn test_reprocess_failed_job_resets_to_pending(pool: PgPool) {
 #[sqlx::test(migrations = "./migrations")]
 async fn test_reprocess_source_document_missing_returns_404(pool: PgPool) {
     ensure_admin_env();
-    let router = app(test_state(pool));
+    let router = app(test_state(pool).await);
     let missing_id = uuid::Uuid::new_v4();
 
     let response = router
@@ -227,7 +230,7 @@ async fn test_reprocess_source_document_missing_returns_404(pool: PgPool) {
 async fn test_reprocess_source_document_parses_and_reports_status(pool: PgPool) {
     ensure_admin_env();
     let doc_id = seed_source_document(&pool, b"<p>Item approved by council.</p>", "text/html").await;
-    let router = app(test_state(pool.clone()));
+    let router = app(test_state(pool.clone()).await);
 
     let response = router
         .oneshot(

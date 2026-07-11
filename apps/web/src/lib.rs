@@ -1,3 +1,4 @@
+pub mod jobs;
 pub mod middleware;
 pub mod pipeline;
 pub mod routes;
@@ -8,6 +9,7 @@ use axum::{
     Router,
 };
 use minijinja::Environment;
+use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 use std::sync::Arc;
 
@@ -15,6 +17,10 @@ use std::sync::Arc;
 pub struct AppState {
     pub env: Arc<Environment<'static>>,
     pub db: PgPool,
+    /// Backs the per-IP search rate limiter (IMP-REQ-008-05). `redis` was
+    /// already provisioned in docker-compose/.env but unused by any prior
+    /// requirement — this is its first real caller.
+    pub redis: ConnectionManager,
 }
 
 /// Builds the full application router (routes + middleware), shared by
@@ -34,6 +40,14 @@ pub fn app(state: AppState) -> Router {
             middleware::admin_auth::require_admin,
         ));
 
+    let search_routes = Router::new()
+        .route("/search", get(routes::search::get_search_page))
+        .route("/api/v1/projects/search", get(routes::search::search_projects))
+        .layer(axum_middleware::from_fn_with_state(
+            state.clone(),
+            middleware::rate_limit::rate_limit_search,
+        ));
+
     Router::new()
         .route("/", get(routes::index))
         .route(
@@ -45,5 +59,6 @@ pub fn app(state: AppState) -> Router {
             get(routes::projects::get_project_timeline),
         )
         .merge(admin_routes)
+        .merge(search_routes)
         .with_state(state)
 }

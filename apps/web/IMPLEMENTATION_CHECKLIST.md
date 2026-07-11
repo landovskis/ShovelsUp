@@ -230,22 +230,43 @@ clearly-synthetic set instead — see `tests/pipeline_extraction_fr.rs`.
 
 ## REQ-008 — Public Search Without an Account
 
+⚠️ **Interim scope decision (flagged, not silently assumed):** the plan's
+refresh-job acceptance criteria says "excludes `review_state=pending`", but
+no `review_state` column exists on `projects` — that's REQ-009's
+confirm/reject workflow, not yet built at this point in the execution
+order. Under the current resolver (REQ-005), a `projects` row is only ever
+created via an unambiguous match; genuinely ambiguous matches go to
+`review_candidates` and never get a `projects` row. So every current
+`projects` row is already "confirmed" by construction, and the refresh job
+selects all of them — see the doc comment on
+`jobs::public_search_refresh::refresh_public_search_index`. Once REQ-009
+ships a `review_state` column, this query needs a `WHERE review_state =
+'confirmed'` clause.
+
+⚠️ **Infrastructure wired for the first time:** `redis` was a declared
+dependency and provisioned in docker-compose/.env since the start of this
+plan but had no caller anywhere in the codebase — `AppState` now holds a
+`redis::aio::ConnectionManager`, used by the new rate-limit middleware.
+This touched `main.rs` and both existing test helpers
+(`tests/admin_routes.rs`, `tests/timeline_resolver.rs`) to add the new
+field; all pre-existing tests still pass.
+
 ### Loop A — Test Plan Implementation Breakdown
-- [ ] TC-REQ-008-1 — Anonymous search by civic address returns matching project
-- [ ] TC-REQ-008-2 — Search by municipality name (empty keyword boundary)
-- [ ] TC-REQ-008-3 — Invalid `per_page` rejected without DB query
-- [ ] TC-REQ-008-4 — 503 when search connection pool exhausted
+- [x] TC-REQ-008-1 — Anonymous search by civic address returns matching project
+- [x] TC-REQ-008-2 — Search by municipality name (empty keyword boundary)
+- [x] TC-REQ-008-3 — Invalid `per_page` rejected without DB query
+- [x] TC-REQ-008-4 — 503 when search connection pool exhausted
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-008-01 — `public_search_documents` migration
-- [ ] IMP-REQ-008-02 — Refresh job populating index from confirmed projects
-- [ ] IMP-REQ-008-03 — `GET /api/v1/projects/search` handler
-- [ ] IMP-REQ-008-05 — Per-IP rate-limiting middleware
-- [ ] IMP-REQ-008-06 — Automate TC-REQ-008-1..4
+- [x] IMP-REQ-008-01 — `public_search_documents` migration
+- [x] IMP-REQ-008-02 — Refresh job populating index from confirmed projects (see interim scope note above)
+- [x] IMP-REQ-008-03 — `GET /api/v1/projects/search` handler
+- [x] IMP-REQ-008-05 — Per-IP rate-limiting middleware (wires up the previously-unused Redis dependency, see note above)
+- [x] IMP-REQ-008-06 — Automate TC-REQ-008-1..4
 #### Frontend Engineer
-- [ ] IMP-REQ-008-04 — Server-rendered public search page (Minijinja, EN/FR)
-- [ ] IMP-REQ-008-07 — Accessibility/bilingual UX verification
+- [x] IMP-REQ-008-04 — Server-rendered public search page (Minijinja, EN/FR) — server-side query on `GET /search` itself rather than htmx-calling the JSON API, avoiding a JSON-into-HTML mismatch
+- [x] IMP-REQ-008-07 — Accessibility/bilingual UX verification — manual review (role="search", labelled input, role="alert" error state, results as a semantic list); no axe-core tooling available, same limitation as REQ-006
 
 ## REQ-009 — Human-Review Queue for Ambiguous Matches
 

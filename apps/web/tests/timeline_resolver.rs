@@ -31,12 +31,15 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-fn test_state(pool: PgPool) -> AppState {
+async fn test_state(pool: PgPool) -> AppState {
     let mut env = Environment::new();
     env.set_loader(path_loader("templates"));
+    let redis_client = redis::Client::open("redis://localhost:6380").unwrap();
+    let redis = redis::aio::ConnectionManager::new(redis_client).await.unwrap();
     AppState {
         env: std::sync::Arc::new(env),
         db: pool,
+        redis,
     }
 }
 
@@ -125,7 +128,7 @@ async fn tc_req_006_1_timeline_renders_events_in_chronological_order(pool: PgPoo
     seed_timeline_event(&pool, project_id, m1, base, "proposed").await;
     seed_timeline_event(&pool, project_id, m3, base + chrono::Duration::days(5), "deferred").await;
 
-    let app = app(test_state(pool));
+    let app = app(test_state(pool).await);
     let response = app
         .oneshot(
             Request::builder()
@@ -162,7 +165,7 @@ async fn tc_req_006_2_same_day_events_tie_break_by_ingestion_order(pool: PgPool)
     let first_id = seed_timeline_event(&pool, project_id, m1, same_day, "proposed").await;
     let second_id = seed_timeline_event(&pool, project_id, m2, same_day, "approved").await;
 
-    let app = app(test_state(pool));
+    let app = app(test_state(pool).await);
     let response = app
         .oneshot(
             Request::builder()
@@ -188,7 +191,7 @@ async fn tc_req_006_2_same_day_events_tie_break_by_ingestion_order(pool: PgPool)
 async fn tc_req_006_3_zero_mention_project_returns_empty_array(pool: PgPool) {
     let project_id = seed_project(&pool, "3 empty blvd", "institutional").await;
 
-    let app = app(test_state(pool));
+    let app = app(test_state(pool).await);
     let response = app
         .oneshot(
             Request::builder()
@@ -211,7 +214,7 @@ async fn tc_req_006_3_zero_mention_project_returns_empty_array(pool: PgPool) {
 /// TC-REQ-006-4: malformed project id rejected with 400.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_req_006_4_malformed_project_id_rejected_with_400(pool: PgPool) {
-    let app = app(test_state(pool));
+    let app = app(test_state(pool).await);
     let response = app
         .oneshot(
             Request::builder()
@@ -228,7 +231,7 @@ async fn tc_req_006_4_malformed_project_id_rejected_with_400(pool: PgPool) {
 /// TC-REQ-006-5: nonexistent project id returns 404.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_req_006_5_nonexistent_project_id_returns_404(pool: PgPool) {
-    let app = app(test_state(pool));
+    let app = app(test_state(pool).await);
     let response = app
         .oneshot(
             Request::builder()
@@ -251,7 +254,7 @@ async fn tc_req_006_6_db_unavailability_returns_503(pool: PgPool) {
     let project_id = seed_project(&pool, "6 outage way", "residential").await;
     pool.close().await;
 
-    let app = app(test_state(pool));
+    let app = app(test_state(pool).await);
     let response = app
         .oneshot(
             Request::builder()
@@ -278,7 +281,7 @@ async fn tc_req_006_6_db_unavailability_renders_retry_ui(pool: PgPool) {
     let project_id = seed_project(&pool, "6b outage crescent", "residential").await;
     pool.close().await;
 
-    let app = app(test_state(pool));
+    let app = app(test_state(pool).await);
     let response = app
         .oneshot(
             Request::builder()
@@ -305,7 +308,7 @@ async fn tc_req_006_6_db_unavailability_renders_retry_ui(pool: PgPool) {
 async fn imp_req_006_04_project_detail_page_renders_empty_state(pool: PgPool) {
     let project_id = seed_project(&pool, "8 empty crescent", "residential").await;
 
-    let app = app(test_state(pool));
+    let app = app(test_state(pool).await);
     let response = app
         .oneshot(
             Request::builder()
@@ -334,7 +337,7 @@ async fn imp_req_006_04_project_detail_page_renders_loaded_state(pool: PgPool) {
     let mention_id = insert_mention(&pool, chunk_id, "9 loaded loop", "commercial").await;
     seed_timeline_event(&pool, project_id, mention_id, chrono::Utc::now(), "approved").await;
 
-    let app = app(test_state(pool));
+    let app = app(test_state(pool).await);
     let response = app
         .oneshot(
             Request::builder()
@@ -360,7 +363,7 @@ async fn imp_req_006_04_project_detail_page_renders_loaded_state(pool: PgPool) {
 async fn imp_req_006_05_project_detail_page_renders_french_labels(pool: PgPool) {
     let project_id = seed_project(&pool, "10 rue vide", "residential").await;
 
-    let app = app(test_state(pool));
+    let app = app(test_state(pool).await);
     let response = app
         .oneshot(
             Request::builder()
@@ -395,7 +398,7 @@ async fn imp_req_006_07_resolver_write_reflected_in_timeline(pool: PgPool) {
         other => panic!("expected NewProject, got {other:?}"),
     };
 
-    let app = app(test_state(pool));
+    let app = app(test_state(pool).await);
     let response = app
         .oneshot(
             Request::builder()

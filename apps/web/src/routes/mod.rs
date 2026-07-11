@@ -5,6 +5,7 @@ use crate::AppState;
 
 pub mod admin;
 pub mod projects;
+pub mod search;
 
 pub(crate) fn detect_lang(headers: &HeaderMap) -> &'static str {
     let accept = headers

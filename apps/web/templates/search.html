@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title | default("Search projects", true) }} | ShovelsUp{% endblock %}
+
+{% block content %}
+<section class="search-page" aria-labelledby="search-heading">
+    <h1 id="search-heading">{{ heading | default("Search for a project", true) }}</h1>
+
+    <form role="search" method="get" action="/search">
+        <label for="search-q">{{ search_label | default("Civic address or municipality", true) }}</label>
+        <input type="text" id="search-q" name="q" autocomplete="off" value="{{ query | default('', true) }}">
+        <button type="submit">{{ submit_label | default("Search", true) }}</button>
+    </form>
+
+    <div id="search-results" aria-live="polite">
+        {% if search_error | default(false) %}
+        <div class="search-error" role="alert">
+            <p>{{ search_error_message | default("We couldn’t complete that search.", true) }}</p>
+        </div>
+        {% elif has_searched | default(false) and search_results | default([]) | length > 0 %}
+        <ul class="search-results-list">
+            {% for result in search_results %}
+            <li class="search-result">
+                <a href="/projects/{{ result.project_id }}">{{ result.civic_address_normalized }}</a>
+                <span>{{ result.municipality_name | default("", true) }}</span>
+                <span>{{ result.normalized_status | default("", true) }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% elif has_searched | default(false) %}
+        <p class="search-empty">{{ empty_message | default("No projects match your search.", true) }}</p>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
