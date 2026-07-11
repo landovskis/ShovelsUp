@@ -151,11 +151,11 @@ dated event" — no per-agenda-item event date exists in the schema yet
 - [ ] TC-REQ-006-3 — Zero-mention project returns empty array, not 404
 - [ ] TC-REQ-006-4 — Malformed project id rejected with 400
 - [ ] TC-REQ-006-5 — Nonexistent project id returns 404
-- [ ] TC-REQ-006-6 — DB unavailability returns 503, UI shows retry
+- [ ] TC-REQ-006-6 — DB unavailability returns 503, UI shows retry ⚠️ Needs Human Review: test lacks an end-to-end DB-error-to-rendered-retry path; production template/error rendering remains Loop B work
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-006-01 — NOT NULL + index hardening on `project_timeline_events`
+- [ ] IMP-REQ-006-01 — NOT NULL + index hardening on `project_timeline_events` ⚠️ Test unresolved: local database validation was interrupted before completion
 - [ ] IMP-REQ-006-02 — `GET /api/v1/projects/{id}/timeline` handler with tie-break sort
 - [ ] IMP-REQ-006-03 — 503 handling for DB failures on timeline endpoint
 - [ ] IMP-REQ-006-07 — Integration test: resolver write → timeline reflects it
