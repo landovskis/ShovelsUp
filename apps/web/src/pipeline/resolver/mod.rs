@@ -1,4 +1,5 @@
 pub mod address;
+pub mod address_fr;
 
 use sqlx::PgPool;
 use std::time::Duration;
@@ -72,8 +73,17 @@ where
 }
 
 async fn try_resolve(pool: &PgPool, mention_id: Uuid) -> Result<ResolutionOutcome, sqlx::Error> {
+    // IMP-REQ-007-02 wiring: the source chunk's language picks the address
+    // normalizer, mirroring extract_and_store's language routing, so a
+    // French mention's civic address is normalized with the Quebec ruleset
+    // rather than the English one (address.rs's own docstring says this
+    // module's matcher logic is shared but normalization differs by
+    // language — this is the one place that dispatch has to happen).
     let mention = sqlx::query!(
-        "SELECT civic_address, project_type, reference_number FROM project_mentions WHERE id = $1",
+        "SELECT pm.civic_address, pm.project_type, pm.reference_number, dc.language \
+         FROM project_mentions pm \
+         JOIN document_chunks dc ON dc.id = pm.document_chunk_id \
+         WHERE pm.id = $1",
         mention_id
     )
     .fetch_optional(pool)
@@ -92,7 +102,10 @@ async fn try_resolve(pool: &PgPool, mention_id: Uuid) -> Result<ResolutionOutcom
     else {
         return Ok(ResolutionOutcome::InsufficientData);
     };
-    let normalized_address = address::normalize_address(civic_address);
+    let normalized_address = match mention.language.as_deref() {
+        Some("fr") => address_fr::normalize_address_fr(civic_address),
+        _ => address::normalize_address(civic_address),
+    };
 
     // Priority 2: address+type match. Exact (address, type) match is
     // unambiguous and links directly. The partial unique index on

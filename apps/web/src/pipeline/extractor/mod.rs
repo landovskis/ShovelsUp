@@ -29,12 +29,21 @@ pub enum ExtractError {
 /// Returns `Ok(None)` when the LLM found no project mention in the chunk
 /// (not an error). Malformed/truncated JSON is a discardable per-chunk
 /// failure (TC-REQ-003-4), not a crash.
+/// `language` selects the extraction prompt (IMP-REQ-007-03): `"fr"` routes
+/// to `prompts::fr`, anything else (including unset/unknown) defaults to
+/// `prompts::en` — RULE-001 validation and scale-indicator acceptance below
+/// are language-agnostic and shared across both.
 pub async fn extract_entities(
     chunk_text: &str,
+    language: &str,
     llm: &dyn LlmProvider,
 ) -> Result<Option<ExtractionResult>, ExtractError> {
+    let system_prompt = match language {
+        "fr" => prompts::fr::SYSTEM_PROMPT,
+        _ => prompts::en::SYSTEM_PROMPT,
+    };
     let raw_json = llm
-        .complete(prompts::en::SYSTEM_PROMPT, chunk_text)
+        .complete(system_prompt, chunk_text)
         .await
         .map_err(|e| ExtractError::Llm(e.to_string()))?;
 
@@ -45,7 +54,7 @@ pub async fn extract_entities(
         return Ok(None);
     }
 
-    let physical_work = validator::validate_physical_work(chunk_text, raw.physical_work);
+    let physical_work = validator::validate_physical_work(chunk_text, language, raw.physical_work);
     if !physical_work {
         return Ok(None);
     }
@@ -83,7 +92,17 @@ pub async fn extract_and_store(
     chunk_text: &str,
     llm: &dyn LlmProvider,
 ) -> Result<Option<Uuid>, sqlx::Error> {
-    let outcome = extract_entities(chunk_text, llm).await;
+    // IMP-REQ-007-03: language drives both prompt selection here and status
+    // normalization below — fetched once up front rather than twice.
+    let chunk_language: Option<String> = sqlx::query_scalar!(
+        "SELECT language FROM document_chunks WHERE id = $1",
+        document_chunk_id
+    )
+    .fetch_one(pool)
+    .await?;
+    let language = chunk_language.as_deref().unwrap_or("en");
+
+    let outcome = extract_entities(chunk_text, language, llm).await;
 
     let status = match &outcome {
         Ok(Some(_)) => "extracted",
@@ -118,27 +137,18 @@ pub async fn extract_and_store(
             // conflict, wired directly into the extraction output path
             // (IMP-REQ-004-06) rather than as a separate later pass.
             if let Some(raw_status) = &extraction.approval_status_raw {
-                let language: Option<String> = sqlx::query_scalar!(
-                    "SELECT language FROM document_chunks WHERE id = $1",
-                    document_chunk_id
-                )
-                .fetch_one(pool)
-                .await?;
+                if let Some(normalized) =
+                    normalizer::normalize_status(pool, raw_status, language).await?
+                {
+                    sqlx::query!(
+                        "UPDATE project_mentions SET normalized_status = $1 WHERE id = $2",
+                        normalized,
+                        mention_id
+                    )
+                    .execute(pool)
+                    .await?;
 
-                if let Some(language) = language {
-                    if let Some(normalized) =
-                        normalizer::normalize_status(pool, raw_status, &language).await?
-                    {
-                        sqlx::query!(
-                            "UPDATE project_mentions SET normalized_status = $1 WHERE id = $2",
-                            normalized,
-                            mention_id
-                        )
-                        .execute(pool)
-                        .await?;
-
-                        normalizer::detect_and_flag_status_conflict(pool, mention_id).await?;
-                    }
+                    normalizer::detect_and_flag_status_conflict(pool, mention_id).await?;
                 }
             }
 
@@ -183,9 +193,13 @@ mod tests {
     #[tokio::test]
     async fn extract_entities_returns_result_for_qualifying_mention() {
         let llm = FixedResponseProvider::new(QUALIFYING_JSON);
-        let result = extract_entities("Council approved 48-unit, 6-storey building at 123 Main St.", &llm)
-            .await
-            .unwrap();
+        let result = extract_entities(
+            "Council approved 48-unit, 6-storey building at 123 Main St.",
+            "en",
+            &llm,
+        )
+        .await
+        .unwrap();
         let extraction = result.expect("expected a qualifying extraction");
         assert_eq!(extraction.project_name.as_deref(), Some("Riverside Commons"));
         assert_eq!(extraction.scale_units, Some(48));
@@ -194,7 +208,9 @@ mod tests {
     #[tokio::test]
     async fn extract_entities_returns_none_when_llm_reports_no_mention() {
         let llm = FixedResponseProvider::new(NO_MENTION_JSON);
-        let result = extract_entities("The meeting was called to order.", &llm).await.unwrap();
+        let result = extract_entities("The meeting was called to order.", "en", &llm)
+            .await
+            .unwrap();
         assert!(result.is_none());
     }
 
@@ -202,7 +218,7 @@ mod tests {
     #[tokio::test]
     async fn extract_entities_returns_malformed_json_error() {
         let llm = FixedResponseProvider::new(MALFORMED_JSON);
-        let result = extract_entities("Some chunk text.", &llm).await;
+        let result = extract_entities("Some chunk text.", "en", &llm).await;
         assert!(matches!(result, Err(ExtractError::MalformedJson(_))));
     }
 
@@ -215,6 +231,88 @@ mod tests {
         );
         let result = extract_entities(
             "Zoning by-law amendment to permit mixed-use designation at 400 King St.",
+            "en",
+            &llm,
+        )
+        .await
+        .unwrap();
+        assert!(result.is_none());
+    }
+
+    /// TC-REQ-007-1: French proceedings extract all 5 fields at EN parity —
+    /// exercises the `"fr"` prompt-routing path end to end (IMP-REQ-007-01/-03).
+    #[tokio::test]
+    async fn extract_entities_routes_to_french_prompt_and_extracts() {
+        struct RecordingProvider {
+            response: &'static str,
+            system_prompt: std::sync::Mutex<Option<String>>,
+        }
+        #[async_trait::async_trait]
+        impl LlmProvider for RecordingProvider {
+            async fn complete(
+                &self,
+                system: &str,
+                _user_content: &str,
+            ) -> Result<String, llm::LlmError> {
+                *self.system_prompt.lock().unwrap() = Some(system.to_string());
+                Ok(self.response.to_string())
+            }
+        }
+        let fr_json = r#"{"has_mention":true,"physical_work":true,"project_name":"Les Jardins du Parc","civic_address":"123, rue Principale","project_type":"résidentiel","scale_units":48,"scale_gfa_sqm":null,"scale_storeys":6,"approval_status_raw":"Approuvé"}"#;
+        let llm = RecordingProvider {
+            response: fr_json,
+            system_prompt: std::sync::Mutex::new(None),
+        };
+
+        let result = extract_entities(
+            "Le conseil a approuvé un bâtiment de 48 logements et 6 étages au 123, rue Principale.",
+            "fr",
+            &llm,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result.expect("expected a qualifying extraction").project_name.as_deref(),
+            Some("Les Jardins du Parc")
+        );
+        let used_prompt = llm.system_prompt.lock().unwrap().clone().unwrap();
+        assert_eq!(used_prompt, prompts::fr::SYSTEM_PROMPT);
+    }
+
+    /// TC-REQ-007-2: a minimal single-word French status phrase round-trips
+    /// through extraction into `approval_status_raw` intact — the pipeline
+    /// half of this test case. (Whether the live LLM actually *produces* a
+    /// single-word status this reliably is verified by the FR field-
+    /// completeness gate in tests/pipeline_extraction_fr.rs when
+    /// ANTHROPIC_API_KEY is set; this test verifies the code path doesn't
+    /// truncate, discard, or otherwise mangle a short value.)
+    #[tokio::test]
+    async fn extract_entities_preserves_minimal_single_word_french_status() {
+        let llm = FixedResponseProvider::new(
+            r#"{"has_mention":true,"physical_work":true,"project_name":null,"civic_address":"200, rue Elm","project_type":"institutionnel","scale_units":null,"scale_gfa_sqm":null,"scale_storeys":2,"approval_status_raw":"Approuvé"}"#,
+        );
+        let result = extract_entities(
+            "Point 9 : Rénovation du centre communautaire au 200, rue Elm, ajout de 2 étages. Approuvé.",
+            "fr",
+            &llm,
+        )
+        .await
+        .unwrap();
+        let extraction = result.expect("expected a qualifying extraction");
+        assert_eq!(extraction.approval_status_raw.as_deref(), Some("Approuvé"));
+    }
+
+    /// TC-REQ-007-3: RULE-001 excludes a French rezoning-only motion even
+    /// when the LLM hallucinates physical_work=true.
+    #[tokio::test]
+    async fn extract_entities_rejects_french_rezoning_only_despite_llm_claim() {
+        let llm = FixedResponseProvider::new(
+            r#"{"has_mention":true,"physical_work":true,"project_name":"X","civic_address":null,"project_type":null,"scale_units":10,"scale_gfa_sqm":null,"scale_storeys":null,"approval_status_raw":null}"#,
+        );
+        let result = extract_entities(
+            "Modification de zonage pour permettre une désignation à usage mixte au 400, rue King.",
+            "fr",
             &llm,
         )
         .await

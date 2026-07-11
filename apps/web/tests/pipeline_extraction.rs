@@ -137,7 +137,7 @@ async fn extraction_meets_field_completeness_gate_on_labelled_fixtures() {
     let mut completeness_scores: Vec<f64> = Vec::new();
 
     for fixture in FIXTURES {
-        let result = extract_entities(fixture.text, &llm).await;
+        let result = extract_entities(fixture.text, "en", &llm).await;
         let qualified = matches!(result, Ok(Some(_)));
 
         if qualified == fixture.should_qualify {

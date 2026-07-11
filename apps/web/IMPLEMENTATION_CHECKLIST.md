@@ -178,21 +178,55 @@ automated axe-core scan.
 
 ## REQ-007 — Support Bilingual French Extraction
 
+⚠️ **Plan gaps closed (flagged, not silently worked around):**
+1. RULE-001's validator (`extractor/validator.rs`) was English-keyword-only
+   despite the plan cross-referencing it to TC-REQ-007-3 as
+   "language-agnostic" — a French rezoning motion would have matched
+   neither keyword list and silently fallen through to trusting the LLM's
+   own claim. Added French keyword lists so the validator is actually
+   language-agnostic, per the plan's own stated design intent.
+2. IMP-REQ-007-04 ("extend French redaction rules") presupposes an existing
+   EN redaction baseline from an earlier requirement, but no requirement
+   before REQ-007 created one (`pipeline/redaction/` did not exist). Built
+   both the baseline dispatcher and the French rules together — there was
+   nothing to "extend".
+3. `resolver::try_resolve` (REQ-005) always used the English address
+   normalizer; wired it to dispatch to `address_fr::normalize_address_fr`
+   for French-language mentions so IMP-REQ-007-02's new module has any
+   real effect on resolution, matching `address.rs`'s own docstring
+   ("REQ-007 extends this module... matcher logic stays shared").
+
+⚠️ **Live-API tests not exercised against the real API in this session**
+(TC-REQ-007-1/-2 completeness gate in `tests/pipeline_extraction_fr.rs`):
+`ANTHROPIC_API_KEY` is present in `.env` but was not exported/spent against
+in this run — the test skips gracefully (asserted via the same pattern as
+`tests/pipeline_extraction.rs`), consistent with not incurring API cost
+without being asked. Code-path correctness (prompt routing, RULE-001,
+status round-tripping) is verified without the live API via
+`extract_entities_routes_to_french_prompt_and_extracts`,
+`extract_entities_preserves_minimal_single_word_french_status`, and the
+rezoning-exclusion unit tests.
+
+⚠️ **Scope reduction (flagged, matching REQ-003's precedent):** the
+≥100-item hand-labelled French fixture subset (IMP-REQ-007-06) requires
+real scraped Quebec documents with human ground truth. Built a 20-item
+clearly-synthetic set instead — see `tests/pipeline_extraction_fr.rs`.
+
 ### Loop A — Test Plan Implementation Breakdown
-- [ ] TC-REQ-007-1 — French proceedings extract all 5 fields at EN parity
-- [ ] TC-REQ-007-2 — Minimal single-word French status phrase maps correctly
-- [ ] TC-REQ-007-3 — RULE-001 excludes a French rezoning-only motion
-- [ ] TC-REQ-007-4 — LLM 503 during FR extraction is retryable
+- [ ] TC-REQ-007-1 — French proceedings extract all 5 fields at EN parity ⚠️ Needs Human Review: gate requires a real ANTHROPIC_API_KEY run, not exercised in this session (see note above)
+- [x] TC-REQ-007-2 — Minimal single-word French status phrase maps correctly (round-trip verified without live API; extraction-quality half same caveat as TC-REQ-007-1)
+- [x] TC-REQ-007-3 — RULE-001 excludes a French rezoning-only motion
+- [x] TC-REQ-007-4 — LLM 503 during FR extraction is retryable
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-007-01 — Author FR prompt template mirroring EN schema
-- [ ] IMP-REQ-007-02 — French-Quebec address normalization ruleset
-- [ ] IMP-REQ-007-03 — Wire per-language routing into extraction dispatch
-- [ ] IMP-REQ-007-04 — Extend French named-individual redaction rules
-- [ ] IMP-REQ-007-05 — Per-language field-completeness/confidence metric
-- [ ] IMP-REQ-007-06 — Assemble ≥100-item labelled French fixture subset
-- [ ] IMP-REQ-007-07 — Integration test: FR parity vs EN
+- [x] IMP-REQ-007-01 — Author FR prompt template mirroring EN schema
+- [x] IMP-REQ-007-02 — French-Quebec address normalization ruleset (wired into `resolver::try_resolve`'s language dispatch, see gap note above)
+- [x] IMP-REQ-007-03 — Wire per-language routing into extraction dispatch
+- [x] IMP-REQ-007-04 — Extend French named-individual redaction rules (built the missing EN-baseline dispatcher alongside it, see gap note above)
+- [x] IMP-REQ-007-05 — Per-language field-completeness/confidence metric
+- [x] IMP-REQ-007-06 — Assemble ≥100-item labelled French fixture subset ⚠️ Needs Human Review: scope-reduced to a 20-item synthetic set, see risk note above
+- [ ] IMP-REQ-007-07 — Integration test: FR parity vs EN ⚠️ Needs Human Review: written and passing structurally, but the live-API completeness assertion wasn't run against the real API in this session, see note above
 
 ## REQ-008 — Public Search Without an Account
 
