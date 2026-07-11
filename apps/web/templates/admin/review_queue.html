@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title | default("Review queue", true) }} | ShovelsUp{% endblock %}
+
+{% block content %}
+<section class="review-queue" aria-labelledby="review-queue-heading" data-confirm-label="{{ confirm_label | default('Confirm', true) }}" data-reject-label="{{ reject_label | default('Reject', true) }}">
+    <h1 id="review-queue-heading">{{ heading | default("Human review queue", true) }}</h1>
+
+    <div id="stale-conflict-banner" class="stale-conflict-banner" role="alert" hidden>
+        <p>{{ stale_conflict_message | default("This candidate has changed since it was loaded. Refresh and try again.", true) }}</p>
+    </div>
+
+    <nav aria-label="Review queue status tabs">
+        <ul class="review-queue-tabs" role="tablist">
+            <li role="presentation">
+                <a
+                    role="tab"
+                    aria-selected="{{ (active_tab | default('open', true) == 'open') | string | lower }}"
+                    href="/admin/review_queue?status=open"
+                >{{ tab_open | default("Open", true) }}</a>
+            </li>
+            <li role="presentation">
+                <a
+                    role="tab"
+                    aria-selected="{{ (active_tab | default('open', true) == 'confirmed') | string | lower }}"
+                    href="/admin/review_queue?status=confirmed"
+                >{{ tab_confirmed | default("Confirmed", true) }}</a>
+            </li>
+            <li role="presentation">
+                <a
+                    role="tab"
+                    aria-selected="{{ (active_tab | default('open', true) == 'rejected') | string | lower }}"
+                    href="/admin/review_queue?status=rejected"
+                >{{ tab_rejected | default("Rejected", true) }}</a>
+            </li>
+        </ul>
+    </nav>
+
+    <div id="review-candidates" aria-live="polite">
+        {% if candidates is defined and candidates | length > 0 %}
+        <ul class="review-candidates-list">
+            {% for candidate in candidates %}
+            <li class="review-candidate" data-candidate-id="{{ candidate.id }}" data-version="{{ candidate.version }}">
+                <span class="candidate-type">{{ candidate.candidate_type }}</span>
+                <span class="candidate-due-at">{{ candidate.due_at }}</span>
+                {% if candidate.overdue %}
+                <span class="candidate-overdue" role="status">{{ overdue_label | default("Overdue", true) }}</span>
+                {% endif %}
+                {% if active_tab | default('open', true) == 'open' %}
+                <form class="candidate-actions" data-candidate-id="{{ candidate.id }}" data-version="{{ candidate.version }}">
+                    <label>
+                        Project ID
+                        <input type="text" class="candidate-project-id" name="project_id" required>
+                    </label>
+                    <button type="button" class="candidate-confirm" data-action="confirm">{{ confirm_label | default("Confirm", true) }}</button>
+                    <button type="button" class="candidate-reject" data-action="reject">{{ reject_label | default("Reject", true) }}</button>
+                </form>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="review-candidates-empty">{{ empty_message | default("No candidates in this tab.", true) }}</p>
+        {% endif %}
+    </div>
+</section>
+<script src="/static/js/review_queue.js" defer></script>
+{% endblock %}

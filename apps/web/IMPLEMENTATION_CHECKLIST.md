@@ -270,30 +270,49 @@ field; all pre-existing tests still pass.
 
 ## REQ-009 — Human-Review Queue for Ambiguous Matches
 
+⚠️ **Pre-existing UX gap inherited, not introduced here (flagged, not
+silently worked around):** `middleware::admin_auth::require_admin` returns
+`403` with no `WWW-Authenticate` challenge, so browsers never show a native
+Basic Auth login prompt — it was built for programmatic clients
+(curl/k6, REQ-001/002's reprocess endpoints) reusing the exact middleware
+IMP-REQ-009-05 says to reuse. This is the first requirement to put a real
+browser-facing admin UI behind it (`/admin/review_queue`), and there is no
+in-app login flow — an operator's browser needs credentials supplied some
+other way (reverse-proxy injection, browser extension). Documented in
+`docs/runbooks/review_queue.md`; a proper admin login flow is out of this
+requirement's scope to invent.
+
+⚠️ **k6 script not run against a live environment** (IMP-REQ-009-11,
+TC-REQ-009-6): `loadtest/review_queue.js` is written and targets the real
+`/admin/review_candidates` endpoint, but — consistent with REQ-001/002's
+existing k6 scripts in this repo — it requires a running staging deployment
+with a 5,000-row seeded table, which doesn't exist in this local dev
+session. Same limitation already accepted for `fetch_load.js`/`parse_load.js`.
+
 ### Loop A — Test Plan Implementation Breakdown
-- [ ] TC-REQ-009-1 — Confirm merges ambiguous candidate into proposed project
-- [ ] TC-REQ-009-2 — Candidate exactly at SLA boundary not yet overdue
-- [ ] TC-REQ-009-3 — Stale version on confirm returns 409, no changes
-- [ ] TC-REQ-009-4 — Multi-match candidate appears in Open tab (cross-ref REQ-005-4)
-- [ ] TC-REQ-009-5 — DB failure during confirm leaves candidate unresolved, returns 503
-- [ ] TC-REQ-009-6 — Queue list endpoint meets latency target under load
+- [x] TC-REQ-009-1 — Confirm merges ambiguous candidate into proposed project
+- [x] TC-REQ-009-2 — Candidate exactly at SLA boundary not yet overdue
+- [x] TC-REQ-009-3 — Stale version on confirm returns 409, no changes
+- [x] TC-REQ-009-4 — Multi-match candidate appears in Open tab (cross-ref REQ-005-4)
+- [x] TC-REQ-009-5 — DB failure during confirm leaves candidate unresolved, returns 503
+- [ ] TC-REQ-009-6 — Queue list endpoint meets latency target under load ⚠️ Needs Human Review: k6 script written but not run against a live environment, see note above
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-009-01 — Business-day calendar helper for `due_at`
-- [ ] IMP-REQ-009-02 — `review_candidates`/`audit_events` migrations (coordinate with REQ-005)
-- [ ] IMP-REQ-009-03 — `confirm_candidate`/`reject_candidate` domain functions w/ optimistic version check
-- [ ] IMP-REQ-009-04 — Axum routes: list/detail/confirm/reject
-- [ ] IMP-REQ-009-05 — Admin-session auth middleware (reuse if one exists)
-- [ ] IMP-REQ-009-08 — Hourly SLA sweep job + overdue metric
-- [ ] IMP-REQ-009-09 — `REVIEW_QUEUE_ENABLED` feature flag
-- [ ] IMP-REQ-009-10 — Integration test: candidate → queue → confirm → timeline
-- [ ] IMP-REQ-009-11 — k6 performance script for queue list endpoint
-- [ ] IMP-REQ-009-13 — Operational runbook (SLA sweep, flag disable, reprocess)
+- [x] IMP-REQ-009-01 — Business-day calendar helper for `due_at`
+- [x] IMP-REQ-009-02 — `review_candidates`/`audit_events` migrations (coordinate with REQ-005)
+- [x] IMP-REQ-009-03 — `confirm_candidate`/`reject_candidate` domain functions w/ optimistic version check
+- [x] IMP-REQ-009-04 — Axum routes: list/detail/confirm/reject
+- [x] IMP-REQ-009-05 — Admin-session auth middleware (reuse if one exists) — reused `middleware::admin_auth`, see UX gap note above
+- [x] IMP-REQ-009-08 — Hourly SLA sweep job + overdue metric — plain callable function (`jobs::sla_sweep::compute_overdue_metric`), not a wired-up in-process scheduler, matching REQ-001's `Scheduler` precedent (no periodic-execution infra exists anywhere in this codebase)
+- [x] IMP-REQ-009-09 — `REVIEW_QUEUE_ENABLED` feature flag
+- [x] IMP-REQ-009-10 — Integration test: candidate → queue → confirm → timeline
+- [x] IMP-REQ-009-11 — k6 performance script for queue list endpoint ⚠️ Needs Human Review: written, not run against a live environment, see note above
+- [x] IMP-REQ-009-13 — Operational runbook (SLA sweep, flag disable, reprocess)
 #### Frontend Engineer
-- [ ] IMP-REQ-009-06 — Review queue list template (tabs, states, EN/FR)
-- [ ] IMP-REQ-009-07 — Wire Confirm/Reject buttons, handle 409 stale-conflict banner
-- [ ] IMP-REQ-009-12 — Accessibility/UX verification pass
+- [x] IMP-REQ-009-06 — Review queue list template (tabs, states, EN/FR)
+- [x] IMP-REQ-009-07 — Wire Confirm/Reject buttons, handle 409 stale-conflict banner
+- [x] IMP-REQ-009-12 — Accessibility/UX verification pass — manual review (role="tablist"/"tab", role="alert" banner, aria-live region, labelled input); no axe-core tooling available, same limitation as REQ-006/008
 
 ## System Tests (Loop A suite vs. Loop B production code)
 - [ ] TC-REQ-001-1

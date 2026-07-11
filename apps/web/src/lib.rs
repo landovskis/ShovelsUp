@@ -1,3 +1,5 @@
+pub mod config;
+pub mod domain;
 pub mod jobs;
 pub mod middleware;
 pub mod pipeline;
@@ -48,6 +50,34 @@ pub fn app(state: AppState) -> Router {
             middleware::rate_limit::rate_limit_search,
         ));
 
+    let review_queue_routes = Router::new()
+        .route(
+            "/admin/review_queue",
+            get(routes::review_queue::get_review_queue_page),
+        )
+        .route(
+            "/admin/review_candidates",
+            get(routes::review_queue::list_review_candidates),
+        )
+        .route(
+            "/admin/review_candidates/:id",
+            get(routes::review_queue::get_review_candidate),
+        )
+        .route(
+            "/admin/review_candidates/:id/confirm",
+            post(routes::review_queue::confirm_review_candidate),
+        )
+        .route(
+            "/admin/review_candidates/:id/reject",
+            post(routes::review_queue::reject_review_candidate),
+        )
+        .layer(axum_middleware::from_fn(
+            middleware::admin_auth::require_admin,
+        ))
+        .layer(axum_middleware::from_fn(
+            config::flags::require_review_queue_enabled,
+        ));
+
     Router::new()
         .route("/", get(routes::index))
         .route(
@@ -60,5 +90,6 @@ pub fn app(state: AppState) -> Router {
         )
         .merge(admin_routes)
         .merge(search_routes)
+        .merge(review_queue_routes)
         .with_state(state)
 }
