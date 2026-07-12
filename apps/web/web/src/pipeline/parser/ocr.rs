@@ -96,8 +96,8 @@ pub(crate) mod test_support {
 mod tests {
     use super::*;
 
-    const BLANK_PAGE_PDF: &[u8] = include_bytes!("../../../tests/fixtures/blank_page.pdf");
-    const MALFORMED_PDF: &[u8] = include_bytes!("../../../tests/fixtures/malformed.pdf");
+    const BLANK_PAGE_PDF: &[u8] = include_bytes!("../../../../tests/fixtures/blank_page.pdf");
+    const MALFORMED_PDF: &[u8] = include_bytes!("../../../../tests/fixtures/malformed.pdf");
 
     /// These tests all create/inspect `shovelsup-ocr-*` dirs under the
     /// process temp dir; `cargo test` runs tests in parallel by default, so

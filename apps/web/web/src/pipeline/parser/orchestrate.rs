@@ -157,7 +157,7 @@ mod tests {
     /// (retryable), not `failed` (permanent).
     #[sqlx::test(migrations = "./migrations")]
     async fn parse_and_store_marks_reprocessing_on_transient_ocr_failure(pool: PgPool) {
-        let blank_pdf = include_bytes!("../../../tests/fixtures/blank_page.pdf");
+        let blank_pdf = include_bytes!("../../../../tests/fixtures/blank_page.pdf");
         let doc_id = seed_source_document(&pool, blank_pdf, "application/pdf").await;
 
         let count = parse_and_store(&pool, doc_id, &FailingOcrProvider).await.unwrap();

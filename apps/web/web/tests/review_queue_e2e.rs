@@ -43,7 +43,7 @@ fn basic_auth_header(user: &str, password: &str) -> String {
 
 async fn test_state(pool: PgPool) -> AppState {
     let mut env = Environment::new();
-    env.set_loader(path_loader("templates"));
+    env.set_loader(path_loader("../templates"));
     let redis_client = redis::Client::open("redis://localhost:6380").unwrap();
     let redis = redis::aio::ConnectionManager::new(redis_client).await.unwrap();
     AppState {

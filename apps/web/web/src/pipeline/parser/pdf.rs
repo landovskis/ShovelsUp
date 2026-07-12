@@ -91,10 +91,10 @@ mod tests {
         }
     }
 
-    const MINIMAL_TEXT_PDF: &[u8] = include_bytes!("../../../tests/fixtures/minimal_text.pdf");
-    const MULTI_PAGE_TEXT_PDF: &[u8] = include_bytes!("../../../tests/fixtures/multi_page_text.pdf");
-    const BLANK_PAGE_PDF: &[u8] = include_bytes!("../../../tests/fixtures/blank_page.pdf");
-    const MALFORMED_PDF: &[u8] = include_bytes!("../../../tests/fixtures/malformed.pdf");
+    const MINIMAL_TEXT_PDF: &[u8] = include_bytes!("../../../../tests/fixtures/minimal_text.pdf");
+    const MULTI_PAGE_TEXT_PDF: &[u8] = include_bytes!("../../../../tests/fixtures/multi_page_text.pdf");
+    const BLANK_PAGE_PDF: &[u8] = include_bytes!("../../../../tests/fixtures/blank_page.pdf");
+    const MALFORMED_PDF: &[u8] = include_bytes!("../../../../tests/fixtures/malformed.pdf");
 
     #[test]
     fn should_ocr_true_for_near_empty_text() {
