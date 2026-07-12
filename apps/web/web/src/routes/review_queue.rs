@@ -17,7 +17,7 @@ use minijinja::context;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::domain::review_queue::{confirm_candidate, reject_candidate, ReviewQueueError};
+use shovelsup_domain::review_queue::{confirm_candidate, reject_candidate, ReviewQueueError};
 use crate::routes::detect_lang;
 use crate::AppState;
 

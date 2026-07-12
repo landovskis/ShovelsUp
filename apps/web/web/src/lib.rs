@@ -1,5 +1,4 @@
 pub mod config;
-pub mod domain;
 pub mod jobs;
 pub mod middleware;
 pub mod pipeline;

@@ -188,7 +188,7 @@ mod tests {
 
     /// TC-REQ-009-1: confirm merges the ambiguous candidate into the
     /// proposed project — the mention links, and a timeline event appears.
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn confirm_links_mention_and_creates_timeline_event(pool: PgPool) {
         let (candidate_id, mention_id) = seed_open_candidate(&pool).await;
         let project_id = seed_project(&pool).await;
@@ -224,7 +224,7 @@ mod tests {
 
     /// TC-REQ-009-3: stale version on confirm returns a typed conflict, no
     /// changes are made.
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn confirm_with_stale_version_returns_conflict_and_makes_no_changes(pool: PgPool) {
         let (candidate_id, _) = seed_open_candidate(&pool).await;
         let project_id = seed_project(&pool).await;
@@ -240,13 +240,13 @@ mod tests {
         assert_eq!(status, "open", "no change must occur on a version conflict");
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn confirm_missing_candidate_returns_not_found(pool: PgPool) {
         let result = confirm_candidate(&pool, Uuid::new_v4(), 1, Uuid::new_v4(), "founder@example.com").await;
         assert!(matches!(result, Err(ReviewQueueError::NotFound(_))));
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn reject_marks_candidate_rejected_without_linking(pool: PgPool) {
         let (candidate_id, mention_id) = seed_open_candidate(&pool).await;
 
@@ -267,7 +267,7 @@ mod tests {
         assert_eq!(linked_project, None);
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn confirm_already_resolved_candidate_returns_not_open(pool: PgPool) {
         let (candidate_id, _) = seed_open_candidate(&pool).await;
         let project_id = seed_project(&pool).await;

@@ -33,6 +33,7 @@ thiserror = "1"
 sha2 = "0.10"
 base64 = "0.22"
 encoding_rs = "0.8"
+shovelsup-domain = { path = "../domain" }
 
 [dev-dependencies]
 wiremock = "0.6"
