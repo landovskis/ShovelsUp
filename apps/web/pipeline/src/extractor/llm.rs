@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use super::prompts::en::PROMPT_VERSION;
+use super::prompts::{en, fr};
 use super::schema::extraction_json_schema;
 
 #[derive(Debug, thiserror::Error)]
@@ -195,10 +195,9 @@ fn backoff_delay(attempt: u32) -> Duration {
     Duration::from_millis(200u64 * 2u64.pow(attempt))
 }
 
-/// Marker to keep `PROMPT_VERSION` linked to the request path for future
-/// logging/observability (e.g. attaching it to stored extractions) without
-/// an unused-import warning today.
-pub const _ACTIVE_PROMPT_VERSION: &str = PROMPT_VERSION;
+/// Marker to keep both prompt versions linked to the request path for future
+/// logging/observability (e.g. attaching them to stored extractions).
+pub const _ACTIVE_PROMPT_VERSIONS: [&str; 2] = [en::PROMPT_VERSION, fr::PROMPT_VERSION];
 
 #[cfg(test)]
 pub mod test_support {
