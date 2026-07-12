@@ -1,10 +1,78 @@
 {% extends "base.html" %}
 
 {% block title %}ShovelsUp{% endblock %}
+{% block main_class %}home-main{% endblock %}
 
 {% block content %}
-<section class="hero">
-    <h1>ShovelsUp</h1>
-    <p>{{ tagline }}</p>
+<section class="hero" aria-labelledby="hero-title">
+    <div class="hero-grid">
+        <div class="hero-copy">
+            <div class="civic-stamp" aria-hidden="true">
+                <span>MTL / QC</span>
+                <span>DONNÉES OUVERTES</span>
+            </div>
+            <p class="eyebrow"><span aria-hidden="true"></span>{{ eyebrow }}</p>
+            <h1 id="hero-title">{{ heading_start }} <em>{{ heading_highlight }}</em></h1>
+            <p class="hero-lede">{{ tagline }}</p>
+
+            <form class="hero-search" role="search" method="get" action="/search">
+                <label for="hero-search-q">{{ search_label }}</label>
+                <div class="hero-search-controls">
+                    <span class="search-marker" aria-hidden="true"></span>
+                    <input type="search" id="hero-search-q" name="q" placeholder="{{ search_placeholder }}" autocomplete="street-address">
+                    <button type="submit">
+                        {{ search_button }}
+                        <span aria-hidden="true">&#8599;</span>
+                    </button>
+                </div>
+            </form>
+
+            <p class="hero-note"><span aria-hidden="true">✦</span>{{ search_note }}</p>
+        </div>
+
+        <div class="hero-visual" aria-label="{{ visual_label }}">
+            <div class="visual-index" aria-hidden="true"><span>01</span><span>URBAN FILE</span></div>
+            <div class="corner-mark corner-mark-top" aria-hidden="true"></div>
+            <div class="corner-mark corner-mark-bottom" aria-hidden="true"></div>
+            <div class="map-grid" aria-hidden="true"></div>
+            <div class="street-label street-label-one" aria-hidden="true">SAINT-LAURENT</div>
+            <div class="street-label street-label-two" aria-hidden="true">MONT-ROYAL</div>
+            <div class="map-pin" aria-hidden="true"><span></span></div>
+
+            <article class="permit-card">
+                <div class="permit-card-topline">
+                    <span>{{ sample_type }}</span>
+                    <span class="status-dot">{{ sample_status }}</span>
+                </div>
+                <p class="permit-number">{{ sample_number }}</p>
+                <h2>{{ sample_address }}</h2>
+                <div class="permit-meta">
+                    <div><span>{{ sample_borough_label }}</span><strong>{{ sample_borough }}</strong></div>
+                    <div><span>{{ sample_updated_label }}</span><strong>{{ sample_updated }}</strong></div>
+                </div>
+                <div class="permit-timeline" aria-hidden="true">
+                    <span class="done"></span><span class="done"></span><span class="active"></span><span></span>
+                </div>
+            </article>
+
+            <div class="decision-card">
+                <span class="decision-icon" aria-hidden="true">✓</span>
+                <p><span>{{ decision_label }}</span><strong>{{ decision_value }}</strong></p>
+            </div>
+        </div>
+    </div>
+
+    <div class="construction-band" aria-hidden="true">
+        <div>DONNÉES • DATA&nbsp;&nbsp;&nbsp; PERMIS • PERMITS&nbsp;&nbsp;&nbsp; MONTRÉAL • MONTREAL&nbsp;&nbsp;&nbsp; DONNÉES • DATA&nbsp;&nbsp;&nbsp; PERMIS • PERMITS</div>
+    </div>
+
+    <div class="hero-footer" aria-label="{{ coverage_label }}">
+        <span class="hero-footer-label">{{ coverage_label }}</span>
+        <span>Ville-Marie</span>
+        <span>Le Plateau</span>
+        <span>Rosemont</span>
+        <span>Sud-Ouest</span>
+        <span>+ 15</span>
+    </div>
 </section>
 {% endblock %}

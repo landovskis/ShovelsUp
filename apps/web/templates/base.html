@@ -10,7 +10,7 @@
 </head>
 <body>
     <shovels-header data-permits="{{ nav_permits }}" data-council="{{ nav_council }}"></shovels-header>
-    <main>
+    <main class="{% block main_class %}site-main{% endblock %}">
         {% block content %}{% endblock %}
     </main>
     <script type="module" src="/static/js/components.js"></script>

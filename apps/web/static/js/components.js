@@ -1,19 +1,18 @@
 class ShovelsHeader extends HTMLElement {
     connectedCallback() {
         const header = document.createElement('header');
-        header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:1rem 1.5rem;background:#fff;border-bottom:1px solid #e7e5e4;';
+        header.className = 'site-header';
 
         const brand = document.createElement('a');
         brand.href = '/';
-        brand.style.cssText = 'display:flex;align-items:center;text-decoration:none;';
+        brand.className = 'site-brand';
         const logo = document.createElement('img');
         logo.src = '/static/logo.svg';
         logo.alt = 'ShovelsUp';
-        logo.style.cssText = 'height:36px;width:auto;';
         brand.appendChild(logo);
 
         const nav = document.createElement('nav');
-        nav.style.cssText = 'display:flex;gap:1.5rem;';
+        nav.className = 'site-nav';
 
         for (const [label, href] of [
             [this.dataset.permits || 'Permits', '/permits'],
@@ -22,7 +21,6 @@ class ShovelsHeader extends HTMLElement {
             const a = document.createElement('a');
             a.href = href;
             a.textContent = label;
-            a.style.cssText = 'color:#1c1917;text-decoration:none;';
             nav.appendChild(a);
         }
 
