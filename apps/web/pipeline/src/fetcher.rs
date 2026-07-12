@@ -40,13 +40,16 @@ impl Default for Fetcher {
 impl Fetcher {
     pub fn new() -> Self {
         Self {
-            // Redirects are not followed: a redirect target is not re-checked
-            // against the domain allowlist, so following one would let an
-            // allowlisted host redirect the fetcher to an arbitrary
-            // (including internal/private) address — an SSRF vector. Municipal
-            // agenda pages are fetched by direct URL, so this is not expected
-            // to affect legitimate fetches; a redirect response instead
-            // surfaces as an HTTP error via `error_for_status`.
+            // reqwest itself never follows redirects: a redirect target must
+            // be re-checked against the domain allowlist before it's fetched
+            // (see fetch_with_retry), so following one at the HTTP-client
+            // level would let an allowlisted host redirect the fetcher to an
+            // arbitrary (including internal/private) address — an SSRF
+            // vector. `fetch_with_retry` follows at most one redirect hop
+            // itself, only after re-validating the target host, discovered
+            // when Montreal's real document-listing links turned out to be
+            // permalink-style redirectors (typeDoc=pv&doc=N -> the real,
+            // stable document URL on the same host) rather than direct URLs.
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
@@ -62,9 +65,9 @@ impl Fetcher {
         municipality_id: Uuid,
         url: &str,
     ) -> Result<FetchOutcome, FetchError> {
-        self.check_allowlist(pool, municipality_id, url).await?;
+        let allowlist = self.check_allowlist(pool, municipality_id, url).await?;
 
-        let (body, content_type) = self.fetch_with_retry(url).await?;
+        let (body, content_type) = self.fetch_with_retry(url, &allowlist).await?;
         let checksum = format!("{:x}", Sha256::digest(&body));
 
         if let Some(existing_id) = sqlx::query_scalar!(
@@ -106,17 +109,21 @@ impl Fetcher {
         municipality_id: Uuid,
         url: &str,
     ) -> Result<Vec<u8>, FetchError> {
-        self.check_allowlist(pool, municipality_id, url).await?;
-        let (body, _content_type) = self.fetch_with_retry(url).await?;
+        let allowlist = self.check_allowlist(pool, municipality_id, url).await?;
+        let (body, _content_type) = self.fetch_with_retry(url, &allowlist).await?;
         Ok(body)
     }
 
+    /// Returns the municipality's domain allowlist after confirming `url`'s
+    /// host is on it. Callers pass the returned allowlist to
+    /// `fetch_with_retry` so a same-domain redirect target can be
+    /// re-validated without a second database round trip.
     async fn check_allowlist(
         &self,
         pool: &PgPool,
         municipality_id: Uuid,
         url: &str,
-    ) -> Result<(), FetchError> {
+    ) -> Result<Vec<String>, FetchError> {
         let parsed = reqwest::Url::parse(url).map_err(|_| FetchError::InvalidUrl(url.to_string()))?;
         let host = parsed
             .host_str()
@@ -134,29 +141,76 @@ impl Fetcher {
         if !is_allowlisted(&host, &allowlist) {
             return Err(FetchError::NotAllowlisted(host));
         }
-        Ok(())
+        Ok(allowlist)
     }
 
     /// GET `url` with exponential backoff on transient (5xx / network) failures.
     /// Returns the raw response body (never decoded as text — REQ-002 parses
     /// PDFs, which are binary) plus its declared `Content-Type`, once a
     /// non-5xx response is received, or the last error after `MAX_ATTEMPTS`
-    /// attempts. Redirects are never followed (see the SSRF note on
-    /// `Fetcher::new`) and are rejected outright rather than treated as a
-    /// successful response.
-    async fn fetch_with_retry(&self, url: &str) -> Result<(Vec<u8>, Option<String>), FetchError> {
+    /// attempts.
+    ///
+    /// Follows at most `MAX_REDIRECTS` redirect hops: some municipal sites
+    /// resolve a document through a short chain rather than serving it
+    /// directly — Montreal's document permalinks resolve via a 302 to a
+    /// canonical URL, which itself 302s from `http://` to `https://` before
+    /// serving the real content (2 hops, confirmed directly against the
+    /// live site). The redirect target's host is re-validated against
+    /// `allowlist` at every hop before being followed — an unvalidated
+    /// follow would let an allowlisted host redirect the fetcher to an
+    /// arbitrary address (SSRF). Exceeding `MAX_REDIRECTS` is rejected
+    /// outright, as is any redirect whose target host isn't allowlisted.
+    async fn fetch_with_retry(
+        &self,
+        url: &str,
+        allowlist: &[String],
+    ) -> Result<(Vec<u8>, Option<String>), FetchError> {
+        const MAX_REDIRECTS: u32 = 2;
+
+        let mut current_url = url.to_string();
+        let mut redirects = 0u32;
         let mut attempt = 0u32;
         loop {
             attempt += 1;
-            match self.client.get(url).send().await {
+            match self.client.get(&current_url).send().await {
                 Ok(resp) if resp.status().is_server_error() && attempt < MAX_ATTEMPTS => {
                     tokio::time::sleep(backoff_delay(attempt)).await;
                 }
                 Ok(resp) if resp.status().is_redirection() => {
-                    return Err(FetchError::UnexpectedRedirect {
-                        url: url.to_string(),
-                        status: resp.status().as_u16(),
-                    });
+                    if redirects >= MAX_REDIRECTS {
+                        return Err(FetchError::UnexpectedRedirect {
+                            url: current_url,
+                            status: resp.status().as_u16(),
+                        });
+                    }
+
+                    let status = resp.status().as_u16();
+                    let location = resp
+                        .headers()
+                        .get(reqwest::header::LOCATION)
+                        .and_then(|v| v.to_str().ok())
+                        .ok_or(FetchError::UnexpectedRedirect {
+                            url: current_url.clone(),
+                            status,
+                        })?
+                        .to_string();
+
+                    let base = reqwest::Url::parse(&current_url)
+                        .map_err(|_| FetchError::InvalidUrl(current_url.clone()))?;
+                    let target = base
+                        .join(&location)
+                        .map_err(|_| FetchError::InvalidUrl(location.clone()))?;
+                    let target_host = target
+                        .host_str()
+                        .ok_or_else(|| FetchError::InvalidUrl(target.to_string()))?;
+
+                    if !is_allowlisted(target_host, allowlist) {
+                        return Err(FetchError::NotAllowlisted(target_host.to_string()));
+                    }
+
+                    current_url = target.to_string();
+                    redirects += 1;
+                    attempt = 0;
                 }
                 Ok(resp) => {
                     let resp = resp.error_for_status()?;

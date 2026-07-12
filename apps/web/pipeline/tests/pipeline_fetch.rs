@@ -214,11 +214,11 @@ async fn test_fetch_reports_missing_municipality(pool: PgPool) {
     assert!(matches!(result, Err(FetchError::MunicipalityNotFound(_))));
 }
 
-/// A redirect response must not be followed transparently — see the SSRF
-/// note on `Fetcher::new`. It should surface as an HTTP error rather than
+/// A redirect to a non-allowlisted host must not be followed — see the SSRF
+/// note on `Fetcher::new`. It should surface as `NotAllowlisted` rather than
 /// silently fetching whatever the `Location` header points at.
 #[sqlx::test(migrations = "../web/migrations")]
-async fn test_fetch_does_not_follow_redirects(pool: PgPool) {
+async fn test_fetch_rejects_redirect_to_non_allowlisted_host(pool: PgPool) {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/agenda.html"))
@@ -238,9 +238,119 @@ async fn test_fetch_does_not_follow_redirects(pool: PgPool) {
     let url = format!("{}/agenda.html", server.uri());
 
     let result = fetcher.fetch(&pool, municipality_id, &url).await;
+    match result {
+        Err(FetchError::NotAllowlisted(host)) => assert_eq!(host, "internal.invalid"),
+        other => panic!("expected NotAllowlisted, got {other:?}"),
+    }
+}
+
+/// A redirect to a still-allowlisted host (the real-world case: Montreal's
+/// document permalinks resolve via a 302 to their real, stable URL on the
+/// same host) must be followed exactly once and the resulting content
+/// fetched.
+#[sqlx::test(migrations = "../web/migrations")]
+async fn test_fetch_follows_one_redirect_to_allowlisted_host(pool: PgPool) {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/resolve"))
+        .respond_with(ResponseTemplate::new(302).insert_header("Location", "/real-document.pdf"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/real-document.pdf"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("real content"))
+        .mount(&server)
+        .await;
+
+    let host = reqwest::Url::parse(&server.uri())
+        .unwrap()
+        .host_str()
+        .unwrap()
+        .to_string();
+    let municipality_id = seed_test_municipality(&pool, &host).await;
+    let fetcher = Fetcher::new();
+    let url = format!("{}/resolve", server.uri());
+
+    let outcome = fetcher
+        .fetch(&pool, municipality_id, &url)
+        .await
+        .expect("redirect to an allowlisted host should be followed");
+    assert!(matches!(outcome, FetchOutcome::Fetched { .. }));
+}
+
+/// A two-hop redirect chain (the real-world Montreal pattern: a permalink
+/// resolver redirects to a canonical URL, which itself redirects http ->
+/// https) must be followed in full when every hop stays allowlisted.
+#[sqlx::test(migrations = "../web/migrations")]
+async fn test_fetch_follows_a_two_hop_redirect_chain(pool: PgPool) {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/first"))
+        .respond_with(ResponseTemplate::new(302).insert_header("Location", "/second"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/second"))
+        .respond_with(ResponseTemplate::new(302).insert_header("Location", "/real-document.pdf"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/real-document.pdf"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("real content"))
+        .mount(&server)
+        .await;
+
+    let host = reqwest::Url::parse(&server.uri())
+        .unwrap()
+        .host_str()
+        .unwrap()
+        .to_string();
+    let municipality_id = seed_test_municipality(&pool, &host).await;
+    let fetcher = Fetcher::new();
+    let url = format!("{}/first", server.uri());
+
+    let outcome = fetcher
+        .fetch(&pool, municipality_id, &url)
+        .await
+        .expect("a two-hop redirect chain should be followed in full");
+    assert!(matches!(outcome, FetchOutcome::Fetched { .. }));
+}
+
+/// A redirect chain longer than MAX_REDIRECTS must not be followed past the
+/// limit, even if every host in the chain is allowlisted — bounding how far
+/// a single fetch can be redirected.
+#[sqlx::test(migrations = "../web/migrations")]
+async fn test_fetch_rejects_a_redirect_chain_exceeding_the_limit(pool: PgPool) {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/first"))
+        .respond_with(ResponseTemplate::new(302).insert_header("Location", "/second"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/second"))
+        .respond_with(ResponseTemplate::new(302).insert_header("Location", "/third"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/third"))
+        .respond_with(ResponseTemplate::new(302).insert_header("Location", "/fourth"))
+        .mount(&server)
+        .await;
+
+    let host = reqwest::Url::parse(&server.uri())
+        .unwrap()
+        .host_str()
+        .unwrap()
+        .to_string();
+    let municipality_id = seed_test_municipality(&pool, &host).await;
+    let fetcher = Fetcher::new();
+    let url = format!("{}/first", server.uri());
+
+    let result = fetcher.fetch(&pool, municipality_id, &url).await;
     assert!(
         matches!(result, Err(FetchError::UnexpectedRedirect { .. })),
-        "redirect must not be followed, got {result:?}"
+        "a redirect chain exceeding MAX_REDIRECTS must not be followed, got {result:?}"
     );
 }
 
