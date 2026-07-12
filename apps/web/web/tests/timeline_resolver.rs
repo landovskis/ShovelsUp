@@ -25,7 +25,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use minijinja::{path_loader, Environment};
 use serde_json::Value;
-use shovelsup_web::pipeline::resolver::resolve_mention;
+use shovelsup_pipeline::resolver::resolve_mention;
 use shovelsup_web::{app, AppState};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -394,7 +394,7 @@ async fn imp_req_006_07_resolver_write_reflected_in_timeline(pool: PgPool) {
     let mention_id = insert_mention(&pool, chunk_id, "7 wired st", "mixed-use").await;
     let outcome = resolve_mention(&pool, mention_id).await.unwrap();
     let project_id = match outcome {
-        shovelsup_web::pipeline::resolver::ResolutionOutcome::NewProject { project_id } => project_id,
+        shovelsup_pipeline::resolver::ResolutionOutcome::NewProject { project_id } => project_id,
         other => panic!("expected NewProject, got {other:?}"),
     };
 

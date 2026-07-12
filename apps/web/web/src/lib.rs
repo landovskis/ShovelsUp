@@ -1,7 +1,6 @@
 pub mod config;
 pub mod jobs;
 pub mod middleware;
-pub mod pipeline;
 pub mod routes;
 
 use axum::{

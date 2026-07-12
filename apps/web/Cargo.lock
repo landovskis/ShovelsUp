@@ -2291,25 +2291,42 @@ dependencies = [
 ]
 
 [[package]]
-name = "shovelsup-web"
+name = "shovelsup-pipeline"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "axum",
- "base64",
- "bcrypt",
  "chrono",
  "encoding_rs",
- "http-body-util",
- "minijinja",
- "once_cell",
- "redis",
  "reqwest",
  "scraper",
  "serde",
  "serde_json",
  "sha2",
+ "sqlx",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "uuid",
+ "whatlang",
+ "wiremock",
+]
+
+[[package]]
+name = "shovelsup-web"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64",
+ "bcrypt",
+ "chrono",
+ "http-body-util",
+ "minijinja",
+ "once_cell",
+ "redis",
+ "serde",
+ "serde_json",
  "shovelsup-domain",
+ "shovelsup-pipeline",
  "sqlx",
  "thiserror 1.0.69",
  "tokio",
@@ -2318,7 +2335,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
- "whatlang",
  "wiremock",
 ]
 

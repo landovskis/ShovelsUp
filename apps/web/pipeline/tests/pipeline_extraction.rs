@@ -34,8 +34,8 @@
 //! text — fixed by adding `complete_text` (no schema constraint).
 //! Current measured completeness: 95.3%, classification accuracy 100%.
 
-use shovelsup_web::pipeline::extractor::extract_entities;
-use shovelsup_web::pipeline::extractor::llm::AnthropicProvider;
+use shovelsup_pipeline::extractor::extract_entities;
+use shovelsup_pipeline::extractor::llm::AnthropicProvider;
 
 struct Fixture {
     text: &'static str,
@@ -129,7 +129,7 @@ const FIXTURES: &[Fixture] = &[
 /// states one — a correct null on a nameless fixture must not count as
 /// incomplete.
 fn field_completeness(
-    result: &shovelsup_web::pipeline::extractor::schema::ExtractionResult,
+    result: &shovelsup_pipeline::extractor::schema::ExtractionResult,
     fixture: &Fixture,
 ) -> f64 {
     let mut expected = 3;

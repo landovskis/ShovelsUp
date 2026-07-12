@@ -6,7 +6,7 @@ pub mod validator;
 
 use uuid::Uuid;
 
-use crate::pipeline::{normalizer, redaction};
+use crate::{normalizer, redaction};
 use llm::LlmProvider;
 use schema::{ExtractionResult, RawExtraction};
 
@@ -201,7 +201,7 @@ pub async fn extract_and_store(
             // tracked project (IMP-REQ-005-05). A resolver error is
             // reported here but does not unwind extraction — the mention
             // itself was already persisted successfully.
-            if let Err(err) = crate::pipeline::resolver::resolve_mention(pool, mention_id).await {
+        if let Err(err) = crate::resolver::resolve_mention(pool, mention_id).await {
                 tracing::warn!(
                     mention_id = %mention_id,
                     error = %err,
@@ -483,7 +483,7 @@ mod tests {
         .unwrap()
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
     async fn extract_and_store_inserts_mention_and_marks_extracted(pool: PgPool) {
         let chunk_id = seed_chunk(&pool).await;
         let llm = FixedResponseProvider::new(QUALIFYING_JSON);
@@ -503,7 +503,7 @@ mod tests {
 
     /// reference_number (added for REQ-005's cross-reference matcher) must
     /// round-trip through extract_and_store, not just parse.
-    #[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
     async fn extract_and_store_persists_reference_number(pool: PgPool) {
         let chunk_id = seed_chunk(&pool).await;
         let llm = FixedResponseProvider::new(
@@ -525,7 +525,7 @@ mod tests {
         assert_eq!(reference_number.as_deref(), Some("Application No. 2026-045"));
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
     async fn extract_and_store_marks_no_mention_without_inserting(pool: PgPool) {
         let chunk_id = seed_chunk(&pool).await;
         let llm = FixedResponseProvider::new(NO_MENTION_JSON);
@@ -544,7 +544,7 @@ mod tests {
     }
 
     /// TC-REQ-003-4: zero rows persisted, chunk marked failed.
-    #[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
     async fn extract_and_store_marks_failed_on_malformed_json(pool: PgPool) {
         let chunk_id = seed_chunk(&pool).await;
         let llm = FixedResponseProvider::new(MALFORMED_JSON);
@@ -574,7 +574,7 @@ mod tests {
 
     /// TC-REQ-003-5 (retry-exhausted half): a sustained LLM failure marks
     /// the chunk reprocessing (retryable), not failed (permanent).
-    #[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
     async fn extract_and_store_marks_reprocessing_on_llm_failure(pool: PgPool) {
         let chunk_id = seed_chunk(&pool).await;
 

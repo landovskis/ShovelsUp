@@ -1,4 +1,4 @@
-use shovelsup_web::pipeline::fetcher::{FetchError, FetchOutcome, Fetcher};
+use shovelsup_pipeline::fetcher::{FetchError, FetchOutcome, Fetcher};
 use sqlx::PgPool;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -15,7 +15,7 @@ async fn seed_test_municipality(pool: &PgPool, allowed_host: &str) -> uuid::Uuid
 }
 
 /// TC-REQ-001-1: Fetch succeeds for a valid allowlisted URL.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn test_tc_req_001_1_fetch_succeeds_for_allowlisted_url(pool: PgPool) {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -55,7 +55,7 @@ async fn test_tc_req_001_1_fetch_succeeds_for_allowlisted_url(pool: PgPool) {
 }
 
 /// TC-REQ-001-2: Fetch is a no-op on identical checksum (dedupe).
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn test_tc_req_001_2_fetch_dedupes_identical_checksum(pool: PgPool) {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -97,7 +97,7 @@ async fn test_tc_req_001_2_fetch_dedupes_identical_checksum(pool: PgPool) {
 }
 
 /// TC-REQ-001-3: Fetch rejects a non-allowlisted domain before any HTTP request.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn test_tc_req_001_3_fetch_rejects_non_allowlisted_domain(pool: PgPool) {
     let municipality_id = seed_test_municipality(&pool, "only-this-host.example").await;
     let fetcher = Fetcher::new();
@@ -113,7 +113,7 @@ async fn test_tc_req_001_3_fetch_rejects_non_allowlisted_domain(pool: PgPool) {
 }
 
 /// TC-REQ-001-4: Fetch recovers from source 503 via retry/backoff.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn test_tc_req_001_4_fetch_recovers_from_503_via_retry(pool: PgPool) {
     let server = MockServer::start().await;
     // First two requests 503, third succeeds.
@@ -147,7 +147,7 @@ async fn test_tc_req_001_4_fetch_recovers_from_503_via_retry(pool: PgPool) {
 
 /// A 4xx response is a permanent client error, not a transient failure —
 /// it must not be retried.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn test_fetch_does_not_retry_4xx_responses(pool: PgPool) {
     let server = MockServer::start().await;
     // If the fetcher retried, this mock's default expectation of at most 1
@@ -178,7 +178,7 @@ async fn test_fetch_does_not_retry_4xx_responses(pool: PgPool) {
 
 /// Sustained 5xx failures exhaust MAX_ATTEMPTS and surface as an error rather
 /// than retrying forever.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn test_fetch_gives_up_after_max_attempts(pool: PgPool) {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -205,7 +205,7 @@ async fn test_fetch_gives_up_after_max_attempts(pool: PgPool) {
 
 /// Fetching against a municipality that doesn't exist is a distinct error
 /// from "not allowlisted".
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn test_fetch_reports_missing_municipality(pool: PgPool) {
     let fetcher = Fetcher::new();
     let result = fetcher
@@ -217,7 +217,7 @@ async fn test_fetch_reports_missing_municipality(pool: PgPool) {
 /// A redirect response must not be followed transparently — see the SSRF
 /// note on `Fetcher::new`. It should surface as an HTTP error rather than
 /// silently fetching whatever the `Location` header points at.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn test_fetch_does_not_follow_redirects(pool: PgPool) {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

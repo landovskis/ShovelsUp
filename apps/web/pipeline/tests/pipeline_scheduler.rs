@@ -1,10 +1,10 @@
 use chrono::{TimeZone, Utc};
-use shovelsup_web::pipeline::scheduler::Scheduler;
+use shovelsup_pipeline::scheduler::Scheduler;
 use sqlx::PgPool;
 
 /// The 002 seed migration inserts Toronto/Vancouver/Montreal, so a fresh
 /// migrated DB enqueues one job per seeded municipality.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn test_enqueue_due_fetches_creates_one_job_per_municipality(pool: PgPool) {
     let now = Utc.with_ymd_and_hms(2026, 7, 10, 12, 0, 0).unwrap();
     let created = Scheduler::enqueue_due_fetches(&pool, now)
@@ -28,7 +28,7 @@ async fn test_enqueue_due_fetches_creates_one_job_per_municipality(pool: PgPool)
 
 /// Running the scheduler twice on the same day must not create duplicate
 /// jobs for a municipality that's already scheduled.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn test_enqueue_due_fetches_is_idempotent_within_a_day(pool: PgPool) {
     let now = Utc.with_ymd_and_hms(2026, 7, 10, 9, 0, 0).unwrap();
     let later_same_day = Utc.with_ymd_and_hms(2026, 7, 10, 17, 0, 0).unwrap();
@@ -58,7 +58,7 @@ async fn test_enqueue_due_fetches_is_idempotent_within_a_day(pool: PgPool) {
 }
 
 /// A new day is a new scheduling window — the daily fallback must fire again.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn test_enqueue_due_fetches_fires_again_on_a_new_day(pool: PgPool) {
     let day_one = Utc.with_ymd_and_hms(2026, 7, 10, 23, 0, 0).unwrap();
     let day_two = Utc.with_ymd_and_hms(2026, 7, 11, 1, 0, 0).unwrap();
@@ -76,7 +76,7 @@ async fn test_enqueue_due_fetches_fires_again_on_a_new_day(pool: PgPool) {
 
 /// With no municipalities present, the scheduler enqueues nothing and does
 /// not error.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn test_enqueue_due_fetches_with_no_municipalities(pool: PgPool) {
     // The 002 seed migration always runs; clear it to exercise the
     // zero-municipalities path explicitly.

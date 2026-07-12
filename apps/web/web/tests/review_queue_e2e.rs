@@ -13,7 +13,7 @@ use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use minijinja::{path_loader, Environment};
 use serde_json::{json, Value};
-use shovelsup_web::pipeline::resolver::resolve_mention;
+use shovelsup_pipeline::resolver::resolve_mention;
 use shovelsup_web::{app, AppState};
 use sqlx::PgPool;
 use std::sync::Once;
@@ -104,7 +104,7 @@ async fn seed_ambiguous_candidate(pool: &PgPool) -> (Uuid, Uuid) {
 
     let outcome = resolve_mention(pool, mention_id).await.unwrap();
     let candidate_id = match outcome {
-        shovelsup_web::pipeline::resolver::ResolutionOutcome::FlaggedAmbiguous { review_candidate_id } => {
+        shovelsup_pipeline::resolver::ResolutionOutcome::FlaggedAmbiguous { review_candidate_id } => {
             review_candidate_id
         }
         other => panic!("expected FlaggedAmbiguous, got {other:?}"),

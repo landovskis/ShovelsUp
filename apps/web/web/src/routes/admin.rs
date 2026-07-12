@@ -6,7 +6,7 @@ use axum::{
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::pipeline::parser::{ocr::TesseractOcrProvider, orchestrate::parse_and_store};
+use shovelsup_pipeline::parser::{ocr::TesseractOcrProvider, orchestrate::parse_and_store};
 use crate::AppState;
 
 #[derive(Serialize)]

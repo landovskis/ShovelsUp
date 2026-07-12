@@ -113,7 +113,7 @@ mod tests {
         .unwrap()
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
     async fn parse_and_store_writes_chunks_and_marks_parsed(pool: PgPool) {
         let doc_id = seed_source_document(&pool, b"<p>Council approved the item.</p>", "text/html").await;
 
@@ -138,7 +138,7 @@ mod tests {
         assert_eq!(chunk_count, 1);
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
     async fn parse_and_store_marks_failed_for_unsupported_content_type(pool: PgPool) {
         let doc_id = seed_source_document(&pool, b"binary junk", "application/msword").await;
 
@@ -155,9 +155,9 @@ mod tests {
 
     /// TC-REQ-002-4: OCR worker unavailability marks `reprocessing`
     /// (retryable), not `failed` (permanent).
-    #[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
     async fn parse_and_store_marks_reprocessing_on_transient_ocr_failure(pool: PgPool) {
-        let blank_pdf = include_bytes!("../../../../tests/fixtures/blank_page.pdf");
+        let blank_pdf = include_bytes!("../../../tests/fixtures/blank_page.pdf");
         let doc_id = seed_source_document(&pool, blank_pdf, "application/pdf").await;
 
         let count = parse_and_store(&pool, doc_id, &FailingOcrProvider).await.unwrap();
@@ -171,7 +171,7 @@ mod tests {
         assert_eq!(status, "reprocessing");
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
     async fn parse_and_store_reprocessing_replaces_prior_chunks(pool: PgPool) {
         let doc_id = seed_source_document(&pool, b"<p>First version.</p>", "text/html").await;
         parse_and_store(&pool, doc_id, &TesseractOcrProvider).await.unwrap();

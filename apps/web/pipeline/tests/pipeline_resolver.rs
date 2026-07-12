@@ -1,5 +1,5 @@
-use shovelsup_web::pipeline::resolver::resolve_mention;
-use shovelsup_web::pipeline::resolver::ResolutionOutcome;
+use shovelsup_pipeline::resolver::resolve_mention;
+use shovelsup_pipeline::resolver::ResolutionOutcome;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -77,7 +77,7 @@ async fn insert_mention(
 }
 
 /// TC-REQ-005-3: zero-match mention creates a new project.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn zero_match_mention_creates_new_project(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
     let mention_id = insert_mention(&pool, chunk_id, Some("123 Main St"), Some("residential"), None).await;
@@ -109,7 +109,7 @@ async fn zero_match_mention_creates_new_project(pool: PgPool) {
 }
 
 /// TC-REQ-005-1: matching address+type links to an existing project.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn matching_address_and_type_links_to_existing_project(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
     let first = insert_mention(&pool, chunk_id, Some("123 Main St"), Some("residential"), None).await;
@@ -125,7 +125,7 @@ async fn matching_address_and_type_links_to_existing_project(pool: PgPool) {
 }
 
 /// TC-REQ-005-2: near-miss address does not auto-link.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn near_miss_address_does_not_auto_link(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
     let first = insert_mention(&pool, chunk_id, Some("123 Main St"), Some("residential"), None).await;
@@ -148,7 +148,7 @@ async fn near_miss_address_does_not_auto_link(pool: PgPool) {
 /// industrial to residential): the resolver can't tell whether this new
 /// mention continues that project under a corrected type or is a distinct
 /// new project at the same address, so it must not guess either way.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn multi_match_creates_review_candidate(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
     let first = insert_mention(&pool, chunk_id, Some("500 Industrial Way"), Some("industrial"), None).await;
@@ -182,7 +182,7 @@ async fn multi_match_creates_review_candidate(pool: PgPool) {
 
 /// An exact repeat (address, type) match must link, not flag as ambiguous —
 /// guards against the multi-match fix above over-triggering.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn exact_repeat_match_links_without_ambiguity(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
     let first = insert_mention(&pool, chunk_id, Some("500 Industrial Way"), Some("industrial"), None).await;
@@ -197,7 +197,7 @@ async fn exact_repeat_match_links_without_ambiguity(pool: PgPool) {
 
 /// Explicit cross-reference (matching reference_number) takes priority over
 /// address+type matching and links even when the address differs.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn explicit_cross_reference_links_regardless_of_address(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
     let first = insert_mention(
@@ -228,7 +228,7 @@ async fn explicit_cross_reference_links_regardless_of_address(pool: PgPool) {
     assert_eq!(second_outcome, ResolutionOutcome::Linked { project_id });
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn mention_missing_address_or_type_is_not_resolved(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
     let mention_id = insert_mention(&pool, chunk_id, None, Some("residential"), None).await;
@@ -238,7 +238,7 @@ async fn mention_missing_address_or_type_is_not_resolved(pool: PgPool) {
 
 /// Multi-mention project history: 3 mentions of the same project resolve
 /// into 1 project with 3 timeline events.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn multi_mention_project_produces_ordered_timeline(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
     let m1 = insert_mention(&pool, chunk_id, Some("77 Sport St"), Some("institutional"), None).await;
@@ -277,7 +277,7 @@ async fn multi_mention_project_produces_ordered_timeline(pool: PgPool) {
 /// IMP-REQ-005-07 concurrency: simultaneous resolution of two mentions at a
 /// brand-new (address, type) must not produce two projects or duplicate
 /// timeline rows — the unique-index race is resolved to a single winner.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn concurrent_resolution_of_new_address_produces_one_project(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
     let m1 = insert_mention(&pool, chunk_id, Some("42 Concurrent Blvd"), Some("mixed-use"), None).await;
@@ -318,7 +318,7 @@ async fn concurrent_resolution_of_new_address_produces_one_project(pool: PgPool)
 /// for the same civic location link to one project. Exercises
 /// `resolve_mention`/`try_resolve` directly, not just the standalone
 /// `normalize_address_fr` function.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn french_mention_addresses_resolve_via_the_french_normalizer(pool: PgPool) {
     let chunk_id = seed_document_chunk_fr(&pool).await;
     let m1 = insert_mention(&pool, chunk_id, Some("456, boul. Saint-Laurent"), Some("residential"), None).await;

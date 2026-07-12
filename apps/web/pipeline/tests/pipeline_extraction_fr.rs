@@ -28,8 +28,8 @@
 //! pass added for REQ-003's TC-REQ-003-1 (`extractor::recover_status` is
 //! language-aware and shared), and does even better here than the EN set.
 
-use shovelsup_web::pipeline::extractor::extract_entities;
-use shovelsup_web::pipeline::extractor::llm::AnthropicProvider;
+use shovelsup_pipeline::extractor::extract_entities;
+use shovelsup_pipeline::extractor::llm::AnthropicProvider;
 
 struct Fixture {
     text: &'static str,
@@ -100,7 +100,7 @@ const FIXTURES: &[Fixture] = &[
 /// Mirrors `field_completeness` in `tests/pipeline_extraction.rs` exactly,
 /// so FR and EN scores are directly comparable (TC-REQ-007-1 parity).
 fn field_completeness(
-    result: &shovelsup_web::pipeline::extractor::schema::ExtractionResult,
+    result: &shovelsup_pipeline::extractor::schema::ExtractionResult,
     fixture: &Fixture,
 ) -> f64 {
     let mut expected = 3;
@@ -188,10 +188,10 @@ async fn french_extraction_meets_field_completeness_gate_on_labelled_fixtures() 
 /// in `src/pipeline/extractor/mod.rs` for the FR-routed path, confirming
 /// the shared retry/backoff classification (IMP-REQ-003-06) applies
 /// identically regardless of chunk language.
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn french_extraction_marks_reprocessing_not_failed_on_llm_transient_failure(pool: sqlx::PgPool) {
-    use shovelsup_web::pipeline::extractor::extract_and_store;
-    use shovelsup_web::pipeline::extractor::llm::{LlmError, LlmProvider};
+    use shovelsup_pipeline::extractor::extract_and_store;
+    use shovelsup_pipeline::extractor::llm::{LlmError, LlmProvider};
 
     // `llm::test_support` is `#[cfg(test)]`-gated inside the lib crate, so
     // it isn't linkable from this external integration test binary — a

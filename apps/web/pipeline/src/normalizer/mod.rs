@@ -163,7 +163,7 @@ mod tests {
     }
 
     /// TC-REQ-004-1: English synonyms map to the correct enum value.
-    #[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
     async fn normalize_status_maps_english_synonyms(pool: PgPool) {
         assert_eq!(
             normalize_status(&pool, "Approved.", "en").await.unwrap(),
@@ -188,7 +188,7 @@ mod tests {
     }
 
     /// TC-REQ-004-2: French synonyms map to the same enum value as EN.
-    #[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
     async fn normalize_status_maps_french_synonyms_to_same_values(pool: PgPool) {
         assert_eq!(
             normalize_status(&pool, "Approuvé.", "fr").await.unwrap(),
@@ -205,14 +205,14 @@ mod tests {
     }
 
     /// TC-REQ-004-3: unrecognized phrase not silently defaulted.
-    #[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
     async fn normalize_status_returns_none_for_unrecognized_phrase(pool: PgPool) {
         let result = normalize_status(&pool, "Tabled for further study.", "en").await.unwrap();
         assert_eq!(result, None);
     }
 
     /// TC-REQ-004-4: conflicting same-document status resolved + flagged.
-    #[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
     async fn detects_and_flags_same_document_status_conflict(pool: PgPool) {
         let chunk_id = seed_document_chunk(&pool).await;
         insert_mention(&pool, chunk_id, Some("123 Main St"), Some("approved")).await;
@@ -233,7 +233,7 @@ mod tests {
         assert_eq!(candidate_type, "status_conflict");
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
     async fn no_conflict_flagged_for_matching_statuses(pool: PgPool) {
         let chunk_id = seed_document_chunk(&pool).await;
         insert_mention(&pool, chunk_id, Some("123 Main St"), Some("approved")).await;
@@ -245,7 +245,7 @@ mod tests {
         assert!(candidate_id.is_none());
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
     async fn no_conflict_flagged_for_different_addresses(pool: PgPool) {
         let chunk_id = seed_document_chunk(&pool).await;
         insert_mention(&pool, chunk_id, Some("123 Main St"), Some("approved")).await;

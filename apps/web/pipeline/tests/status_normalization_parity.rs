@@ -3,7 +3,7 @@
 //! Deterministic (DB vocabulary lookup, no LLM call) — always runs, no
 //! ANTHROPIC_API_KEY gate needed.
 
-use shovelsup_web::pipeline::normalizer::normalize_status;
+use shovelsup_pipeline::normalizer::normalize_status;
 use sqlx::PgPool;
 
 const EN_PHRASES: &[&str] = &[
@@ -34,7 +34,7 @@ const FR_PHRASES: &[&str] = &[
     "La demande a été soumise pour examen par le conseil.",
 ];
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn bilingual_status_normalization_meets_parity_gate(pool: PgPool) {
     let mut non_null_en = 0usize;
     for phrase in EN_PHRASES {
@@ -68,7 +68,7 @@ async fn bilingual_status_normalization_meets_parity_gate(pool: PgPool) {
 /// The same phrase pattern in EN and FR must resolve to the same
 /// normalized_status value — the actual definition of "parity", not just
 /// "both languages hit some threshold independently".
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../web/migrations")]
 async fn matching_en_fr_phrase_pairs_resolve_to_the_same_status(pool: PgPool) {
     let pairs = [
         ("Approved.", "Approuvé."),
