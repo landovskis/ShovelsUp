@@ -1,11 +1,7 @@
 /// The PRD accepts "at least one" scale indicator (units, GFA, or storeys)
 /// rather than requiring all three — a single-indicator fixture must be
 /// accepted (TC-REQ-003-2).
-pub fn has_scale_indicator(
-    units: Option<i32>,
-    gfa_sqm: Option<f64>,
-    storeys: Option<i32>,
-) -> bool {
+pub fn has_scale_indicator(units: Option<i32>, gfa_sqm: Option<f64>, storeys: Option<i32>) -> bool {
     units.is_some() || gfa_sqm.is_some() || storeys.is_some()
 }
 

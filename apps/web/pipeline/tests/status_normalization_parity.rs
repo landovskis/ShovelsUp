@@ -38,14 +38,22 @@ const FR_PHRASES: &[&str] = &[
 async fn bilingual_status_normalization_meets_parity_gate(pool: PgPool) {
     let mut non_null_en = 0usize;
     for phrase in EN_PHRASES {
-        if normalize_status(&pool, phrase, "en").await.unwrap().is_some() {
+        if normalize_status(&pool, phrase, "en")
+            .await
+            .unwrap()
+            .is_some()
+        {
             non_null_en += 1;
         }
     }
 
     let mut non_null_fr = 0usize;
     for phrase in FR_PHRASES {
-        if normalize_status(&pool, phrase, "fr").await.unwrap().is_some() {
+        if normalize_status(&pool, phrase, "fr")
+            .await
+            .unwrap()
+            .is_some()
+        {
             non_null_fr += 1;
         }
     }
@@ -81,7 +89,10 @@ async fn matching_en_fr_phrase_pairs_resolve_to_the_same_status(pool: PgPool) {
     for (en, fr) in pairs {
         let en_status = normalize_status(&pool, en, "en").await.unwrap();
         let fr_status = normalize_status(&pool, fr, "fr").await.unwrap();
-        assert_eq!(en_status, fr_status, "EN {en:?} and FR {fr:?} should resolve to the same status");
+        assert_eq!(
+            en_status, fr_status,
+            "EN {en:?} and FR {fr:?} should resolve to the same status"
+        );
         assert!(en_status.is_some(), "expected {en:?} to resolve, got None");
     }
 }

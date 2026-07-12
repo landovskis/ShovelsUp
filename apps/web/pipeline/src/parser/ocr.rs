@@ -87,7 +87,9 @@ pub(crate) mod test_support {
 
     impl OcrProvider for FailingOcrProvider {
         fn ocr_pdf(&self, _pdf_bytes: &[u8]) -> Result<Vec<String>, ParseError> {
-            Err(ParseError::Ocr("OCR worker unavailable (test double)".to_string()))
+            Err(ParseError::Ocr(
+                "OCR worker unavailable (test double)".to_string(),
+            ))
         }
     }
 }
@@ -123,7 +125,9 @@ mod tests {
     /// blank page would misclassify "nothing to read" as "worker down".
     #[test]
     fn tesseract_provider_ocrs_a_real_rendered_page() {
-        let _guard = OCR_TEST_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _guard = OCR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if !ocr_toolchain_available() {
             eprintln!("skipping: pdftoppm/tesseract not installed");
             return;
@@ -138,7 +142,9 @@ mod tests {
     /// tesseract failure.
     #[test]
     fn tesseract_provider_reports_pdftoppm_failure_as_ocr_error() {
-        let _guard = OCR_TEST_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _guard = OCR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if !ocr_toolchain_available() {
             eprintln!("skipping: pdftoppm/tesseract not installed");
             return;
@@ -151,7 +157,9 @@ mod tests {
     /// success or failure path — it holds the source PDF and rendered pages.
     #[test]
     fn tesseract_provider_cleans_up_temp_dir_on_success_and_failure() {
-        let _guard = OCR_TEST_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _guard = OCR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if !ocr_toolchain_available() {
             eprintln!("skipping: pdftoppm/tesseract not installed");
             return;

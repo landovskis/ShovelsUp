@@ -107,7 +107,9 @@ fn field_completeness(
     let mut present = [
         result.civic_address.is_some(),
         result.project_type.is_some(),
-        result.scale_units.is_some() || result.scale_gfa_sqm.is_some() || result.scale_storeys.is_some(),
+        result.scale_units.is_some()
+            || result.scale_gfa_sqm.is_some()
+            || result.scale_storeys.is_some(),
     ]
     .iter()
     .filter(|f| **f)
@@ -174,8 +176,12 @@ async fn french_extraction_meets_field_completeness_gate_on_labelled_fixtures() 
         !completeness_scores.is_empty(),
         "expected at least one qualifying FR extraction to measure completeness against"
     );
-    let avg_completeness: f64 = completeness_scores.iter().sum::<f64>() / completeness_scores.len() as f64;
-    eprintln!("FR average field completeness on qualifying extractions: {:.1}%", avg_completeness * 100.0);
+    let avg_completeness: f64 =
+        completeness_scores.iter().sum::<f64>() / completeness_scores.len() as f64;
+    eprintln!(
+        "FR average field completeness on qualifying extractions: {:.1}%",
+        avg_completeness * 100.0
+    );
 
     assert!(
         avg_completeness >= 0.90,
@@ -189,7 +195,9 @@ async fn french_extraction_meets_field_completeness_gate_on_labelled_fixtures() 
 /// the shared retry/backoff classification (IMP-REQ-003-06) applies
 /// identically regardless of chunk language.
 #[sqlx::test(migrations = "../web/migrations")]
-async fn french_extraction_marks_reprocessing_not_failed_on_llm_transient_failure(pool: sqlx::PgPool) {
+async fn french_extraction_marks_reprocessing_not_failed_on_llm_transient_failure(
+    pool: sqlx::PgPool,
+) {
     use shovelsup_pipeline::extractor::extract_and_store;
     use shovelsup_pipeline::extractor::llm::{LlmError, LlmProvider};
 

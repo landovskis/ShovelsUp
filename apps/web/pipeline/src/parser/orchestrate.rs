@@ -113,18 +113,23 @@ mod tests {
         .unwrap()
     }
 
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn parse_and_store_writes_chunks_and_marks_parsed(pool: PgPool) {
-        let doc_id = seed_source_document(&pool, b"<p>Council approved the item.</p>", "text/html").await;
+        let doc_id =
+            seed_source_document(&pool, b"<p>Council approved the item.</p>", "text/html").await;
 
-        let count = parse_and_store(&pool, doc_id, &TesseractOcrProvider).await.unwrap();
+        let count = parse_and_store(&pool, doc_id, &TesseractOcrProvider)
+            .await
+            .unwrap();
         assert_eq!(count, 1);
 
-        let status: String =
-            sqlx::query_scalar!("SELECT parser_status FROM source_documents WHERE id = $1", doc_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let status: String = sqlx::query_scalar!(
+            "SELECT parser_status FROM source_documents WHERE id = $1",
+            doc_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(status, "parsed");
 
         let chunk_count: i64 = sqlx::query_scalar!(
@@ -138,43 +143,53 @@ mod tests {
         assert_eq!(chunk_count, 1);
     }
 
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn parse_and_store_marks_failed_for_unsupported_content_type(pool: PgPool) {
         let doc_id = seed_source_document(&pool, b"binary junk", "application/msword").await;
 
-        let count = parse_and_store(&pool, doc_id, &TesseractOcrProvider).await.unwrap();
+        let count = parse_and_store(&pool, doc_id, &TesseractOcrProvider)
+            .await
+            .unwrap();
         assert_eq!(count, 0);
 
-        let status: String =
-            sqlx::query_scalar!("SELECT parser_status FROM source_documents WHERE id = $1", doc_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let status: String = sqlx::query_scalar!(
+            "SELECT parser_status FROM source_documents WHERE id = $1",
+            doc_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(status, "failed");
     }
 
     /// TC-REQ-002-4: OCR worker unavailability marks `reprocessing`
     /// (retryable), not `failed` (permanent).
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn parse_and_store_marks_reprocessing_on_transient_ocr_failure(pool: PgPool) {
         let blank_pdf = include_bytes!("../../../tests/fixtures/blank_page.pdf");
         let doc_id = seed_source_document(&pool, blank_pdf, "application/pdf").await;
 
-        let count = parse_and_store(&pool, doc_id, &FailingOcrProvider).await.unwrap();
+        let count = parse_and_store(&pool, doc_id, &FailingOcrProvider)
+            .await
+            .unwrap();
         assert_eq!(count, 0);
 
-        let status: String =
-            sqlx::query_scalar!("SELECT parser_status FROM source_documents WHERE id = $1", doc_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let status: String = sqlx::query_scalar!(
+            "SELECT parser_status FROM source_documents WHERE id = $1",
+            doc_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(status, "reprocessing");
     }
 
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn parse_and_store_reprocessing_replaces_prior_chunks(pool: PgPool) {
         let doc_id = seed_source_document(&pool, b"<p>First version.</p>", "text/html").await;
-        parse_and_store(&pool, doc_id, &TesseractOcrProvider).await.unwrap();
+        parse_and_store(&pool, doc_id, &TesseractOcrProvider)
+            .await
+            .unwrap();
 
         sqlx::query!(
             "UPDATE source_documents SET content = $1 WHERE id = $2",
@@ -185,7 +200,9 @@ mod tests {
         .await
         .unwrap();
 
-        let count = parse_and_store(&pool, doc_id, &TesseractOcrProvider).await.unwrap();
+        let count = parse_and_store(&pool, doc_id, &TesseractOcrProvider)
+            .await
+            .unwrap();
         assert_eq!(count, 2);
 
         let chunk_count: i64 = sqlx::query_scalar!(
@@ -196,6 +213,9 @@ mod tests {
         .await
         .unwrap()
         .unwrap();
-        assert_eq!(chunk_count, 2, "stale chunks from the first parse must be replaced");
+        assert_eq!(
+            chunk_count, 2,
+            "stale chunks from the first parse must be replaced"
+        );
     }
 }

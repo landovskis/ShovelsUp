@@ -2,9 +2,7 @@ use super::redact_named_individuals;
 
 /// French honorifics that commonly precede a named individual in Quebec
 /// municipal proceedings text.
-const FR_HONORIFICS: &[&str] = &[
-    "M.", "Mme", "Mlle", "Dr", "Dre", "Me", "Monsieur", "Madame",
-];
+const FR_HONORIFICS: &[&str] = &["M.", "Mme", "Mlle", "Dr", "Dre", "Me", "Monsieur", "Madame"];
 
 const REDACTION_MARKER: &str = "[nom retiré]";
 
@@ -43,7 +41,8 @@ mod tests {
 
     #[test]
     fn leaves_excerpt_without_honorific_untouched() {
-        let text = "Construction d'un nouveau bâtiment résidentiel au 123, rue Principale. Approuvé.";
+        let text =
+            "Construction d'un nouveau bâtiment résidentiel au 123, rue Principale. Approuvé.";
         assert_eq!(redact(text), text);
     }
 

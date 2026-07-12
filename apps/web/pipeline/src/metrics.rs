@@ -117,7 +117,7 @@ mod tests {
 
     /// IMP-REQ-007-05: EN and FR completeness reported as separate rows,
     /// not blended into one average.
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn reports_en_and_fr_completeness_separately(pool: PgPool) {
         let en_chunk = seed_chunk(&pool, "en").await;
         seed_mention(&pool, en_chunk, Some("123 Main St"), Some("Approved")).await; // 4/4
@@ -138,14 +138,17 @@ mod tests {
         assert!((fr.average_completeness - 0.75).abs() < 1e-9);
     }
 
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn excludes_mentions_with_no_recorded_chunk_language(pool: PgPool) {
         let chunk = seed_chunk(&pool, "en").await;
         // Clear the language back to NULL to exercise the exclusion path.
-        sqlx::query!("UPDATE document_chunks SET language = NULL WHERE id = $1", chunk)
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query!(
+            "UPDATE document_chunks SET language = NULL WHERE id = $1",
+            chunk
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
         seed_mention(&pool, chunk, Some("1 No Language Way"), Some("Approved")).await;
 
         let results = field_completeness_by_language(&pool).await.unwrap();

@@ -16,7 +16,9 @@ async fn test_state(pool: PgPool) -> AppState {
     let mut env = Environment::new();
     env.set_loader(path_loader("../templates"));
     let redis_client = redis::Client::open("redis://localhost:6380").unwrap();
-    let redis = redis::aio::ConnectionManager::new(redis_client).await.unwrap();
+    let redis = redis::aio::ConnectionManager::new(redis_client)
+        .await
+        .unwrap();
     AppState {
         env: std::sync::Arc::new(env),
         db: pool,
@@ -103,7 +105,10 @@ async fn tc_req_008_1_search_by_civic_address_returns_matching_project(pool: PgP
         .to_bytes();
     let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["project_id"].as_str().unwrap(), project_id.to_string());
+    assert_eq!(
+        results[0]["project_id"].as_str().unwrap(),
+        project_id.to_string()
+    );
 }
 
 /// TC-REQ-008-2: search by municipality name — a query that matches only
@@ -131,7 +136,11 @@ async fn tc_req_008_2_search_by_municipality_name_matches_via_or_boundary(pool: 
         .unwrap()
         .to_bytes();
     let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
-    assert_eq!(results.len(), 1, "must match on municipality_name even though the keyword isn't in the civic address");
+    assert_eq!(
+        results.len(),
+        1,
+        "must match on municipality_name even though the keyword isn't in the civic address"
+    );
 }
 
 /// TC-REQ-008-3: invalid `per_page` rejected with 400 before any DB query.
@@ -211,5 +220,10 @@ async fn imp_req_008_05_sixty_first_request_in_window_is_rate_limited(pool: PgPo
 
 fn rand_octet() -> u8 {
     use std::time::{SystemTime, UNIX_EPOCH};
-    (SystemTime::now().duration_since(UNIX_EPOCH).unwrap().subsec_nanos() % 254) as u8 + 1
+    (SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .subsec_nanos()
+        % 254) as u8
+        + 1
 }

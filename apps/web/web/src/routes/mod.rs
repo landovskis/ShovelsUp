@@ -1,4 +1,8 @@
-use axum::{extract::State, http::{HeaderMap, StatusCode}, response::Html};
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    response::Html,
+};
 use minijinja::context;
 
 use crate::AppState;

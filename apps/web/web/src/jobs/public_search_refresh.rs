@@ -189,6 +189,10 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(status.as_deref(), Some("approved"), "must reflect the latest mention status");
+        assert_eq!(
+            status.as_deref(),
+            Some("approved"),
+            "must reflect the latest mention status"
+        );
     }
 }

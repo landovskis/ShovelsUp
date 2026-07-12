@@ -37,7 +37,10 @@ fn ensure_env() {
 fn basic_auth_header(user: &str, password: &str) -> String {
     format!(
         "Basic {}",
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, format!("{user}:{password}"))
+        base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            format!("{user}:{password}")
+        )
     )
 }
 
@@ -45,7 +48,9 @@ async fn test_state(pool: PgPool) -> AppState {
     let mut env = Environment::new();
     env.set_loader(path_loader("../templates"));
     let redis_client = redis::Client::open("redis://localhost:6380").unwrap();
-    let redis = redis::aio::ConnectionManager::new(redis_client).await.unwrap();
+    let redis = redis::aio::ConnectionManager::new(redis_client)
+        .await
+        .unwrap();
     AppState {
         env: std::sync::Arc::new(env),
         db: pool,
@@ -104,9 +109,9 @@ async fn seed_ambiguous_candidate(pool: &PgPool) -> (Uuid, Uuid) {
 
     let outcome = resolve_mention(pool, mention_id).await.unwrap();
     let candidate_id = match outcome {
-        shovelsup_pipeline::resolver::ResolutionOutcome::FlaggedAmbiguous { review_candidate_id } => {
-            review_candidate_id
-        }
+        shovelsup_pipeline::resolver::ResolutionOutcome::FlaggedAmbiguous {
+            review_candidate_id,
+        } => review_candidate_id,
         other => panic!("expected FlaggedAmbiguous, got {other:?}"),
     };
 
@@ -126,7 +131,10 @@ async fn tc_req_009_4_multi_match_candidate_appears_in_open_tab(pool: PgPool) {
         .oneshot(
             Request::builder()
                 .uri("/admin/review_candidates?status=open")
-                .header(header::AUTHORIZATION, basic_auth_header(ADMIN_USER, ADMIN_PASSWORD))
+                .header(
+                    header::AUTHORIZATION,
+                    basic_auth_header(ADMIN_USER, ADMIN_PASSWORD),
+                )
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -134,9 +142,14 @@ async fn tc_req_009_4_multi_match_candidate_appears_in_open_tab(pool: PgPool) {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    let body = http_body_util::BodyExt::collect(response.into_body()).await.unwrap().to_bytes();
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
     let candidates: Vec<Value> = serde_json::from_slice(&body).unwrap();
-    assert!(candidates.iter().any(|c| c["id"].as_str().unwrap() == candidate_id.to_string()));
+    assert!(candidates
+        .iter()
+        .any(|c| c["id"].as_str().unwrap() == candidate_id.to_string()));
 }
 
 /// TC-REQ-009-1: confirm merges the ambiguous candidate into the proposed
@@ -160,7 +173,10 @@ async fn tc_req_009_1_confirm_route_merges_candidate_and_updates_timeline(pool: 
             Request::builder()
                 .method("POST")
                 .uri(format!("/admin/review_candidates/{candidate_id}/confirm"))
-                .header(header::AUTHORIZATION, basic_auth_header(ADMIN_USER, ADMIN_PASSWORD))
+                .header(
+                    header::AUTHORIZATION,
+                    basic_auth_header(ADMIN_USER, ADMIN_PASSWORD),
+                )
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(
                     json!({ "version": 1, "project_id": target_project_id }).to_string(),
@@ -172,11 +188,13 @@ async fn tc_req_009_1_confirm_route_merges_candidate_and_updates_timeline(pool: 
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    let linked_project: Option<Uuid> =
-        sqlx::query_scalar!("SELECT project_id FROM project_mentions WHERE id = $1", mention_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let linked_project: Option<Uuid> = sqlx::query_scalar!(
+        "SELECT project_id FROM project_mentions WHERE id = $1",
+        mention_id
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(linked_project, Some(target_project_id));
 
     let timeline_count: i64 = sqlx::query_scalar!(
@@ -209,7 +227,10 @@ async fn tc_req_009_3_stale_version_returns_409(pool: PgPool) {
             Request::builder()
                 .method("POST")
                 .uri(format!("/admin/review_candidates/{candidate_id}/confirm"))
-                .header(header::AUTHORIZATION, basic_auth_header(ADMIN_USER, ADMIN_PASSWORD))
+                .header(
+                    header::AUTHORIZATION,
+                    basic_auth_header(ADMIN_USER, ADMIN_PASSWORD),
+                )
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(
                     json!({ "version": 999, "project_id": target_project_id }).to_string(),
@@ -221,11 +242,13 @@ async fn tc_req_009_3_stale_version_returns_409(pool: PgPool) {
 
     assert_eq!(response.status(), StatusCode::CONFLICT);
 
-    let status: String =
-        sqlx::query_scalar!("SELECT status FROM review_candidates WHERE id = $1", candidate_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let status: String = sqlx::query_scalar!(
+        "SELECT status FROM review_candidates WHERE id = $1",
+        candidate_id
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(status, "open");
 }
 
@@ -244,9 +267,14 @@ async fn tc_req_009_5_db_failure_during_confirm_returns_503(pool: PgPool) {
             Request::builder()
                 .method("POST")
                 .uri(format!("/admin/review_candidates/{candidate_id}/confirm"))
-                .header(header::AUTHORIZATION, basic_auth_header(ADMIN_USER, ADMIN_PASSWORD))
+                .header(
+                    header::AUTHORIZATION,
+                    basic_auth_header(ADMIN_USER, ADMIN_PASSWORD),
+                )
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(json!({ "version": 1, "project_id": project_id }).to_string()))
+                .body(Body::from(
+                    json!({ "version": 1, "project_id": project_id }).to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -285,7 +313,10 @@ async fn get_review_queue_page_renders_open_candidate(pool: PgPool) {
         .oneshot(
             Request::builder()
                 .uri("/admin/review_queue")
-                .header(header::AUTHORIZATION, basic_auth_header(ADMIN_USER, ADMIN_PASSWORD))
+                .header(
+                    header::AUTHORIZATION,
+                    basic_auth_header(ADMIN_USER, ADMIN_PASSWORD),
+                )
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -293,7 +324,10 @@ async fn get_review_queue_page_renders_open_candidate(pool: PgPool) {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    let body = http_body_util::BodyExt::collect(response.into_body()).await.unwrap().to_bytes();
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
     let html = String::from_utf8(body.to_vec()).unwrap();
     assert!(html.contains(&candidate_id.to_string()));
     assert!(html.contains("data-action=\"confirm\""));

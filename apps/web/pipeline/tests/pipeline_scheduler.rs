@@ -63,8 +63,12 @@ async fn test_enqueue_due_fetches_fires_again_on_a_new_day(pool: PgPool) {
     let day_one = Utc.with_ymd_and_hms(2026, 7, 10, 23, 0, 0).unwrap();
     let day_two = Utc.with_ymd_and_hms(2026, 7, 11, 1, 0, 0).unwrap();
 
-    let first_run = Scheduler::enqueue_due_fetches(&pool, day_one).await.unwrap();
-    let second_run = Scheduler::enqueue_due_fetches(&pool, day_two).await.unwrap();
+    let first_run = Scheduler::enqueue_due_fetches(&pool, day_one)
+        .await
+        .unwrap();
+    let second_run = Scheduler::enqueue_due_fetches(&pool, day_two)
+        .await
+        .unwrap();
 
     assert!(!first_run.is_empty());
     assert_eq!(

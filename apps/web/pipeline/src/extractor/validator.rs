@@ -89,7 +89,8 @@ mod tests {
     /// TC-REQ-003-3: rezoning-only motion excluded despite LLM hallucination.
     #[test]
     fn overrides_llm_true_for_rezoning_only_text() {
-        let text = "Item 12: Zoning by-law amendment to permit mixed-use designation at 400 King St.";
+        let text =
+            "Item 12: Zoning by-law amendment to permit mixed-use designation at 400 King St.";
         assert!(!validate_physical_work(text, "en", true));
     }
 

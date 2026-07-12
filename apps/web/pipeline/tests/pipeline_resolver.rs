@@ -80,7 +80,14 @@ async fn insert_mention(
 #[sqlx::test(migrations = "../web/migrations")]
 async fn zero_match_mention_creates_new_project(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
-    let mention_id = insert_mention(&pool, chunk_id, Some("123 Main St"), Some("residential"), None).await;
+    let mention_id = insert_mention(
+        &pool,
+        chunk_id,
+        Some("123 Main St"),
+        Some("residential"),
+        None,
+    )
+    .await;
 
     let outcome = resolve_mention(&pool, mention_id).await.unwrap();
     let project_id = match outcome {
@@ -112,26 +119,59 @@ async fn zero_match_mention_creates_new_project(pool: PgPool) {
 #[sqlx::test(migrations = "../web/migrations")]
 async fn matching_address_and_type_links_to_existing_project(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
-    let first = insert_mention(&pool, chunk_id, Some("123 Main St"), Some("residential"), None).await;
+    let first = insert_mention(
+        &pool,
+        chunk_id,
+        Some("123 Main St"),
+        Some("residential"),
+        None,
+    )
+    .await;
     let first_outcome = resolve_mention(&pool, first).await.unwrap();
     let existing_project_id = match first_outcome {
         ResolutionOutcome::NewProject { project_id } => project_id,
         other => panic!("expected NewProject, got {other:?}"),
     };
 
-    let second = insert_mention(&pool, chunk_id, Some("123 Main Street"), Some("residential"), None).await;
+    let second = insert_mention(
+        &pool,
+        chunk_id,
+        Some("123 Main Street"),
+        Some("residential"),
+        None,
+    )
+    .await;
     let second_outcome = resolve_mention(&pool, second).await.unwrap();
-    assert_eq!(second_outcome, ResolutionOutcome::Linked { project_id: existing_project_id });
+    assert_eq!(
+        second_outcome,
+        ResolutionOutcome::Linked {
+            project_id: existing_project_id
+        }
+    );
 }
 
 /// TC-REQ-005-2: near-miss address does not auto-link.
 #[sqlx::test(migrations = "../web/migrations")]
 async fn near_miss_address_does_not_auto_link(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
-    let first = insert_mention(&pool, chunk_id, Some("123 Main St"), Some("residential"), None).await;
+    let first = insert_mention(
+        &pool,
+        chunk_id,
+        Some("123 Main St"),
+        Some("residential"),
+        None,
+    )
+    .await;
     resolve_mention(&pool, first).await.unwrap();
 
-    let second = insert_mention(&pool, chunk_id, Some("125 Main St"), Some("residential"), None).await;
+    let second = insert_mention(
+        &pool,
+        chunk_id,
+        Some("125 Main St"),
+        Some("residential"),
+        None,
+    )
+    .await;
     let outcome = resolve_mention(&pool, second).await.unwrap();
     assert!(
         matches!(outcome, ResolutionOutcome::NewProject { .. }),
@@ -151,13 +191,29 @@ async fn near_miss_address_does_not_auto_link(pool: PgPool) {
 #[sqlx::test(migrations = "../web/migrations")]
 async fn multi_match_creates_review_candidate(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
-    let first = insert_mention(&pool, chunk_id, Some("500 Industrial Way"), Some("industrial"), None).await;
+    let first = insert_mention(
+        &pool,
+        chunk_id,
+        Some("500 Industrial Way"),
+        Some("industrial"),
+        None,
+    )
+    .await;
     resolve_mention(&pool, first).await.unwrap();
 
-    let second = insert_mention(&pool, chunk_id, Some("500 Industrial Way"), Some("residential"), None).await;
+    let second = insert_mention(
+        &pool,
+        chunk_id,
+        Some("500 Industrial Way"),
+        Some("residential"),
+        None,
+    )
+    .await;
     let outcome = resolve_mention(&pool, second).await.unwrap();
     let review_candidate_id = match outcome {
-        ResolutionOutcome::FlaggedAmbiguous { review_candidate_id } => review_candidate_id,
+        ResolutionOutcome::FlaggedAmbiguous {
+            review_candidate_id,
+        } => review_candidate_id,
         other => panic!("expected FlaggedAmbiguous, got {other:?}"),
     };
 
@@ -177,7 +233,10 @@ async fn multi_match_creates_review_candidate(pool: PgPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(linked_project, None, "an ambiguous mention must not be auto-linked");
+    assert_eq!(
+        linked_project, None,
+        "an ambiguous mention must not be auto-linked"
+    );
 }
 
 /// An exact repeat (address, type) match must link, not flag as ambiguous —
@@ -185,9 +244,23 @@ async fn multi_match_creates_review_candidate(pool: PgPool) {
 #[sqlx::test(migrations = "../web/migrations")]
 async fn exact_repeat_match_links_without_ambiguity(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
-    let first = insert_mention(&pool, chunk_id, Some("500 Industrial Way"), Some("industrial"), None).await;
+    let first = insert_mention(
+        &pool,
+        chunk_id,
+        Some("500 Industrial Way"),
+        Some("industrial"),
+        None,
+    )
+    .await;
     resolve_mention(&pool, first).await.unwrap();
-    let second = insert_mention(&pool, chunk_id, Some("500 Industrial Way"), Some("industrial"), None).await;
+    let second = insert_mention(
+        &pool,
+        chunk_id,
+        Some("500 Industrial Way"),
+        Some("industrial"),
+        None,
+    )
+    .await;
     let outcome = resolve_mention(&pool, second).await.unwrap();
     assert!(
         matches!(outcome, ResolutionOutcome::Linked { .. }),
@@ -241,26 +314,45 @@ async fn mention_missing_address_or_type_is_not_resolved(pool: PgPool) {
 #[sqlx::test(migrations = "../web/migrations")]
 async fn multi_mention_project_produces_ordered_timeline(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
-    let m1 = insert_mention(&pool, chunk_id, Some("77 Sport St"), Some("institutional"), None).await;
+    let m1 = insert_mention(
+        &pool,
+        chunk_id,
+        Some("77 Sport St"),
+        Some("institutional"),
+        None,
+    )
+    .await;
     let outcome1 = resolve_mention(&pool, m1).await.unwrap();
     let project_id = match outcome1 {
         ResolutionOutcome::NewProject { project_id } => project_id,
         other => panic!("expected NewProject, got {other:?}"),
     };
 
-    let m2 = insert_mention(&pool, chunk_id, Some("77 Sport St"), Some("institutional"), None).await;
+    let m2 = insert_mention(
+        &pool,
+        chunk_id,
+        Some("77 Sport St"),
+        Some("institutional"),
+        None,
+    )
+    .await;
     resolve_mention(&pool, m2).await.unwrap();
-    let m3 = insert_mention(&pool, chunk_id, Some("77 Sport St"), Some("institutional"), None).await;
+    let m3 = insert_mention(
+        &pool,
+        chunk_id,
+        Some("77 Sport St"),
+        Some("institutional"),
+        None,
+    )
+    .await;
     resolve_mention(&pool, m3).await.unwrap();
 
-    let project_count: i64 = sqlx::query_scalar!(
-        "SELECT count(*) FROM projects WHERE id = $1",
-        project_id
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap()
-    .unwrap();
+    let project_count: i64 =
+        sqlx::query_scalar!("SELECT count(*) FROM projects WHERE id = $1", project_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            .unwrap();
     assert_eq!(project_count, 1);
 
     let event_count: i64 = sqlx::query_scalar!(
@@ -280,8 +372,22 @@ async fn multi_mention_project_produces_ordered_timeline(pool: PgPool) {
 #[sqlx::test(migrations = "../web/migrations")]
 async fn concurrent_resolution_of_new_address_produces_one_project(pool: PgPool) {
     let chunk_id = seed_document_chunk(&pool).await;
-    let m1 = insert_mention(&pool, chunk_id, Some("42 Concurrent Blvd"), Some("mixed-use"), None).await;
-    let m2 = insert_mention(&pool, chunk_id, Some("42 Concurrent Blvd"), Some("mixed-use"), None).await;
+    let m1 = insert_mention(
+        &pool,
+        chunk_id,
+        Some("42 Concurrent Blvd"),
+        Some("mixed-use"),
+        None,
+    )
+    .await;
+    let m2 = insert_mention(
+        &pool,
+        chunk_id,
+        Some("42 Concurrent Blvd"),
+        Some("mixed-use"),
+        None,
+    )
+    .await;
 
     let pool1 = pool.clone();
     let pool2 = pool.clone();
@@ -299,7 +405,10 @@ async fn concurrent_resolution_of_new_address_produces_one_project(pool: PgPool)
     .await
     .unwrap()
     .unwrap();
-    assert_eq!(project_count, 1, "concurrent resolution of the same new address must produce exactly one project");
+    assert_eq!(
+        project_count, 1,
+        "concurrent resolution of the same new address must produce exactly one project"
+    );
 
     let both_linked: i64 = sqlx::query_scalar!(
         "SELECT count(DISTINCT project_id) FROM project_mentions WHERE id = ANY($1)",
@@ -309,7 +418,10 @@ async fn concurrent_resolution_of_new_address_produces_one_project(pool: PgPool)
     .await
     .unwrap()
     .unwrap();
-    assert_eq!(both_linked, 1, "both mentions must link to the same project");
+    assert_eq!(
+        both_linked, 1,
+        "both mentions must link to the same project"
+    );
 }
 
 /// IMP-REQ-007-02 wiring: `resolve_mention` dispatches to the French-Quebec
@@ -321,8 +433,22 @@ async fn concurrent_resolution_of_new_address_produces_one_project(pool: PgPool)
 #[sqlx::test(migrations = "../web/migrations")]
 async fn french_mention_addresses_resolve_via_the_french_normalizer(pool: PgPool) {
     let chunk_id = seed_document_chunk_fr(&pool).await;
-    let m1 = insert_mention(&pool, chunk_id, Some("456, boul. Saint-Laurent"), Some("residential"), None).await;
-    let m2 = insert_mention(&pool, chunk_id, Some("456 Boulevard Saint-Laurent"), Some("residential"), None).await;
+    let m1 = insert_mention(
+        &pool,
+        chunk_id,
+        Some("456, boul. Saint-Laurent"),
+        Some("residential"),
+        None,
+    )
+    .await;
+    let m2 = insert_mention(
+        &pool,
+        chunk_id,
+        Some("456 Boulevard Saint-Laurent"),
+        Some("residential"),
+        None,
+    )
+    .await;
 
     let outcome1 = resolve_mention(&pool, m1).await.unwrap();
     let project_id = match outcome1 {
@@ -332,7 +458,9 @@ async fn french_mention_addresses_resolve_via_the_french_normalizer(pool: PgPool
 
     let outcome2 = resolve_mention(&pool, m2).await.unwrap();
     match outcome2 {
-        ResolutionOutcome::Linked { project_id: linked_id } => {
+        ResolutionOutcome::Linked {
+            project_id: linked_id,
+        } => {
             assert_eq!(linked_id, project_id, "the comma/abbreviation variant must normalize to the same project as the first mention");
         }
         other => panic!("expected Linked to the existing project, got {other:?}"),

@@ -62,7 +62,8 @@ impl Fetcher {
         municipality_id: Uuid,
         url: &str,
     ) -> Result<FetchOutcome, FetchError> {
-        let parsed = reqwest::Url::parse(url).map_err(|_| FetchError::InvalidUrl(url.to_string()))?;
+        let parsed =
+            reqwest::Url::parse(url).map_err(|_| FetchError::InvalidUrl(url.to_string()))?;
         let host = parsed
             .host_str()
             .ok_or_else(|| FetchError::InvalidUrl(url.to_string()))?

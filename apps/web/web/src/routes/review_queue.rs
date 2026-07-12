@@ -17,9 +17,9 @@ use minijinja::context;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use shovelsup_domain::review_queue::{confirm_candidate, reject_candidate, ReviewQueueError};
 use crate::routes::detect_lang;
 use crate::AppState;
+use shovelsup_domain::review_queue::{confirm_candidate, reject_candidate, ReviewQueueError};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ReviewCandidateSummary {
@@ -180,7 +180,8 @@ fn queue_labels(lang: &str) -> QueueLabels {
             confirm_label: "Confirmer",
             reject_label: "Rejeter",
             overdue_label: "En retard",
-            stale_conflict_message: "Ce candidat a changé depuis son chargement. Actualisez et réessayez.",
+            stale_conflict_message:
+                "Ce candidat a changé depuis son chargement. Actualisez et réessayez.",
             nav_permits: "Permis",
             nav_council: "Conseil",
         },
@@ -194,7 +195,8 @@ fn queue_labels(lang: &str) -> QueueLabels {
             confirm_label: "Confirm",
             reject_label: "Reject",
             overdue_label: "Overdue",
-            stale_conflict_message: "This candidate has changed since it was loaded. Refresh and try again.",
+            stale_conflict_message:
+                "This candidate has changed since it was loaded. Refresh and try again.",
             nav_permits: "Permits",
             nav_council: "Council",
         },

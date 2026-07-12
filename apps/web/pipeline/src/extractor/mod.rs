@@ -1,7 +1,7 @@
 pub mod llm;
 pub(crate) mod prompts;
-pub mod schema;
 pub(crate) mod scale;
+pub mod schema;
 pub(crate) mod validator;
 
 use uuid::Uuid;
@@ -201,7 +201,7 @@ pub async fn extract_and_store(
             // tracked project (IMP-REQ-005-05). A resolver error is
             // reported here but does not unwind extraction — the mention
             // itself was already persisted successfully.
-        if let Err(err) = crate::resolver::resolve_mention(pool, mention_id).await {
+            if let Err(err) = crate::resolver::resolve_mention(pool, mention_id).await {
                 tracing::warn!(
                     mention_id = %mention_id,
                     error = %err,
@@ -246,7 +246,10 @@ mod tests {
         .await
         .unwrap();
         let extraction = result.expect("expected a qualifying extraction");
-        assert_eq!(extraction.project_name.as_deref(), Some("Riverside Commons"));
+        assert_eq!(
+            extraction.project_name.as_deref(),
+            Some("Riverside Commons")
+        );
         assert_eq!(extraction.scale_units, Some(48));
     }
 
@@ -345,7 +348,11 @@ mod tests {
         assert_eq!(extraction.approval_status_raw.as_deref(), Some("Approved."));
 
         let prompts_seen = llm.prompts_seen.lock().unwrap();
-        assert_eq!(prompts_seen.len(), 2, "expected exactly one recovery call, not more");
+        assert_eq!(
+            prompts_seen.len(),
+            2,
+            "expected exactly one recovery call, not more"
+        );
         assert_eq!(prompts_seen[1], prompts::en::STATUS_ONLY_SYSTEM_PROMPT);
     }
 
@@ -360,7 +367,11 @@ mod tests {
         }
         #[async_trait::async_trait]
         impl LlmProvider for TwoResponseProvider {
-            async fn complete(&self, _system: &str, _user_content: &str) -> Result<String, llm::LlmError> {
+            async fn complete(
+                &self,
+                _system: &str,
+                _user_content: &str,
+            ) -> Result<String, llm::LlmError> {
                 Ok(self.responses.lock().unwrap().remove(0).to_string())
             }
         }
@@ -368,9 +379,13 @@ mod tests {
             responses: std::sync::Mutex::new(vec![no_status_json, "NONE"]),
         };
 
-        let result = extract_entities("Item 4: some project text with no stated decision.", "en", &llm)
-            .await
-            .unwrap();
+        let result = extract_entities(
+            "Item 4: some project text with no stated decision.",
+            "en",
+            &llm,
+        )
+        .await
+        .unwrap();
 
         let extraction = result.expect("expected a qualifying extraction");
         assert_eq!(extraction.approval_status_raw, None);
@@ -410,7 +425,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            result.expect("expected a qualifying extraction").project_name.as_deref(),
+            result
+                .expect("expected a qualifying extraction")
+                .project_name
+                .as_deref(),
             Some("Les Jardins du Parc")
         );
         let used_prompt = llm.system_prompt.lock().unwrap().clone().unwrap();
@@ -483,12 +501,14 @@ mod tests {
         .unwrap()
     }
 
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn extract_and_store_inserts_mention_and_marks_extracted(pool: PgPool) {
         let chunk_id = seed_chunk(&pool).await;
         let llm = FixedResponseProvider::new(QUALIFYING_JSON);
 
-        let mention_id = extract_and_store(&pool, chunk_id, "chunk text", &llm).await.unwrap();
+        let mention_id = extract_and_store(&pool, chunk_id, "chunk text", &llm)
+            .await
+            .unwrap();
         assert!(mention_id.is_some());
 
         let status: String = sqlx::query_scalar!(
@@ -503,7 +523,7 @@ mod tests {
 
     /// reference_number (added for REQ-005's cross-reference matcher) must
     /// round-trip through extract_and_store, not just parse.
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn extract_and_store_persists_reference_number(pool: PgPool) {
         let chunk_id = seed_chunk(&pool).await;
         let llm = FixedResponseProvider::new(
@@ -522,15 +542,20 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(reference_number.as_deref(), Some("Application No. 2026-045"));
+        assert_eq!(
+            reference_number.as_deref(),
+            Some("Application No. 2026-045")
+        );
     }
 
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn extract_and_store_marks_no_mention_without_inserting(pool: PgPool) {
         let chunk_id = seed_chunk(&pool).await;
         let llm = FixedResponseProvider::new(NO_MENTION_JSON);
 
-        let mention_id = extract_and_store(&pool, chunk_id, "chunk text", &llm).await.unwrap();
+        let mention_id = extract_and_store(&pool, chunk_id, "chunk text", &llm)
+            .await
+            .unwrap();
         assert!(mention_id.is_none());
 
         let status: String = sqlx::query_scalar!(
@@ -544,12 +569,14 @@ mod tests {
     }
 
     /// TC-REQ-003-4: zero rows persisted, chunk marked failed.
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn extract_and_store_marks_failed_on_malformed_json(pool: PgPool) {
         let chunk_id = seed_chunk(&pool).await;
         let llm = FixedResponseProvider::new(MALFORMED_JSON);
 
-        let mention_id = extract_and_store(&pool, chunk_id, "chunk text", &llm).await.unwrap();
+        let mention_id = extract_and_store(&pool, chunk_id, "chunk text", &llm)
+            .await
+            .unwrap();
         assert!(mention_id.is_none());
 
         let mention_count: i64 = sqlx::query_scalar!(
@@ -574,7 +601,7 @@ mod tests {
 
     /// TC-REQ-003-5 (retry-exhausted half): a sustained LLM failure marks
     /// the chunk reprocessing (retryable), not failed (permanent).
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn extract_and_store_marks_reprocessing_on_llm_failure(pool: PgPool) {
         let chunk_id = seed_chunk(&pool).await;
 

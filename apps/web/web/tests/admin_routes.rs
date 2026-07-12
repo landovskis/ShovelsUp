@@ -31,7 +31,9 @@ fn basic_auth_header(user: &str, password: &str) -> String {
 
 async fn test_state(pool: PgPool) -> AppState {
     let redis_client = redis::Client::open("redis://localhost:6380").unwrap();
-    let redis = redis::aio::ConnectionManager::new(redis_client).await.unwrap();
+    let redis = redis::aio::ConnectionManager::new(redis_client)
+        .await
+        .unwrap();
     AppState {
         env: Arc::new(Environment::new()),
         db: pool,
@@ -111,7 +113,10 @@ async fn test_reprocess_with_wrong_password_is_forbidden(pool: PgPool) {
             Request::builder()
                 .method("POST")
                 .uri(format!("/admin/fetch_jobs/{job_id}/reprocess"))
-                .header(header::AUTHORIZATION, basic_auth_header(ADMIN_USER, "wrong"))
+                .header(
+                    header::AUTHORIZATION,
+                    basic_auth_header(ADMIN_USER, "wrong"),
+                )
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -192,11 +197,10 @@ async fn test_reprocess_failed_job_resets_to_pending(pool: PgPool) {
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    let status: String =
-        sqlx::query_scalar!("SELECT status FROM fetch_jobs WHERE id = $1", job_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let status: String = sqlx::query_scalar!("SELECT status FROM fetch_jobs WHERE id = $1", job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(status, "pending");
 }
 
@@ -229,7 +233,8 @@ async fn test_reprocess_source_document_missing_returns_404(pool: PgPool) {
 #[sqlx::test(migrations = "./migrations")]
 async fn test_reprocess_source_document_parses_and_reports_status(pool: PgPool) {
     ensure_admin_env();
-    let doc_id = seed_source_document(&pool, b"<p>Item approved by council.</p>", "text/html").await;
+    let doc_id =
+        seed_source_document(&pool, b"<p>Item approved by council.</p>", "text/html").await;
     let router = app(test_state(pool.clone()).await);
 
     let response = router
@@ -249,10 +254,12 @@ async fn test_reprocess_source_document_parses_and_reports_status(pool: PgPool) 
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    let status: String =
-        sqlx::query_scalar!("SELECT parser_status FROM source_documents WHERE id = $1", doc_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let status: String = sqlx::query_scalar!(
+        "SELECT parser_status FROM source_documents WHERE id = $1",
+        doc_id
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(status, "parsed");
 }

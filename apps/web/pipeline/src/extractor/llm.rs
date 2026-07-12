@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use super::schema::extraction_json_schema;
 use super::prompts::en::PROMPT_VERSION;
+use super::schema::extraction_json_schema;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LlmError {
@@ -94,7 +94,12 @@ struct ContentBlock {
 }
 
 impl AnthropicProvider {
-    async fn send(&self, system: &str, user_content: &str, output_config: serde_json::Value) -> Result<String, LlmError> {
+    async fn send(
+        &self,
+        system: &str,
+        user_content: &str,
+        output_config: serde_json::Value,
+    ) -> Result<String, LlmError> {
         let body = serde_json::json!({
             "model": MODEL,
             "max_tokens": 1024,
@@ -165,8 +170,12 @@ impl LlmProvider for AnthropicProvider {
     async fn complete_text(&self, system: &str, user_content: &str) -> Result<String, LlmError> {
         // No `format` constraint — a plain-text response, not a structured
         // extraction (see the trait doc comment for why this matters).
-        self.send(system, user_content, serde_json::json!({ "effort": "high" }))
-            .await
+        self.send(
+            system,
+            user_content,
+            serde_json::json!({ "effort": "high" }),
+        )
+        .await
     }
 }
 
@@ -266,7 +275,10 @@ mod tests {
 
         let provider = AnthropicProvider::with_base_url("test-key".to_string(), server.uri());
         let result = provider.complete("system", "user").await;
-        assert!(result.is_ok(), "expected success after retries, got {result:?}");
+        assert!(
+            result.is_ok(),
+            "expected success after retries, got {result:?}"
+        );
         assert!(result.unwrap().contains("has_mention"));
     }
 

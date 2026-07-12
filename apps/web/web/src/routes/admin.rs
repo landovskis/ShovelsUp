@@ -6,8 +6,8 @@ use axum::{
 use serde::Serialize;
 use uuid::Uuid;
 
-use shovelsup_pipeline::parser::{ocr::TesseractOcrProvider, orchestrate::parse_and_store};
 use crate::AppState;
+use shovelsup_pipeline::parser::{ocr::TesseractOcrProvider, orchestrate::parse_and_store};
 
 #[derive(Serialize)]
 pub struct ReprocessResponse {
@@ -82,11 +82,13 @@ pub async fn reprocess_source_document(
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
 
-    let parser_status: String =
-        sqlx::query_scalar!("SELECT parser_status FROM source_documents WHERE id = $1", id)
-            .fetch_one(&state.db)
-            .await
-            .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let parser_status: String = sqlx::query_scalar!(
+        "SELECT parser_status FROM source_documents WHERE id = $1",
+        id
+    )
+    .fetch_one(&state.db)
+    .await
+    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
 
     Ok(Json(ReprocessParsingResponse {
         source_document_id: id,

@@ -13,7 +13,10 @@ fn is_truthy(value: Option<&str>) -> bool {
     matches!(value, Some("true") | Some("1"))
 }
 
-pub async fn require_review_queue_enabled(req: Request, next: Next) -> Result<Response, StatusCode> {
+pub async fn require_review_queue_enabled(
+    req: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
     if !review_queue_enabled() {
         return Err(StatusCode::NOT_FOUND);
     }

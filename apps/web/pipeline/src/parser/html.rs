@@ -2,7 +2,9 @@ use scraper::{Html, Selector};
 
 use super::{ParseMethod, ParsedChunk};
 
-const BOILERPLATE_TAGS: &[&str] = &["nav", "header", "footer", "aside", "script", "style", "noscript"];
+const BOILERPLATE_TAGS: &[&str] = &[
+    "nav", "header", "footer", "aside", "script", "style", "noscript",
+];
 
 /// Extracts ordered text chunks from block-level elements (paragraphs, list
 /// items, headings, table cells), skipping anything nested under a

@@ -42,7 +42,10 @@ pub fn app(state: AppState) -> Router {
 
     let search_routes = Router::new()
         .route("/search", get(routes::search::get_search_page))
-        .route("/api/v1/projects/search", get(routes::search::search_projects))
+        .route(
+            "/api/v1/projects/search",
+            get(routes::search::search_projects),
+        )
         .layer(axum_middleware::from_fn_with_state(
             state.clone(),
             middleware::rate_limit::rate_limit_search,

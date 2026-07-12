@@ -32,8 +32,7 @@ async fn main() {
         .expect("failed to run migrations");
 
     let redis_url = std::env::var("REDIS_URL").expect("REDIS_URL must be set (see .env.example)");
-    let redis_client =
-        redis::Client::open(redis_url).expect("failed to build redis client");
+    let redis_client = redis::Client::open(redis_url).expect("failed to build redis client");
     let redis = redis::aio::ConnectionManager::new(redis_client)
         .await
         .expect("failed to connect to redis");

@@ -2,8 +2,8 @@ pub(crate) mod html;
 pub(crate) mod lang;
 pub mod ocr;
 pub mod orchestrate;
-pub(crate) mod plaintext;
 pub(crate) mod pdf;
+pub(crate) mod plaintext;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
@@ -65,7 +65,11 @@ mod tests {
 
     #[test]
     fn parse_document_normalizes_mime_type_with_charset_parameter() {
-        let result = parse_document("text/html; charset=utf-8", b"<p>hi</p>", &TesseractOcrProvider);
+        let result = parse_document(
+            "text/html; charset=utf-8",
+            b"<p>hi</p>",
+            &TesseractOcrProvider,
+        );
         assert!(result.is_ok());
     }
 }

@@ -122,22 +122,23 @@ pub async fn get_project_detail_page(
         .get_template("project_detail.html")
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let render_error_page = |labels: &TimelineLabels| -> Result<(StatusCode, Html<String>), StatusCode> {
-        let html = tmpl
-            .render(context! {
-                lang => lang,
-                nav_permits => labels.nav_permits,
-                nav_council => labels.nav_council,
-                page_title => labels.page_title,
-                timeline_title => labels.timeline_title,
-                timeline_error => true,
-                timeline_error_message => labels.timeline_error_message,
-                retry_label => labels.retry_label,
-                timeline_retry_url => format!("/projects/{id}"),
-            })
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        Ok((StatusCode::SERVICE_UNAVAILABLE, Html(html)))
-    };
+    let render_error_page =
+        |labels: &TimelineLabels| -> Result<(StatusCode, Html<String>), StatusCode> {
+            let html = tmpl
+                .render(context! {
+                    lang => lang,
+                    nav_permits => labels.nav_permits,
+                    nav_council => labels.nav_council,
+                    page_title => labels.page_title,
+                    timeline_title => labels.timeline_title,
+                    timeline_error => true,
+                    timeline_error_message => labels.timeline_error_message,
+                    retry_label => labels.retry_label,
+                    timeline_retry_url => format!("/projects/{id}"),
+                })
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            Ok((StatusCode::SERVICE_UNAVAILABLE, Html(html)))
+        };
 
     let project_exists = match sqlx::query_scalar!("SELECT id FROM projects WHERE id = $1", id)
         .fetch_optional(&state.db)

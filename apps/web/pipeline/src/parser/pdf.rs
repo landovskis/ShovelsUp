@@ -92,7 +92,8 @@ mod tests {
     }
 
     const MINIMAL_TEXT_PDF: &[u8] = include_bytes!("../../../tests/fixtures/minimal_text.pdf");
-    const MULTI_PAGE_TEXT_PDF: &[u8] = include_bytes!("../../../tests/fixtures/multi_page_text.pdf");
+    const MULTI_PAGE_TEXT_PDF: &[u8] =
+        include_bytes!("../../../tests/fixtures/multi_page_text.pdf");
     const BLANK_PAGE_PDF: &[u8] = include_bytes!("../../../tests/fixtures/blank_page.pdf");
     const MALFORMED_PDF: &[u8] = include_bytes!("../../../tests/fixtures/malformed.pdf");
 
@@ -103,17 +104,25 @@ mod tests {
 
     #[test]
     fn should_ocr_false_for_substantial_text() {
-        assert!(!should_ocr(&["This page has plenty of real extracted text content."]));
+        assert!(!should_ocr(&[
+            "This page has plenty of real extracted text content."
+        ]));
     }
 
     #[test]
     fn should_ocr_boundary_at_exactly_the_threshold() {
         let exactly_twenty = "a".repeat(MIN_CHARS_TO_SKIP_OCR);
         assert_eq!(exactly_twenty.len(), 20);
-        assert!(!should_ocr(&[&exactly_twenty]), "exactly at threshold should not trigger OCR");
+        assert!(
+            !should_ocr(&[&exactly_twenty]),
+            "exactly at threshold should not trigger OCR"
+        );
 
         let one_under = "a".repeat(MIN_CHARS_TO_SKIP_OCR - 1);
-        assert!(should_ocr(&[&one_under]), "one below threshold should trigger OCR");
+        assert!(
+            should_ocr(&[&one_under]),
+            "one below threshold should trigger OCR"
+        );
     }
 
     /// TC-REQ-002-1 (PDF half): native-text PDF parses into ordered chunks

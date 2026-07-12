@@ -95,7 +95,8 @@ mod tests {
     #[test]
     fn raw_extraction_deserializes_without_reference_number_field() {
         let json = r#"{"has_mention":true,"physical_work":true,"project_name":null,"civic_address":"123 Main St","project_type":"residential","scale_units":10,"scale_gfa_sqm":null,"scale_storeys":null,"approval_status_raw":"Approved."}"#;
-        let raw: RawExtraction = serde_json::from_str(json).expect("should deserialize without reference_number");
+        let raw: RawExtraction =
+            serde_json::from_str(json).expect("should deserialize without reference_number");
         assert_eq!(raw.reference_number, None);
     }
 
@@ -103,6 +104,9 @@ mod tests {
     fn raw_extraction_deserializes_with_reference_number_present() {
         let json = r#"{"has_mention":true,"physical_work":true,"project_name":null,"civic_address":"123 Main St","project_type":"residential","scale_units":10,"scale_gfa_sqm":null,"scale_storeys":null,"approval_status_raw":"Approved.","reference_number":"Application No. 2026-045"}"#;
         let raw: RawExtraction = serde_json::from_str(json).unwrap();
-        assert_eq!(raw.reference_number.as_deref(), Some("Application No. 2026-045"));
+        assert_eq!(
+            raw.reference_number.as_deref(),
+            Some("Application No. 2026-045")
+        );
     }
 }

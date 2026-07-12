@@ -18,12 +18,11 @@ pub struct OverdueMetric {
 /// overdue — only `due_at < now()` (strictly past) counts, per the
 /// `idx_review_candidates_status_due_at` index this query uses.
 pub async fn compute_overdue_metric(pool: &PgPool) -> Result<OverdueMetric, sqlx::Error> {
-    let open_count: i64 = sqlx::query_scalar!(
-        "SELECT count(*) FROM review_candidates WHERE status = 'open'"
-    )
-    .fetch_one(pool)
-    .await?
-    .unwrap_or(0);
+    let open_count: i64 =
+        sqlx::query_scalar!("SELECT count(*) FROM review_candidates WHERE status = 'open'")
+            .fetch_one(pool)
+            .await?
+            .unwrap_or(0);
 
     let overdue_count: i64 = sqlx::query_scalar!(
         "SELECT count(*) FROM review_candidates WHERE status = 'open' AND due_at < now()"
@@ -32,7 +31,10 @@ pub async fn compute_overdue_metric(pool: &PgPool) -> Result<OverdueMetric, sqlx
     .await?
     .unwrap_or(0);
 
-    Ok(OverdueMetric { open_count, overdue_count })
+    Ok(OverdueMetric {
+        open_count,
+        overdue_count,
+    })
 }
 
 #[cfg(test)]
@@ -96,7 +98,10 @@ mod tests {
 
         let metric = compute_overdue_metric(&pool).await.unwrap();
         assert_eq!(metric.open_count, 1);
-        assert_eq!(metric.overdue_count, 0, "a due_at still (barely) in the future must not count as overdue");
+        assert_eq!(
+            metric.overdue_count, 0,
+            "a due_at still (barely) in the future must not count as overdue"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]

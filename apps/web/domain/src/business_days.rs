@@ -29,7 +29,12 @@ mod tests {
         let due = add_business_days(friday, 2);
         // +1 business day -> Monday 2026-07-13, +1 more -> Tuesday 2026-07-14.
         assert_eq!(due.weekday(), Weekday::Tue);
-        assert_eq!(due.date_naive(), Utc.with_ymd_and_hms(2026, 7, 14, 12, 0, 0).unwrap().date_naive());
+        assert_eq!(
+            due.date_naive(),
+            Utc.with_ymd_and_hms(2026, 7, 14, 12, 0, 0)
+                .unwrap()
+                .date_naive()
+        );
     }
 
     #[test]

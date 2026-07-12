@@ -35,7 +35,9 @@ async fn test_state(pool: PgPool) -> AppState {
     let mut env = Environment::new();
     env.set_loader(path_loader("../templates"));
     let redis_client = redis::Client::open("redis://localhost:6380").unwrap();
-    let redis = redis::aio::ConnectionManager::new(redis_client).await.unwrap();
+    let redis = redis::aio::ConnectionManager::new(redis_client)
+        .await
+        .unwrap();
     AppState {
         env: std::sync::Arc::new(env),
         db: pool,
@@ -80,7 +82,12 @@ async fn seed_document_chunk(pool: &PgPool) -> Uuid {
     .unwrap()
 }
 
-async fn insert_mention(pool: &PgPool, chunk_id: Uuid, civic_address: &str, project_type: &str) -> Uuid {
+async fn insert_mention(
+    pool: &PgPool,
+    chunk_id: Uuid,
+    civic_address: &str,
+    project_type: &str,
+) -> Uuid {
     sqlx::query_scalar!(
         "INSERT INTO project_mentions \
          (document_chunk_id, physical_work, civic_address, project_type, scale_units) \
@@ -124,9 +131,23 @@ async fn tc_req_006_1_timeline_renders_events_in_chronological_order(pool: PgPoo
     let m3 = insert_mention(&pool, chunk_id, "1 chrono st", "residential").await;
 
     let base = chrono::Utc::now();
-    seed_timeline_event(&pool, project_id, m2, base + chrono::Duration::days(2), "approved").await;
+    seed_timeline_event(
+        &pool,
+        project_id,
+        m2,
+        base + chrono::Duration::days(2),
+        "approved",
+    )
+    .await;
     seed_timeline_event(&pool, project_id, m1, base, "proposed").await;
-    seed_timeline_event(&pool, project_id, m3, base + chrono::Duration::days(5), "deferred").await;
+    seed_timeline_event(
+        &pool,
+        project_id,
+        m3,
+        base + chrono::Duration::days(5),
+        "deferred",
+    )
+    .await;
 
     let app = app(test_state(pool).await);
     let response = app
@@ -182,7 +203,10 @@ async fn tc_req_006_2_same_day_events_tie_break_by_ingestion_order(pool: PgPool)
         .unwrap()
         .to_bytes();
     let events: Vec<Value> = serde_json::from_slice(&body).unwrap();
-    let ids: Vec<String> = events.iter().map(|e| e["id"].as_str().unwrap().to_string()).collect();
+    let ids: Vec<String> = events
+        .iter()
+        .map(|e| e["id"].as_str().unwrap().to_string())
+        .collect();
     assert_eq!(ids, vec![first_id.to_string(), second_id.to_string()]);
 }
 
@@ -335,7 +359,14 @@ async fn imp_req_006_04_project_detail_page_renders_loaded_state(pool: PgPool) {
     let project_id = seed_project(&pool, "9 loaded loop", "commercial").await;
     let chunk_id = seed_document_chunk(&pool).await;
     let mention_id = insert_mention(&pool, chunk_id, "9 loaded loop", "commercial").await;
-    seed_timeline_event(&pool, project_id, mention_id, chrono::Utc::now(), "approved").await;
+    seed_timeline_event(
+        &pool,
+        project_id,
+        mention_id,
+        chrono::Utc::now(),
+        "approved",
+    )
+    .await;
 
     let app = app(test_state(pool).await);
     let response = app
@@ -416,5 +447,8 @@ async fn imp_req_006_07_resolver_write_reflected_in_timeline(pool: PgPool) {
         .to_bytes();
     let events: Vec<Value> = serde_json::from_slice(&body).unwrap();
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0]["project_mention_id"].as_str().unwrap(), mention_id.to_string());
+    assert_eq!(
+        events[0]["project_mention_id"].as_str().unwrap(),
+        mention_id.to_string()
+    );
 }
