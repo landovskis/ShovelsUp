@@ -49,6 +49,9 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      - name: Install PDF and OCR tools
+        run: sudo apt-get update && sudo apt-get install --yes poppler-utils tesseract-ocr tesseract-ocr-fra
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/web -> target
