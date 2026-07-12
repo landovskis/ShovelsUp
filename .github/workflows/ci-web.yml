@@ -22,6 +22,22 @@ jobs:
   ci:
     name: fmt / clippy / test / build
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/shovelsup_test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: shovelsup_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d shovelsup_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: apps/web
@@ -36,6 +52,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/web -> target
+
+      - name: Install SQLx CLI
+        run: cargo install sqlx-cli --version 0.8.6 --no-default-features --features rustls,postgres --locked
+
+      - name: Run database migrations
+        run: cargo sqlx migrate run --source web/migrations
 
       - name: Format check
         run: cargo fmt --check
