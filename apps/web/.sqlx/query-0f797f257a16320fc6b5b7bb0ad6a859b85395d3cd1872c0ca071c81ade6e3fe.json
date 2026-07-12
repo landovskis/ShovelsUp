@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO municipalities (name, slug, domain_allowlist) VALUES ('Test City', 'test-city', ARRAY[$1]) RETURNING id",
+  "query": "SELECT id FROM projects WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -11,12 +11,12 @@
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "f880b339223d05ce3e8a02a6e00f39e02304833fa216067f094dde3f1e653c6a"
+  "hash": "0f797f257a16320fc6b5b7bb0ad6a859b85395d3cd1872c0ca071c81ade6e3fe"
 }

@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT project_id, civic_address_normalized, municipality_name, project_type, normalized_status\n        FROM public_search_documents\n        WHERE civic_address_normalized ILIKE $1 OR municipality_name ILIKE $1\n        ORDER BY civic_address_normalized ASC\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "project_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "civic_address_normalized",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "municipality_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "project_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "normalized_status",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "3d76707d202a431a8b271c246d7a5e8ef9daeca3fb2bf2bcb20f5317d1f46b7f"
+}

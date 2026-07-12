@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO document_chunks (source_document_id, chunk_index, content) VALUES ($1, 0, 'chunk text') RETURNING id",
+  "query": "SELECT id FROM projects WHERE civic_address_normalized = $1 AND project_type = $2",
   "describe": {
     "columns": [
       {
@@ -11,12 +11,13 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Text",
+        "Text"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "7f455daa9d302633d2c7c43fa170a70261e39c25512c0beb73cc772b0604ae8d"
+  "hash": "77bb7ebe77577a7bd3c36c4be9a5f1431c979366c295538bd004a10394883db2"
 }

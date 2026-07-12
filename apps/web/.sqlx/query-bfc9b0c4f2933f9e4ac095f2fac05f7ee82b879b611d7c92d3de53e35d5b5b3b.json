@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE fetch_jobs SET status = 'failed', attempts = attempts + 1, last_error = $1, updated_at = now() WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bfc9b0c4f2933f9e4ac095f2fac05f7ee82b879b611d7c92d3de53e35d5b5b3b"
+}

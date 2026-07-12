@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO project_mentions (document_chunk_id, physical_work, civic_address, normalized_status, scale_units) VALUES ($1, true, $2, $3, 1) RETURNING id",
+  "query": "INSERT INTO projects (civic_address_normalized, project_type) VALUES ($1, $2) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -11,7 +11,6 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid",
         "Text",
         "Text"
       ]
@@ -20,5 +19,5 @@
       false
     ]
   },
-  "hash": "c03caf50b7ec61cbc5276c64ab6ac368bea71b0b321d947eb7039010e80cc993"
+  "hash": "af12a5f3dee1b1b4655b4829ad47aa6c49057a07168a98ae9b1c452485b8bb20"
 }

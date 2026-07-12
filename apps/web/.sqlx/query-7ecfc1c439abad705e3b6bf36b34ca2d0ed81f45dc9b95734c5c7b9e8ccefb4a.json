@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO public_search_documents\n            (project_id, civic_address_normalized, municipality_name, project_type, normalized_status, updated_at)\n        SELECT\n            p.id,\n            p.civic_address_normalized,\n            m.name,\n            p.project_type,\n            latest.normalized_status,\n            now()\n        FROM projects p\n        LEFT JOIN LATERAL (\n            SELECT pm.normalized_status, dc.source_document_id\n            FROM project_mentions pm\n            JOIN document_chunks dc ON dc.id = pm.document_chunk_id\n            WHERE pm.project_id = p.id\n            ORDER BY pm.created_at DESC\n            LIMIT 1\n        ) latest ON true\n        LEFT JOIN source_documents sd ON sd.id = latest.source_document_id\n        LEFT JOIN municipalities m ON m.id = sd.municipality_id\n        WHERE p.civic_address_normalized IS NOT NULL\n        ON CONFLICT (project_id) DO UPDATE SET\n            civic_address_normalized = EXCLUDED.civic_address_normalized,\n            municipality_name = EXCLUDED.municipality_name,\n            project_type = EXCLUDED.project_type,\n            normalized_status = EXCLUDED.normalized_status,\n            updated_at = now()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "7ecfc1c439abad705e3b6bf36b34ca2d0ed81f45dc9b95734c5c7b9e8ccefb4a"
+}

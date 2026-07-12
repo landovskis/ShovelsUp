@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE fetch_jobs SET status = 'in_progress', updated_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "db7a03fe797dee106b64e12b1aa733d87d10fa2931be7707ce2f253ee4cb4e20"
+}

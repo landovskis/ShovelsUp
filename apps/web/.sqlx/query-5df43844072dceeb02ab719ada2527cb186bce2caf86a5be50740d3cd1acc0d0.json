@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO fetch_jobs (municipality_id, scheduled_for, status) VALUES ($1, now(), $2) RETURNING id",
+  "query": "SELECT id FROM projects WHERE civic_address_normalized = $1 AND project_type != $2",
   "describe": {
     "columns": [
       {
@@ -11,7 +11,7 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid",
+        "Text",
         "Text"
       ]
     },
@@ -19,5 +19,5 @@
       false
     ]
   },
-  "hash": "e9f72645cc87e63d2a769e98141b3d0e5c4899cdbf6a16e20d583ceb938910ac"
+  "hash": "5df43844072dceeb02ab719ada2527cb186bce2caf86a5be50740d3cd1acc0d0"
 }

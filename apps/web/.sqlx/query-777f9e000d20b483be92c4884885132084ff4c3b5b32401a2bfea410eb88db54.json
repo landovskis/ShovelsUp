@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            dc.language AS \"language!\",\n            count(*) AS \"mention_count!\",\n            avg(\n                (\n                    (pm.civic_address IS NOT NULL)::int\n                    + (pm.project_type IS NOT NULL)::int\n                    + (pm.scale_units IS NOT NULL OR pm.scale_gfa_sqm IS NOT NULL OR pm.scale_storeys IS NOT NULL)::int\n                    + (pm.approval_status_raw IS NOT NULL)::int\n                )::float8 / 4.0\n            ) AS \"average_completeness!\"\n        FROM project_mentions pm\n        JOIN document_chunks dc ON dc.id = pm.document_chunk_id\n        WHERE dc.language IS NOT NULL\n        GROUP BY dc.language\n        ORDER BY dc.language\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "language!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "mention_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "average_completeness!",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "777f9e000d20b483be92c4884885132084ff4c3b5b32401a2bfea410eb88db54"
+}
