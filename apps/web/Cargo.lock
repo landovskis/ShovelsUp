@@ -2281,19 +2281,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
-name = "shovelsup-web"
+name = "shovelsup-domain"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "sqlx",
+ "thiserror 1.0.69",
+ "uuid",
+]
+
+[[package]]
+name = "shovelsup-pipeline"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "axum",
- "base64",
- "bcrypt",
  "chrono",
  "encoding_rs",
- "http-body-util",
- "minijinja",
- "once_cell",
- "redis",
  "reqwest",
  "scraper",
  "serde",
@@ -2302,12 +2305,36 @@ dependencies = [
  "sqlx",
  "thiserror 1.0.69",
  "tokio",
+ "tracing",
+ "uuid",
+ "whatlang",
+ "wiremock",
+]
+
+[[package]]
+name = "shovelsup-web"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64",
+ "bcrypt",
+ "chrono",
+ "http-body-util",
+ "minijinja",
+ "once_cell",
+ "redis",
+ "serde",
+ "serde_json",
+ "shovelsup-domain",
+ "shovelsup-pipeline",
+ "sqlx",
+ "thiserror 1.0.69",
+ "tokio",
  "tower",
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
  "uuid",
- "whatlang",
  "wiremock",
 ]
 

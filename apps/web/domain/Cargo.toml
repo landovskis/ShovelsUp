@@ -1,0 +1,14 @@
+[package]
+name = "shovelsup-domain"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "shovelsup_domain"
+path = "src/lib.rs"
+
+[dependencies]
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "chrono", "uuid"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+thiserror = "1"
