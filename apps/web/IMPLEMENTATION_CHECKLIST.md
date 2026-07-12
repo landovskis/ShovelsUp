@@ -33,6 +33,9 @@ not silently worked around.
 - [x] IMP-REQ-001-08 — Integration test: end-to-end fixture fetch, 3 municipalities
 - [x] IMP-REQ-001-09 — k6 load test for concurrent fetch SLA
 - [x] IMP-REQ-001-10 — Document `DATA_PIPELINE_INGESTION_ENABLED` flag and rollback
+- [x] IMP-REQ-001-11 — Fetch-job worker: discover real typeDoc=pv links from Montreal's document listing, fetch/parse/extract each (`pipeline/src/worker.rs`, `pipeline/src/worker/core.rs`)
+- [x] IMP-REQ-001-12 — Wire hourly `tokio::spawn` interval loop in `web/src/main.rs`, gated by live-read `DATA_PIPELINE_INGESTION_ENABLED`
+- [x] IMP-REQ-001-13 — `agenda_url` column + real Montreal seed (`web/migrations/015_montreal_agenda_url.sql`) ⚠️ Toronto/Vancouver stay unconfigured, see runbook
 
 ## REQ-002 — Surface Projects Across Document Formats
 
