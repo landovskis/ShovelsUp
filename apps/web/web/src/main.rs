@@ -50,10 +50,11 @@ async fn main() {
         redis,
     };
 
+    let ocr = TesseractOcrProvider;
+    let llm = AnthropicProvider::from_env();
+
     let pipeline_db = state.db.clone();
     tokio::spawn(async move {
-        let ocr = TesseractOcrProvider;
-        let llm = AnthropicProvider::from_env();
         let mut interval = tokio::time::interval(Duration::from_secs(3600));
         loop {
             interval.tick().await;
