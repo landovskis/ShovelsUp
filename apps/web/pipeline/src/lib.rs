@@ -6,3 +6,4 @@ pub mod parser;
 pub mod redaction;
 pub mod resolver;
 pub mod scheduler;
+pub mod worker;
