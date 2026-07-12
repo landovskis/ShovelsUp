@@ -9,6 +9,17 @@ pub fn review_queue_enabled() -> bool {
     is_truthy(std::env::var("REVIEW_QUEUE_ENABLED").ok().as_deref())
 }
 
+/// `DATA_PIPELINE_INGESTION_ENABLED` (IMP-REQ-001-12, default `false`/unset):
+/// gates the fetch-job worker's interval loop in `main.rs`. Read live on
+/// every tick (not cached at startup) so ops can flip it without a restart
+/// (docs/runbooks/data_pipeline_ingestion.md). Do not enable in an
+/// environment where the seeded municipality domains
+/// (migrations/002_seed_municipalities.sql) haven't had legal/public-source
+/// sign-off.
+pub fn data_pipeline_ingestion_enabled() -> bool {
+    is_truthy(std::env::var("DATA_PIPELINE_INGESTION_ENABLED").ok().as_deref())
+}
+
 fn is_truthy(value: Option<&str>) -> bool {
     matches!(value, Some("true") | Some("1"))
 }
@@ -38,5 +49,16 @@ mod tests {
     fn enabled_for_true_or_one() {
         assert!(is_truthy(Some("true")));
         assert!(is_truthy(Some("1")));
+    }
+
+    #[test]
+    fn data_pipeline_ingestion_disabled_when_unset_or_falsy() {
+        assert!(!is_truthy(None));
+        // data_pipeline_ingestion_enabled() itself reads the real env var,
+        // so it's exercised indirectly via is_truthy here (same helper,
+        // same contract as review_queue_enabled) — a dedicated env-var
+        // integration test would be flaky under parallel test execution
+        // (shared process env), matching why review_queue_enabled has no
+        // such test either.
     }
 }
