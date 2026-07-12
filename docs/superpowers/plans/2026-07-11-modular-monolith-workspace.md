@@ -56,7 +56,15 @@ git mv tests/status_normalization_parity.rs web/tests/status_normalization_parit
 git mv tests/timeline_resolver.rs web/tests/timeline_resolver.rs
 ```
 
-`tests/fixtures/` and `tests/e2e/` are untouched by this — they stay at `apps/web/tests/fixtures/` and `apps/web/tests/e2e/`. This matters because `apps/web/web/src/pipeline/parser/{pdf.rs,ocr.rs,orchestrate.rs}` load fixtures at compile time via `include_bytes!("../../../tests/fixtures/....")`, a path relative to the *source file's own location* (not `CARGO_MANIFEST_DIR`). The source files move from `src/pipeline/parser/` to `web/src/pipeline/parser/` — same depth (3 path segments below `apps/web/`) — so `../../../tests/fixtures/...` still resolves to `apps/web/tests/fixtures/...` without editing those `include_bytes!` calls.
+`tests/fixtures/` and `tests/e2e/` are untouched by this — they stay at `apps/web/tests/fixtures/` and `apps/web/tests/e2e/`. This matters because `apps/web/web/src/pipeline/parser/{pdf.rs,ocr.rs,orchestrate.rs}` load fixtures at compile time via `include_bytes!("../../../tests/fixtures/....")`, a path relative to the *source file's own location* (not `CARGO_MANIFEST_DIR`). **Correction to an earlier depth calculation:** in this task's intermediate layout the source files move from `src/pipeline/parser/` (3 segments below `apps/web/`) to `web/src/pipeline/parser/` (4 segments below `apps/web/` — `web`, `src`, `pipeline`, `parser`), one level deeper, so the existing 3-level `../../../` no longer reaches `apps/web/tests/fixtures/`. It must become 4 levels (`../../../../`) in this task. Task 3 will move these files again, from `web/src/pipeline/parser/` (4 deep) to `pipeline/src/parser/` (3 deep), at which point the path must drop back to 3 levels — Task 3 includes that fix explicitly.
+
+- [ ] **Step 1b: Fix the `include_bytes!` fixture paths for the new depth**
+
+In `apps/web/web/src/pipeline/parser/pdf.rs`, change all four occurrences of `"../../../tests/fixtures/` to `"../../../../tests/fixtures/` (i.e. `MINIMAL_TEXT_PDF`, `MULTI_PAGE_TEXT_PDF`, `BLANK_PAGE_PDF`, `MALFORMED_PDF`).
+
+In `apps/web/web/src/pipeline/parser/ocr.rs`, change both occurrences (`BLANK_PAGE_PDF`, `MALFORMED_PDF`) the same way.
+
+In `apps/web/web/src/pipeline/parser/orchestrate.rs`, change the one occurrence (`blank_pdf`) the same way.
 
 - [ ] **Step 2: Write the new workspace root manifest**
 
@@ -205,6 +213,7 @@ git commit -m "refactor(web): extract shovelsup-domain crate from apps/web"
 - Modify: `apps/web/web/src/lib.rs` (remove `pub mod pipeline;`)
 - Modify: `apps/web/web/src/routes/admin.rs:9` (fix import)
 - Modify: `apps/web/pipeline/src/extractor/mod.rs:9,204` (fix internal `crate::pipeline::` references)
+- Modify: `apps/web/pipeline/src/parser/{pdf.rs,ocr.rs,orchestrate.rs}` (fix `include_bytes!` fixture paths back to 3 levels)
 - Move + modify: 6 test files from `apps/web/web/tests/` → `apps/web/pipeline/tests/`
 - Modify: `apps/web/web/tests/review_queue_e2e.rs`, `apps/web/web/tests/timeline_resolver.rs` (fix one import line each, files stay in place)
 
@@ -227,6 +236,14 @@ git mv web/src/pipeline/scheduler.rs pipeline/src/scheduler.rs
 git mv web/src/pipeline/mod.rs pipeline/src/lib.rs
 rmdir web/src/pipeline
 ```
+
+Fix the `include_bytes!` fixture paths back down to 3 levels now that these files moved from `web/src/pipeline/parser/` (4 segments below `apps/web/`) to `pipeline/src/parser/` (3 segments below `apps/web/`, same depth as the original pre-Task-1 location):
+
+In `apps/web/pipeline/src/parser/pdf.rs`, change all four occurrences of `"../../../../tests/fixtures/` back to `"../../../tests/fixtures/`.
+
+In `apps/web/pipeline/src/parser/ocr.rs`, change both occurrences the same way.
+
+In `apps/web/pipeline/src/parser/orchestrate.rs`, change the one occurrence the same way.
 
 - [ ] **Step 2: Create `apps/web/pipeline/Cargo.toml`**
 
