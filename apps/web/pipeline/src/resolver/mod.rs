@@ -1,5 +1,6 @@
 pub(crate) mod address;
 pub(crate) mod address_fr;
+pub(crate) mod core;
 
 use sqlx::PgPool;
 use std::time::Duration;
@@ -126,11 +127,6 @@ async fn try_resolve(pool: &PgPool, mention_id: Uuid) -> Result<ResolutionOutcom
     .fetch_optional(pool)
     .await?;
 
-    if let Some(project_id) = exact_match {
-        link_mention(pool, mention_id, project_id).await?;
-        return Ok(ResolutionOutcome::Linked { project_id });
-    }
-
     let other_type_matches = sqlx::query_scalar!(
         "SELECT id FROM projects WHERE civic_address_normalized = $1 AND project_type != $2",
         normalized_address,
@@ -139,8 +135,12 @@ async fn try_resolve(pool: &PgPool, mention_id: Uuid) -> Result<ResolutionOutcom
     .fetch_all(pool)
     .await?;
 
-    match other_type_matches.len() {
-        0 => {
+    match core::decide_address_resolution(exact_match, other_type_matches.len()) {
+        core::AddressResolutionDecision::Link { project_id } => {
+            link_mention(pool, mention_id, project_id).await?;
+            Ok(ResolutionOutcome::Linked { project_id })
+        }
+        core::AddressResolutionDecision::CreateProject => {
             // No match of any type at this address: create a new project.
             // A concurrent resolution of the same new (address, type) races
             // here — the partial unique index rejects the loser, which
@@ -173,7 +173,7 @@ async fn try_resolve(pool: &PgPool, mention_id: Uuid) -> Result<ResolutionOutcom
                 Err(err) => Err(err),
             }
         }
-        _ => {
+        core::AddressResolutionDecision::FlagAmbiguous => {
             let details = serde_json::json!({
                 "civic_address": civic_address,
                 "normalized_address": normalized_address,
@@ -188,7 +188,9 @@ async fn try_resolve(pool: &PgPool, mention_id: Uuid) -> Result<ResolutionOutcom
             )
             .fetch_one(pool)
             .await?;
-            Ok(ResolutionOutcome::FlaggedAmbiguous { review_candidate_id })
+            Ok(ResolutionOutcome::FlaggedAmbiguous {
+                review_candidate_id,
+            })
         }
     }
 }
@@ -210,7 +212,11 @@ async fn cross_ref_match(
     .map(|opt| opt.flatten())
 }
 
-async fn link_mention(pool: &PgPool, mention_id: Uuid, project_id: Uuid) -> Result<(), sqlx::Error> {
+async fn link_mention(
+    pool: &PgPool,
+    mention_id: Uuid,
+    project_id: Uuid,
+) -> Result<(), sqlx::Error> {
     sqlx::query!(
         "UPDATE project_mentions SET project_id = $1 WHERE id = $2",
         project_id,
@@ -246,7 +252,10 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
 fn is_transient(err: &sqlx::Error) -> bool {
     matches!(
         err,
-        sqlx::Error::Io(_) | sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed | sqlx::Error::WorkerCrashed
+        sqlx::Error::Io(_)
+            | sqlx::Error::PoolTimedOut
+            | sqlx::Error::PoolClosed
+            | sqlx::Error::WorkerCrashed
     ) || matches!(
         err,
         sqlx::Error::Database(db_err)
@@ -283,7 +292,11 @@ mod retry_tests {
         .await;
 
         assert_eq!(result.unwrap(), 42);
-        assert_eq!(attempts.load(Ordering::SeqCst), 3, "must succeed on the 3rd attempt");
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            3,
+            "must succeed on the 3rd attempt"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -296,7 +309,11 @@ mod retry_tests {
         .await;
 
         assert!(matches!(result, Err(sqlx::Error::RowNotFound)));
-        assert_eq!(attempts.load(Ordering::SeqCst), 1, "a non-transient error must not be retried");
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            1,
+            "a non-transient error must not be retried"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -308,8 +325,15 @@ mod retry_tests {
         })
         .await;
 
-        assert!(result.is_err(), "must surface the error once attempts are exhausted, not hang forever");
-        assert_eq!(attempts.load(Ordering::SeqCst), MAX_ATTEMPTS, "no orphaned retries beyond MAX_ATTEMPTS");
+        assert!(
+            result.is_err(),
+            "must surface the error once attempts are exhausted, not hang forever"
+        );
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            MAX_ATTEMPTS,
+            "no orphaned retries beyond MAX_ATTEMPTS"
+        );
     }
 
     #[test]

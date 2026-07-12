@@ -70,12 +70,21 @@ mod tests {
     #[test]
     fn different_addresses_normalize_differently() {
         // TC-REQ-005-2: near-miss addresses must not collide.
-        assert_ne!(normalize_address("123 Main St"), normalize_address("125 Main St"));
-        assert_ne!(normalize_address("123 Main St"), normalize_address("123 Maine St"));
+        assert_ne!(
+            normalize_address("123 Main St"),
+            normalize_address("125 Main St")
+        );
+        assert_ne!(
+            normalize_address("123 Main St"),
+            normalize_address("123 Maine St")
+        );
     }
 
     #[test]
     fn equivalent_phrasing_normalizes_the_same() {
-        assert_eq!(normalize_address("123 Main St."), normalize_address("123 Main Street"));
+        assert_eq!(
+            normalize_address("123 Main St."),
+            normalize_address("123 Main Street")
+        );
     }
 }

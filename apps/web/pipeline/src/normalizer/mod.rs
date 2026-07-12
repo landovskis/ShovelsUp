@@ -1,6 +1,8 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+pub(crate) mod core;
+
 /// Deterministic lookup — not an LLM call — against the seeded
 /// `status_vocabulary` table, so EN/FR parity is a data-coverage problem
 /// (matching synonyms) rather than a model-consistency one (per REQ-004's
@@ -15,8 +17,6 @@ pub async fn normalize_status(
     raw_text: &str,
     language: &str,
 ) -> Result<Option<String>, sqlx::Error> {
-    let cleaned = raw_text.to_lowercase();
-
     let vocab = sqlx::query!(
         "SELECT phrase, normalized_status FROM status_vocabulary WHERE language = $1",
         language
@@ -24,17 +24,14 @@ pub async fn normalize_status(
     .fetch_all(pool)
     .await?;
 
-    let mut best: Option<(usize, String)> = None;
-    for row in vocab {
-        if cleaned.contains(&row.phrase) {
-            let len = row.phrase.len();
-            if best.as_ref().is_none_or(|(best_len, _)| len > *best_len) {
-                best = Some((len, row.normalized_status));
-            }
-        }
-    }
-
-    Ok(best.map(|(_, status)| status))
+    Ok(core::normalize_status(
+        raw_text,
+        vocab.iter().map(|row| core::VocabularyEntry {
+            phrase: &row.phrase,
+            normalized_status: &row.normalized_status,
+        }),
+    )
+    .map(str::to_owned))
 }
 
 /// Detects a same-document status conflict for `new_mention_id`: another
@@ -163,22 +160,28 @@ mod tests {
     }
 
     /// TC-REQ-004-1: English synonyms map to the correct enum value.
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn normalize_status_maps_english_synonyms(pool: PgPool) {
         assert_eq!(
             normalize_status(&pool, "Approved.", "en").await.unwrap(),
             Some("approved".to_string())
         );
         assert_eq!(
-            normalize_status(&pool, "The item was adopted unanimously.", "en").await.unwrap(),
+            normalize_status(&pool, "The item was adopted unanimously.", "en")
+                .await
+                .unwrap(),
             Some("approved".to_string())
         );
         assert_eq!(
-            normalize_status(&pool, "Deferred to next meeting.", "en").await.unwrap(),
+            normalize_status(&pool, "Deferred to next meeting.", "en")
+                .await
+                .unwrap(),
             Some("deferred".to_string())
         );
         assert_eq!(
-            normalize_status(&pool, "Referred to committee.", "en").await.unwrap(),
+            normalize_status(&pool, "Referred to committee.", "en")
+                .await
+                .unwrap(),
             Some("referred".to_string())
         );
         assert_eq!(
@@ -188,14 +191,16 @@ mod tests {
     }
 
     /// TC-REQ-004-2: French synonyms map to the same enum value as EN.
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn normalize_status_maps_french_synonyms_to_same_values(pool: PgPool) {
         assert_eq!(
             normalize_status(&pool, "Approuvé.", "fr").await.unwrap(),
             Some("approved".to_string())
         );
         assert_eq!(
-            normalize_status(&pool, "Reporté à la prochaine séance.", "fr").await.unwrap(),
+            normalize_status(&pool, "Reporté à la prochaine séance.", "fr")
+                .await
+                .unwrap(),
             Some("deferred".to_string())
         );
         assert_eq!(
@@ -205,18 +210,21 @@ mod tests {
     }
 
     /// TC-REQ-004-3: unrecognized phrase not silently defaulted.
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn normalize_status_returns_none_for_unrecognized_phrase(pool: PgPool) {
-        let result = normalize_status(&pool, "Tabled for further study.", "en").await.unwrap();
+        let result = normalize_status(&pool, "Tabled for further study.", "en")
+            .await
+            .unwrap();
         assert_eq!(result, None);
     }
 
     /// TC-REQ-004-4: conflicting same-document status resolved + flagged.
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn detects_and_flags_same_document_status_conflict(pool: PgPool) {
         let chunk_id = seed_document_chunk(&pool).await;
         insert_mention(&pool, chunk_id, Some("123 Main St"), Some("approved")).await;
-        let second_mention = insert_mention(&pool, chunk_id, Some("123 Main St"), Some("deferred")).await;
+        let second_mention =
+            insert_mention(&pool, chunk_id, Some("123 Main St"), Some("deferred")).await;
 
         let candidate_id = detect_and_flag_status_conflict(&pool, second_mention)
             .await
@@ -233,11 +241,12 @@ mod tests {
         assert_eq!(candidate_type, "status_conflict");
     }
 
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn no_conflict_flagged_for_matching_statuses(pool: PgPool) {
         let chunk_id = seed_document_chunk(&pool).await;
         insert_mention(&pool, chunk_id, Some("123 Main St"), Some("approved")).await;
-        let second_mention = insert_mention(&pool, chunk_id, Some("123 Main St"), Some("approved")).await;
+        let second_mention =
+            insert_mention(&pool, chunk_id, Some("123 Main St"), Some("approved")).await;
 
         let candidate_id = detect_and_flag_status_conflict(&pool, second_mention)
             .await
@@ -245,11 +254,12 @@ mod tests {
         assert!(candidate_id.is_none());
     }
 
-#[sqlx::test(migrations = "../web/migrations")]
+    #[sqlx::test(migrations = "../web/migrations")]
     async fn no_conflict_flagged_for_different_addresses(pool: PgPool) {
         let chunk_id = seed_document_chunk(&pool).await;
         insert_mention(&pool, chunk_id, Some("123 Main St"), Some("approved")).await;
-        let second_mention = insert_mention(&pool, chunk_id, Some("456 Oak Ave"), Some("deferred")).await;
+        let second_mention =
+            insert_mention(&pool, chunk_id, Some("456 Oak Ave"), Some("deferred")).await;
 
         let candidate_id = detect_and_flag_status_conflict(&pool, second_mention)
             .await
