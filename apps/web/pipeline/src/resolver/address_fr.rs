@@ -73,9 +73,18 @@ mod tests {
             ("456 Boulevard Saint-Laurent", "456 boulevard saint-laurent"),
             ("789, av. du Parc", "789 avenue du parc"),
             ("789 Avenue du Parc", "789 avenue du parc"),
-            ("1000, ch. de la Côte-des-Neiges", "1000 chemin de la côte-des-neiges"),
-            ("1000 Chemin de la Côte-des-Neiges", "1000 chemin de la côte-des-neiges"),
-            ("200, rue Sainte-Catherine Ouest", "200 rue sainte-catherine ouest"),
+            (
+                "1000, ch. de la Côte-des-Neiges",
+                "1000 chemin de la côte-des-neiges",
+            ),
+            (
+                "1000 Chemin de la Côte-des-Neiges",
+                "1000 chemin de la côte-des-neiges",
+            ),
+            (
+                "200, rue Sainte-Catherine Ouest",
+                "200 rue sainte-catherine ouest",
+            ),
             ("15, rue Saint-Denis", "15 rue saint-denis"),
             ("50, boul. René-Lévesque", "50 boulevard rené-lévesque"),
             ("50 Boulevard René-Lévesque", "50 boulevard rené-lévesque"),
@@ -84,7 +93,10 @@ mod tests {
             ("25, rue Sherbrooke Est", "25 rue sherbrooke est"),
             ("18, ch. Queen-Mary", "18 chemin queen-mary"),
             ("400, boul. de Maisonneuve", "400 boulevard de maisonneuve"),
-            ("400 Boulevard de Maisonneuve", "400 boulevard de maisonneuve"),
+            (
+                "400 Boulevard de Maisonneuve",
+                "400 boulevard de maisonneuve",
+            ),
             ("60, rue Ontario Est", "60 rue ontario est"),
             ("5, place Ville-Marie", "5 place ville-marie"),
             ("5, pl. Ville-Marie", "5 place ville-marie"),

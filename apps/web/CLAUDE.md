@@ -12,6 +12,8 @@ Rust server using **Axum** with **Minijinja** templates. `apps/web` is a Cargo w
 
 Dependencies only point toward `web`: `domain` and `pipeline` never depend on each other or on `web`. Within `pipeline`, most submodules are `pub(crate)` — only the items `web` or its tests actually call are `pub`. When adding a new pipeline submodule, default it to `pub(crate)` and widen only if something outside the crate needs it.
 
+Use a functional core with an imperative shell inside each module. Put deterministic decisions and transformations in a `core` submodule as data-in/data-out functions; keep SQLx queries, HTTP calls, environment reads, clocks, filesystem/subprocess work, retries, and transaction coordination in the parent shell. Shells gather facts, call the core once the required inputs are available, and execute the returned decision. Core tests must not require Postgres, Redis, HTTP, environment variables, or subprocesses.
+
 Templates live in `templates/` and static assets in `static/`, both at the workspace root (`apps/web/`), loaded by the `web` binary via paths relative to its working directory (`cargo run`/the deployed process's cwd), not relative to the crate.
 
 `AppState` holds a shared `minijinja::Environment` passed via Axum's `.with_state()`.

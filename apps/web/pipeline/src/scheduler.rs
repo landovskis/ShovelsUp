@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+pub(crate) mod core;
+
 /// Enqueues one `fetch_jobs` row per municipality per day.
 ///
 /// REQ-001's PRD calls for polling each municipality's meeting calendar and
@@ -18,10 +20,11 @@ impl Scheduler {
         pool: &PgPool,
         now: DateTime<Utc>,
     ) -> Result<Vec<Uuid>, sqlx::Error> {
-        let municipality_ids: Vec<Uuid> =
-            sqlx::query_scalar!("SELECT id FROM municipalities").fetch_all(pool).await?;
+        let municipality_ids: Vec<Uuid> = sqlx::query_scalar!("SELECT id FROM municipalities")
+            .fetch_all(pool)
+            .await?;
 
-        let mut created = Vec::new();
+        let mut schedules = Vec::with_capacity(municipality_ids.len());
         for municipality_id in municipality_ids {
             let already_scheduled_today = sqlx::query_scalar!(
                 "SELECT id FROM fetch_jobs \
@@ -33,10 +36,14 @@ impl Scheduler {
             .await?
             .is_some();
 
-            if already_scheduled_today {
-                continue;
-            }
+            schedules.push(core::MunicipalitySchedule {
+                municipality_id,
+                already_scheduled_today,
+            });
+        }
 
+        let mut created = Vec::new();
+        for municipality_id in core::due_municipalities(schedules) {
             let job_id = sqlx::query_scalar!(
                 "INSERT INTO fetch_jobs (municipality_id, scheduled_for) \
                  VALUES ($1, $2) RETURNING id",

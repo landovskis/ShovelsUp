@@ -1,6 +1,10 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+pub mod core;
+
+use self::core::{plan_resolution, CandidateState, ResolutionAction, ResolutionRejection};
+
 #[derive(Debug, thiserror::Error)]
 pub enum ReviewQueueError {
     #[error("review candidate {0} not found")]
@@ -33,7 +37,14 @@ pub async fn confirm_candidate(
     project_id: Uuid,
     actor: &str,
 ) -> Result<(), ReviewQueueError> {
-    resolve_candidate(pool, candidate_id, expected_version, actor, "confirm", Some(project_id)).await
+    resolve_candidate(
+        pool,
+        candidate_id,
+        expected_version,
+        actor,
+        ResolutionAction::Confirm { project_id },
+    )
+    .await
 }
 
 /// Rejects an ambiguous `review_candidates` row (IMP-REQ-009-03) — the
@@ -44,7 +55,14 @@ pub async fn reject_candidate(
     expected_version: i32,
     actor: &str,
 ) -> Result<(), ReviewQueueError> {
-    resolve_candidate(pool, candidate_id, expected_version, actor, "reject", None).await
+    resolve_candidate(
+        pool,
+        candidate_id,
+        expected_version,
+        actor,
+        ResolutionAction::Reject,
+    )
+    .await
 }
 
 async fn resolve_candidate(
@@ -52,8 +70,7 @@ async fn resolve_candidate(
     candidate_id: Uuid,
     expected_version: i32,
     actor: &str,
-    action: &str,
-    project_id: Option<Uuid>,
+    action: ResolutionAction,
 ) -> Result<(), ReviewQueueError> {
     let mut tx = pool.begin().await?;
 
@@ -65,30 +82,32 @@ async fn resolve_candidate(
     .await?
     .ok_or(ReviewQueueError::NotFound(candidate_id))?;
 
-    if current.status != "open" {
-        return Err(ReviewQueueError::NotOpen(candidate_id));
-    }
-    if current.version != expected_version {
-        return Err(ReviewQueueError::VersionConflict);
-    }
-
-    let new_status = match action {
-        "confirm" => "confirmed",
-        _ => "rejected",
-    };
+    let plan = plan_resolution(
+        CandidateState {
+            version: current.version,
+            is_open: current.status == "open",
+            mention_id: current.project_mention_id,
+        },
+        expected_version,
+        action,
+    )
+    .map_err(|rejection| match rejection {
+        ResolutionRejection::NotOpen => ReviewQueueError::NotOpen(candidate_id),
+        ResolutionRejection::VersionConflict => ReviewQueueError::VersionConflict,
+    })?;
 
     sqlx::query!(
         "UPDATE review_candidates \
          SET status = $1, version = version + 1, resolved_project_id = $2 \
          WHERE id = $3",
-        new_status,
-        project_id,
+        plan.status,
+        plan.project_id,
         candidate_id,
     )
     .execute(&mut *tx)
     .await?;
 
-    if let (Some(project_id), Some(mention_id)) = (project_id, current.project_mention_id) {
+    if let Some((mention_id, project_id)) = plan.mention_link {
         sqlx::query!(
             "UPDATE project_mentions SET project_id = $1 WHERE id = $2",
             project_id,
@@ -118,7 +137,7 @@ async fn resolve_candidate(
     sqlx::query!(
         "INSERT INTO audit_events (review_candidate_id, action, actor) VALUES ($1, $2, $3)",
         candidate_id,
-        action,
+        plan.audit_action,
         actor,
     )
     .execute(&mut *tx)
@@ -197,18 +216,22 @@ mod tests {
             .await
             .unwrap();
 
-        let status: String =
-            sqlx::query_scalar!("SELECT status FROM review_candidates WHERE id = $1", candidate_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let status: String = sqlx::query_scalar!(
+            "SELECT status FROM review_candidates WHERE id = $1",
+            candidate_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(status, "confirmed");
 
-        let linked_project: Option<Uuid> =
-            sqlx::query_scalar!("SELECT project_id FROM project_mentions WHERE id = $1", mention_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let linked_project: Option<Uuid> = sqlx::query_scalar!(
+            "SELECT project_id FROM project_mentions WHERE id = $1",
+            mention_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(linked_project, Some(project_id));
 
         let timeline_count: i64 = sqlx::query_scalar!(
@@ -229,20 +252,30 @@ mod tests {
         let (candidate_id, _) = seed_open_candidate(&pool).await;
         let project_id = seed_project(&pool).await;
 
-        let result = confirm_candidate(&pool, candidate_id, 999, project_id, "founder@example.com").await;
+        let result =
+            confirm_candidate(&pool, candidate_id, 999, project_id, "founder@example.com").await;
         assert!(matches!(result, Err(ReviewQueueError::VersionConflict)));
 
-        let status: String =
-            sqlx::query_scalar!("SELECT status FROM review_candidates WHERE id = $1", candidate_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let status: String = sqlx::query_scalar!(
+            "SELECT status FROM review_candidates WHERE id = $1",
+            candidate_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(status, "open", "no change must occur on a version conflict");
     }
 
     #[sqlx::test(migrations = "../web/migrations")]
     async fn confirm_missing_candidate_returns_not_found(pool: PgPool) {
-        let result = confirm_candidate(&pool, Uuid::new_v4(), 1, Uuid::new_v4(), "founder@example.com").await;
+        let result = confirm_candidate(
+            &pool,
+            Uuid::new_v4(),
+            1,
+            Uuid::new_v4(),
+            "founder@example.com",
+        )
+        .await;
         assert!(matches!(result, Err(ReviewQueueError::NotFound(_))));
     }
 
@@ -250,20 +283,26 @@ mod tests {
     async fn reject_marks_candidate_rejected_without_linking(pool: PgPool) {
         let (candidate_id, mention_id) = seed_open_candidate(&pool).await;
 
-        reject_candidate(&pool, candidate_id, 1, "founder@example.com").await.unwrap();
+        reject_candidate(&pool, candidate_id, 1, "founder@example.com")
+            .await
+            .unwrap();
 
-        let status: String =
-            sqlx::query_scalar!("SELECT status FROM review_candidates WHERE id = $1", candidate_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let status: String = sqlx::query_scalar!(
+            "SELECT status FROM review_candidates WHERE id = $1",
+            candidate_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(status, "rejected");
 
-        let linked_project: Option<Uuid> =
-            sqlx::query_scalar!("SELECT project_id FROM project_mentions WHERE id = $1", mention_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let linked_project: Option<Uuid> = sqlx::query_scalar!(
+            "SELECT project_id FROM project_mentions WHERE id = $1",
+            mention_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(linked_project, None);
     }
 
@@ -275,7 +314,8 @@ mod tests {
             .await
             .unwrap();
 
-        let result = confirm_candidate(&pool, candidate_id, 2, project_id, "founder@example.com").await;
+        let result =
+            confirm_candidate(&pool, candidate_id, 2, project_id, "founder@example.com").await;
         assert!(matches!(result, Err(ReviewQueueError::NotOpen(_))));
     }
 }
