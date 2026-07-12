@@ -16,16 +16,46 @@ target 2026-07-19).
 Once cleared:
 
 1. Set `DATA_PIPELINE_INGESTION_ENABLED=true` in the target environment.
-2. Restart the app so migrations/config are picked up.
+2. The change takes effect on the next hourly tick — the flag is read live
+   (not cached) by the `tokio::spawn` interval loop in `main.rs`, so no
+   restart is required. If you also want it to take effect before the next
+   scheduled tick, there is currently no way to force an out-of-schedule
+   tick — this is a known limitation.
 
 ## Rollback
 
 All migrations under this flag are additive-only (no destructive schema
 changes). To roll back:
 
-1. Set `DATA_PIPELINE_INGESTION_ENABLED=false` and restart.
-2. No data cleanup is required — existing `source_documents`/`fetch_jobs`
+1. Set `DATA_PIPELINE_INGESTION_ENABLED=false`.
+2. The change takes effect on the next hourly tick, same as enabling — no
+   restart is required (see "Enabling in production" above).
+3. No data cleanup is required — existing `source_documents`/`fetch_jobs`
    rows are inert once the flag is off.
+
+## Recovering a stuck job
+
+If a `fetch_jobs` row is stuck in `in_progress` (e.g. after a process crash
+mid-job, or a genuine `sqlx::Error` propagating out of `parse_and_store`/
+`extract_and_store` mid-job), it will never be automatically reclaimed — the
+worker (`worker::run_due_fetch_jobs`) only ever selects `status = 'pending'`
+rows, so a stuck `in_progress` row is silently skipped forever. It also
+blocks a fresh job for that municipality for the rest of the day, since the
+scheduler's daily dedup only checks whether a row already exists for that
+municipality/day, not its status.
+
+**Known gap:** the existing admin endpoint `POST
+/admin/fetch_jobs/{id}/reprocess` (`apps/web/web/src/routes/admin.rs`,
+`reprocess_fetch_job`) **cannot** currently be used to reset a stuck
+`in_progress` job — it explicitly returns `409 Conflict` when the job's
+status is already `pending` or `in_progress` ("nothing to reprocess"), by
+design, to avoid interfering with a job that's genuinely still running.
+There is currently no supported way to reset a stuck `in_progress` job back
+to `pending` short of a manual `UPDATE fetch_jobs SET status = 'pending',
+attempts = 0, last_error = NULL, updated_at = now() WHERE id = '<id>'` run
+directly against the database. Building a safe, automatic (or admin-endpoint)
+reclaim path for stuck `in_progress` jobs is out of scope for this pass and
+should be tracked as follow-up work.
 
 ## Current implementation status (as of the fetch-job worker, 2026-07-11)
 
@@ -67,3 +97,12 @@ no calendar/date computation needed — is at
 | Montreal | `ville.montreal.qc.ca/portal/page?_pageid=5798,85945578...` (real, static HTML index, confirmed via direct fetch) | No (browsable index, not a feed) | `montreal.ca`, `ville.montreal.qc.ca`, `portail-m4s.s3.montreal.ca` (S3-backed asset host) |
 
 The domain allowlists reflect the confirmed values above.
+
+### Known limitation: re-published documents are not re-ingested
+
+`worker::run_due_fetch_jobs`'s discovery-skip stage dedupes each discovered
+document link against `source_documents` by `(municipality_id, source_url)`,
+not by content checksum. If a municipality re-publishes a document with
+amended content at the same URL, it will be skipped as already-ingested and
+the amended content will never be picked up. This is a known, accepted
+limitation, not a bug to fix.
