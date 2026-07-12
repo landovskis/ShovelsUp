@@ -1,9 +1,9 @@
-pub mod html;
-pub mod lang;
+pub(crate) mod html;
+pub(crate) mod lang;
 pub mod ocr;
 pub mod orchestrate;
-pub mod plaintext;
-pub mod pdf;
+pub(crate) mod plaintext;
+pub(crate) mod pdf;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {

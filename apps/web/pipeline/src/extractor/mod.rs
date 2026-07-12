@@ -1,8 +1,8 @@
 pub mod llm;
-pub mod prompts;
+pub(crate) mod prompts;
 pub mod schema;
-pub mod scale;
-pub mod validator;
+pub(crate) mod scale;
+pub(crate) mod validator;
 
 use uuid::Uuid;
 

@@ -1,4 +1,4 @@
-pub mod fr;
+pub(crate) mod fr;
 
 /// Named-individual redaction (IMP-REQ-007-04, Security). No requirement
 /// prior to REQ-007 introduced a redaction pipeline for either language, so

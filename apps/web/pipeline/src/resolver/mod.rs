@@ -1,5 +1,5 @@
-pub mod address;
-pub mod address_fr;
+pub(crate) mod address;
+pub(crate) mod address_fr;
 
 use sqlx::PgPool;
 use std::time::Duration;
