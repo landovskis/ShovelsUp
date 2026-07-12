@@ -49,6 +49,8 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      - uses: taiki-e/install-action@nextest
+
       - name: Install PDF and OCR tools
         run: sudo apt-get update && sudo apt-get install --yes poppler-utils tesseract-ocr tesseract-ocr-fra
 
@@ -69,7 +71,7 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Unit tests
-        run: cargo test --workspace --lib --bins
+        run: cargo nextest run --workspace --lib --bins
 
       - name: Doc tests
         run: cargo test --workspace --doc
@@ -114,6 +116,8 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - uses: taiki-e/install-action@nextest
+
       - name: Install PDF and OCR tools
         run: sudo apt-get update && sudo apt-get install --yes poppler-utils tesseract-ocr tesseract-ocr-fra
 
@@ -128,4 +132,4 @@ jobs:
         run: cargo sqlx migrate run --source web/migrations
 
       - name: Integration tests
-        run: cargo test --workspace --test '*'
+        run: cargo nextest run --workspace --test '*'
