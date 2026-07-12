@@ -17,6 +17,7 @@
 - `apps/web/.sqlx/` (offline query cache) stays at the workspace root — confirmed via sqlx docs that `cargo sqlx prepare --workspace` writes a single cache there and workspace builds resolve it from the workspace root.
 - `sqlx::migrate!("./migrations")` resolves relative to the invoking crate's own `Cargo.toml` directory (confirmed via sqlx docs: "relative to the project root, the directory containing `Cargo.toml`"), so `migrations/` must move together with `main.rs` into the `web` crate to keep this macro call unchanged.
 - Every task must end with `cargo build --workspace --all-targets --all-features` and `cargo test --workspace` both passing before moving to the next task.
+- `cargo run` (and Docker) leave the process cwd at the invocation directory (workspace root, or `/app` in the built image); `cargo test` sets each crate's test-binary cwd to that crate's own manifest directory. These differ, so a compile-time relative path (`include_bytes!`, resolved against the source file's location) and a runtime relative path evaluated only under `cargo test` (e.g. `path_loader` in a test file, resolved against the test binary's cwd) can need different fixes for the same directory move — verify each kind separately rather than assuming one fix covers both.
 
 ---
 
@@ -65,6 +66,27 @@ In `apps/web/web/src/pipeline/parser/pdf.rs`, change all four occurrences of `".
 In `apps/web/web/src/pipeline/parser/ocr.rs`, change both occurrences (`BLANK_PAGE_PDF`, `MALFORMED_PDF`) the same way.
 
 In `apps/web/web/src/pipeline/parser/orchestrate.rs`, change the one occurrence (`blank_pdf`) the same way.
+
+- [ ] **Step 1c: Fix the `templates/` runtime loader path in app-level tests**
+
+`cargo run` (and the Dockerfile, which copies `templates/` next to the binary) leaves the process's working directory at wherever it was invoked from — the workspace root `apps/web/` when following this project's `cargo run -p shovelsup-web` convention, or `/app` in the built Docker image — so `main.rs`'s `path_loader("templates")` and `ServeDir::new("static")` (both resolved at *runtime* against the process cwd, unlike `include_bytes!`) are unaffected by this move and must NOT be changed.
+
+`cargo test`, however, runs each crate's test binaries with the working directory set to *that crate's own manifest directory* — confirmed via the Rust/Cargo team's own tracking of this inconsistency (`cargo run` uses the workspace manifest dir when invoked from the workspace root; `cargo test` uses the specific package's manifest dir). Since `web`'s manifest is now at `apps/web/web/Cargo.toml`, any integration test that builds its own `minijinja::Environment` with `path_loader("templates")` needs that path changed to `"../templates"` to keep resolving to `apps/web/templates/` under `cargo test`. Three files do this — fix all three:
+
+`apps/web/web/tests/review_queue_e2e.rs` line 46, from:
+```rust
+env.set_loader(path_loader("templates"));
+```
+to:
+```rust
+env.set_loader(path_loader("../templates"));
+```
+
+`apps/web/web/tests/search_integration.rs` line 17, same change.
+
+`apps/web/web/tests/timeline_resolver.rs` line 36, same change.
+
+This is a one-time, permanent fix: these three files stay in `apps/web/web/tests/` for the rest of the plan (Task 3 only relocates the pipeline-only test files), so their crate-root cwd — and therefore this path — doesn't change again.
 
 - [ ] **Step 2: Write the new workspace root manifest**
 
