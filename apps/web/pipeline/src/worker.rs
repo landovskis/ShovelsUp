@@ -46,6 +46,18 @@ pub async fn run_due_fetch_jobs(
         .await?;
 
         let Some(agenda_url) = agenda_url else {
+            // Nothing is wrong here — this municipality just isn't
+            // configured with an agenda_url yet. Mark the job terminal
+            // (succeeded) so it's not re-selected by the WHERE status =
+            // 'pending' query above on every future tick, which would
+            // otherwise leak one permanently-pending row per day per
+            // unconfigured municipality.
+            sqlx::query!(
+                "UPDATE fetch_jobs SET status = 'succeeded', updated_at = now() WHERE id = $1",
+                job_id
+            )
+            .execute(pool)
+            .await?;
             summary.skipped_no_agenda_url += 1;
             continue;
         };
@@ -180,6 +192,9 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(status, "pending", "job with no agenda_url stays pending, not failed");
+        assert_eq!(
+            status, "succeeded",
+            "job with no agenda_url is marked succeeded (terminal, nothing to do), not failed and not left pending forever"
+        );
     }
 }
