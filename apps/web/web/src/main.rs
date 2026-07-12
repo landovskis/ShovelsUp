@@ -1,6 +1,13 @@
+use chrono::Utc;
 use minijinja::{path_loader, Environment};
+use shovelsup_pipeline::extractor::llm::AnthropicProvider;
+use shovelsup_pipeline::parser::ocr::TesseractOcrProvider;
+use shovelsup_pipeline::scheduler::Scheduler;
+use shovelsup_pipeline::worker;
+use shovelsup_web::config::flags::data_pipeline_ingestion_enabled;
 use sqlx::postgres::PgPoolOptions;
 use std::{net::SocketAddr, sync::Arc};
+use std::time::Duration;
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -42,6 +49,26 @@ async fn main() {
         db,
         redis,
     };
+
+    let pipeline_db = state.db.clone();
+    tokio::spawn(async move {
+        let ocr = TesseractOcrProvider;
+        let llm = AnthropicProvider::from_env();
+        let mut interval = tokio::time::interval(Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            if !data_pipeline_ingestion_enabled() {
+                continue;
+            }
+            if let Err(e) = Scheduler::enqueue_due_fetches(&pipeline_db, Utc::now()).await {
+                tracing::error!(error = %e, "enqueue_due_fetches failed");
+            }
+            match worker::run_due_fetch_jobs(&pipeline_db, &ocr, &llm).await {
+                Ok(summary) => tracing::info!(?summary, "pipeline tick complete"),
+                Err(e) => tracing::error!(error = %e, "run_due_fetch_jobs failed"),
+            }
+        }
+    });
 
     let app = shovelsup_web::app(state)
         .nest_service("/static", ServeDir::new("static"))
