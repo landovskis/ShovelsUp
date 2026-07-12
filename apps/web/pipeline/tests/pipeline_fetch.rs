@@ -243,3 +243,49 @@ async fn test_fetch_does_not_follow_redirects(pool: PgPool) {
         "redirect must not be followed, got {result:?}"
     );
 }
+
+/// fetch_bytes must return the raw body without persisting a source_documents row.
+#[sqlx::test(migrations = "../web/migrations")]
+async fn test_fetch_bytes_returns_body_without_persisting(pool: PgPool) {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/index.html"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("index body"))
+        .mount(&server)
+        .await;
+
+    let host = reqwest::Url::parse(&server.uri())
+        .unwrap()
+        .host_str()
+        .unwrap()
+        .to_string();
+    let municipality_id = seed_test_municipality(&pool, &host).await;
+    let fetcher = Fetcher::new();
+    let url = format!("{}/index.html", server.uri());
+
+    let bytes = fetcher
+        .fetch_bytes(&pool, municipality_id, &url)
+        .await
+        .expect("fetch_bytes should succeed");
+    assert_eq!(bytes, b"index body");
+
+    let count: i64 = sqlx::query_scalar!("SELECT count(*) FROM source_documents")
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(count, 0, "fetch_bytes must not persist a source_documents row");
+}
+
+/// fetch_bytes still enforces the domain allowlist.
+#[sqlx::test(migrations = "../web/migrations")]
+async fn test_fetch_bytes_rejects_non_allowlisted_domain(pool: PgPool) {
+    let municipality_id = seed_test_municipality(&pool, "only-this-host.example").await;
+    let fetcher = Fetcher::new();
+
+    let result = fetcher
+        .fetch_bytes(&pool, municipality_id, "https://not-allowlisted.example/x")
+        .await;
+
+    assert!(matches!(result, Err(FetchError::NotAllowlisted(_))));
+}

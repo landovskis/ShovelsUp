@@ -62,24 +62,7 @@ impl Fetcher {
         municipality_id: Uuid,
         url: &str,
     ) -> Result<FetchOutcome, FetchError> {
-        let parsed =
-            reqwest::Url::parse(url).map_err(|_| FetchError::InvalidUrl(url.to_string()))?;
-        let host = parsed
-            .host_str()
-            .ok_or_else(|| FetchError::InvalidUrl(url.to_string()))?
-            .to_string();
-
-        let allowlist: Vec<String> = sqlx::query_scalar!(
-            "SELECT domain_allowlist FROM municipalities WHERE id = $1",
-            municipality_id
-        )
-        .fetch_optional(pool)
-        .await?
-        .ok_or(FetchError::MunicipalityNotFound(municipality_id))?;
-
-        if !is_allowlisted(&host, &allowlist) {
-            return Err(FetchError::NotAllowlisted(host));
-        }
+        self.check_allowlist(pool, municipality_id, url).await?;
 
         let (body, content_type) = self.fetch_with_retry(url).await?;
         let checksum = format!("{:x}", Sha256::digest(&body));
@@ -110,6 +93,48 @@ impl Fetcher {
         .await?;
 
         Ok(FetchOutcome::Fetched { document_id })
+    }
+
+    /// Fetches `url`'s raw bytes for `municipality_id`, enforcing the same
+    /// domain allowlist as `fetch`, but without persisting a
+    /// `source_documents` row. For index/listing pages consumed only to
+    /// discover further document links (`worker::core::extract_pv_document_links`),
+    /// not decision-bearing documents in their own right.
+    pub async fn fetch_bytes(
+        &self,
+        pool: &PgPool,
+        municipality_id: Uuid,
+        url: &str,
+    ) -> Result<Vec<u8>, FetchError> {
+        self.check_allowlist(pool, municipality_id, url).await?;
+        let (body, _content_type) = self.fetch_with_retry(url).await?;
+        Ok(body)
+    }
+
+    async fn check_allowlist(
+        &self,
+        pool: &PgPool,
+        municipality_id: Uuid,
+        url: &str,
+    ) -> Result<(), FetchError> {
+        let parsed = reqwest::Url::parse(url).map_err(|_| FetchError::InvalidUrl(url.to_string()))?;
+        let host = parsed
+            .host_str()
+            .ok_or_else(|| FetchError::InvalidUrl(url.to_string()))?
+            .to_string();
+
+        let allowlist: Vec<String> = sqlx::query_scalar!(
+            "SELECT domain_allowlist FROM municipalities WHERE id = $1",
+            municipality_id
+        )
+        .fetch_optional(pool)
+        .await?
+        .ok_or(FetchError::MunicipalityNotFound(municipality_id))?;
+
+        if !is_allowlisted(&host, &allowlist) {
+            return Err(FetchError::NotAllowlisted(host));
+        }
+        Ok(())
     }
 
     /// GET `url` with exponential backoff on transient (5xx / network) failures.
