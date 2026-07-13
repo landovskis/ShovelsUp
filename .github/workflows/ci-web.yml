@@ -20,22 +20,49 @@ concurrency:
 
 jobs:
   ci:
-    name: fmt / clippy / test / build
+    name: fmt / clippy / unit test / build
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/shovelsup_test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: shovelsup_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d shovelsup_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: apps/web
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
 
+      - uses: taiki-e/install-action@nextest
+
+      - name: Install PDF and OCR tools
+        run: sudo apt-get update && sudo apt-get install --yes poppler-utils tesseract-ocr tesseract-ocr-fra
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/web -> target
+
+      - name: Install SQLx CLI
+        run: cargo install sqlx-cli --version 0.8.6 --no-default-features --features rustls,postgres --locked
+
+      - name: Run database migrations
+        run: cargo sqlx migrate run --source web/migrations
 
       - name: Format check
         run: cargo fmt --check
@@ -43,8 +70,66 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Test
-        run: cargo test
+      - name: Unit tests
+        run: cargo nextest run --workspace --lib --bins
+
+      - name: Doc tests
+        run: cargo test --workspace --doc
 
       - name: Build (release)
         run: cargo build --release
+
+  integration:
+    name: integration tests
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/shovelsup_test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: shovelsup_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d shovelsup_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: apps/web
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: taiki-e/install-action@nextest
+
+      - name: Install PDF and OCR tools
+        run: sudo apt-get update && sudo apt-get install --yes poppler-utils tesseract-ocr tesseract-ocr-fra
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/web -> target
+
+      - name: Install SQLx CLI
+        run: cargo install sqlx-cli --version 0.8.6 --no-default-features --features rustls,postgres --locked
+
+      - name: Run database migrations
+        run: cargo sqlx migrate run --source web/migrations
+
+      - name: Integration tests
+        run: cargo nextest run --workspace --test '*'

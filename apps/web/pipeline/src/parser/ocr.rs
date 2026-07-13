@@ -16,7 +16,17 @@ pub struct TesseractOcrProvider;
 
 impl OcrProvider for TesseractOcrProvider {
     fn ocr_pdf(&self, pdf_bytes: &[u8]) -> Result<Vec<String>, ParseError> {
-        let dir = std::env::temp_dir().join(format!("shovelsup-ocr-{}", uuid::Uuid::new_v4()));
+        self.ocr_pdf_in(pdf_bytes, &std::env::temp_dir())
+    }
+}
+
+impl TesseractOcrProvider {
+    fn ocr_pdf_in(
+        &self,
+        pdf_bytes: &[u8],
+        temp_root: &std::path::Path,
+    ) -> Result<Vec<String>, ParseError> {
+        let dir = temp_root.join(format!("shovelsup-ocr-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir)
             .map_err(|e| ParseError::Ocr(format!("failed to create temp dir: {e}")))?;
         let result = run_ocr_pipeline(pdf_bytes, &dir);
@@ -164,21 +174,25 @@ mod tests {
             eprintln!("skipping: pdftoppm/tesseract not installed");
             return;
         }
-        let before: Vec<_> = glob_shovelsup_ocr_dirs();
+        let test_temp_root = std::env::temp_dir().join(format!(
+            "shovelsup-ocr-cleanup-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&test_temp_root).expect("create isolated test temp root");
 
-        let _ = TesseractOcrProvider.ocr_pdf(BLANK_PAGE_PDF);
-        let _ = TesseractOcrProvider.ocr_pdf(MALFORMED_PDF);
+        let _ = TesseractOcrProvider.ocr_pdf_in(BLANK_PAGE_PDF, &test_temp_root);
+        let _ = TesseractOcrProvider.ocr_pdf_in(MALFORMED_PDF, &test_temp_root);
 
-        let after: Vec<_> = glob_shovelsup_ocr_dirs();
-        assert_eq!(
-            before.len(),
-            after.len(),
+        let remaining: Vec<_> = glob_shovelsup_ocr_dirs(&test_temp_root);
+        let _ = std::fs::remove_dir(&test_temp_root);
+        assert!(
+            remaining.is_empty(),
             "no shovelsup-ocr-* temp dirs should remain after either call"
         );
     }
 
-    fn glob_shovelsup_ocr_dirs() -> Vec<std::path::PathBuf> {
-        std::fs::read_dir(std::env::temp_dir())
+    fn glob_shovelsup_ocr_dirs(temp_root: &std::path::Path) -> Vec<std::path::PathBuf> {
+        std::fs::read_dir(temp_root)
             .into_iter()
             .flatten()
             .filter_map(|entry| entry.ok())

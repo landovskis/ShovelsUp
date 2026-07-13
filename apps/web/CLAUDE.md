@@ -23,7 +23,7 @@ Templates live in `templates/` and static assets in `static/`, both at the works
 ```bash
 cargo run -p shovelsup-web       # dev server on :3000
 cargo build --workspace
-cargo test --workspace
+cargo nextest run --workspace
 RUST_LOG=debug cargo run -p shovelsup-web   # verbose logging
 ```
 
