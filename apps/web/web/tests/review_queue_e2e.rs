@@ -1,13 +1,5 @@
 //! IMP-REQ-009-10: candidate → queue → confirm → timeline, end to end
 //! through the real HTTP routes (TC-REQ-009-1, -3, -4, -5).
-//!
-//! `REVIEW_QUEUE_ENABLED` is read from the environment at request time and
-//! set once here (mirroring `admin_routes.rs`'s `ensure_admin_env` `Once`
-//! pattern) rather than toggled per-test — `cargo test` runs test functions
-//! in parallel by default, so flipping a shared env var between "on" and
-//! "off" across tests in the same binary would race. The flag-off → 404
-//! behavior is instead covered at the unit level in
-//! `src/config/flags.rs`'s own tests.
 
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
@@ -30,7 +22,6 @@ fn ensure_env() {
         let hash = bcrypt::hash(ADMIN_PASSWORD, bcrypt::DEFAULT_COST).unwrap();
         std::env::set_var("ADMIN_USER", ADMIN_USER);
         std::env::set_var("ADMIN_PASSWORD_HASH", hash);
-        std::env::set_var("REVIEW_QUEUE_ENABLED", "true");
     });
 }
 

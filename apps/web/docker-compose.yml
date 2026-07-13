@@ -15,7 +15,6 @@ services:
       REVIEW_API_KEY_IDENTITY: ${REVIEW_API_KEY_IDENTITY:-api}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-http://localhost:9999/sla-alert}
-      ENABLE_TEST_ENDPOINTS: ${ENABLE_TEST_ENDPOINTS:-0}
     depends_on:
       postgres:
         condition: service_healthy

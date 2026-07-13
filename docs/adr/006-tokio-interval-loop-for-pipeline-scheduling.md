@@ -29,8 +29,7 @@ Options considered:
 Use an **in-process `tokio::spawn` task with `tokio::time::interval`**, started in
 `src/main.rs` alongside the Axum server, ticking hourly.
 
-Each tick: check `DATA_PIPELINE_INGESTION_ENABLED` (read live from the environment,
-not cached), call `Scheduler::enqueue_due_fetches`, then
+Each tick calls `Scheduler::enqueue_due_fetches`, then
 `worker::run_due_fetch_jobs`. Every fallible step inside the loop body is matched and
 logged via `tracing::error!` — never `.unwrap()`'d or propagated with `?` — so a
 transient failure (a bad HTTP response, a single malformed document) can never take

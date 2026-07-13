@@ -1,11 +1,11 @@
-# Runbook: `DATA_PIPELINE_INGESTION_ENABLED`
+# Runbook: data pipeline ingestion
 
-## What it gates
+## What runs
 
 The full fetch → parse → extract → normalize → resolve pipeline (REQ-001
-through REQ-007). Default: `false`.
+through REQ-007) runs on an hourly in-process interval.
 
-## Enabling in production
+## Production prerequisite
 
 Do **not** enable in production until the municipal domain allowlist in
 `migrations/002_seed_municipalities.sql` has legal/public-source review
@@ -13,25 +13,9 @@ sign-off — the seeded Toronto/Vancouver/Montreal domains are marked
 `ASSUMED pending legal review` (see Implementation Plan REQ-001 risk,
 target 2026-07-19).
 
-Once cleared:
-
-1. Set `DATA_PIPELINE_INGESTION_ENABLED=true` in the target environment.
-2. The change takes effect on the next hourly tick — the flag is read live
-   (not cached) by the `tokio::spawn` interval loop in `main.rs`, so no
-   restart is required. If you also want it to take effect before the next
-   scheduled tick, there is currently no way to force an out-of-schedule
-   tick — this is a known limitation.
-
-## Rollback
-
-All migrations under this flag are additive-only (no destructive schema
-changes). To roll back:
-
-1. Set `DATA_PIPELINE_INGESTION_ENABLED=false`.
-2. The change takes effect on the next hourly tick, same as enabling — no
-   restart is required (see "Enabling in production" above).
-3. No data cleanup is required — existing `source_documents`/`fetch_jobs`
-   rows are inert once the flag is off.
+There is no runtime feature switch. Deploy the application only after the
+legal/public-source review is complete. To stop ingestion after deployment,
+roll back or stop the web process; existing data does not require cleanup.
 
 ## Current implementation status (as of the fetch-job worker, 2026-07-11)
 
@@ -41,8 +25,8 @@ changes). To roll back:
 `worker::run_due_fetch_jobs` (discover → fetch → parse → extract per pending
 job) all live in the `shovelsup-pipeline` crate (`apps/web/pipeline/`) and are
 implemented and tested. A `tokio::spawn` interval loop in the `shovelsup-web`
-crate's `main.rs` calls `Scheduler` and the worker every hour, gated live by
-this flag — see `docs/adr/006-tokio-interval-loop-for-pipeline-scheduling.md`.
+crate's `main.rs` calls `Scheduler` and the worker every hour — see
+`docs/adr/006-tokio-interval-loop-for-pipeline-scheduling.md`.
 
 Montreal is the only municipality with a configured `agenda_url`
 (`apps/web/web/migrations/015_montreal_agenda_url.sql`) — Toronto and
@@ -52,7 +36,7 @@ rather than failing. See
 design, including why Vancouver (HTTP 403 on every known path) and Toronto
 are out of scope for this pass.
 
-**Before enabling this flag in a real environment**: confirm with the user
+**Before deploying in a real environment**: confirm with the user
 whether legal/public-source review sign-off has actually happened — the
 seeded domain allowlists (`002_seed_municipalities.sql`) were still marked
 `ASSUMED pending legal review` as of that migration, with a target date of

@@ -1,4 +1,3 @@
-pub mod config;
 pub mod jobs;
 pub mod middleware;
 pub mod routes;
@@ -74,9 +73,6 @@ pub fn app(state: AppState) -> Router {
         )
         .layer(axum_middleware::from_fn(
             middleware::admin_auth::require_admin,
-        ))
-        .layer(axum_middleware::from_fn(
-            config::flags::require_review_queue_enabled,
         ));
 
     Router::new()

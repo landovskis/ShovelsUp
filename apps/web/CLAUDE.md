@@ -8,7 +8,7 @@ Rust server using **Axum** with **Minijinja** templates. `apps/web` is a Cargo w
 
 - `domain/` (`shovelsup-domain`) — business rules (`business_days`, `review_queue`). No dependency on `pipeline` or `web`.
 - `pipeline/` (`shovelsup-pipeline`) — the document ingestion pipeline (`fetcher`, `parser`, `extractor`, `normalizer`, `resolver`, `redaction`, `scheduler`, `metrics`). No dependency on `domain` or `web`.
-- `web/` (`shovelsup-web`) — the HTTP layer: routes (`web/src/routes/`), background jobs (`web/src/jobs/`), middleware (`web/src/middleware/`), feature flags (`web/src/config/`), and `main.rs`/`lib.rs` (`AppState`, `app()`). Depends on both `domain` and `pipeline`.
+- `web/` (`shovelsup-web`) — the HTTP layer: routes (`web/src/routes/`), background jobs (`web/src/jobs/`), middleware (`web/src/middleware/`), and `main.rs`/`lib.rs` (`AppState`, `app()`). Depends on both `domain` and `pipeline`.
 
 Dependencies only point toward `web`: `domain` and `pipeline` never depend on each other or on `web`. Within `pipeline`, most submodules are `pub(crate)` — only the items `web` or its tests actually call are `pub`. When adding a new pipeline submodule, default it to `pub(crate)` and widen only if something outside the crate needs it.
 

@@ -32,9 +32,9 @@ not silently worked around.
 - [x] IMP-REQ-001-07 — Admin reprocess endpoint
 - [x] IMP-REQ-001-08 — Integration test: end-to-end fixture fetch, 3 municipalities
 - [x] IMP-REQ-001-09 — k6 load test for concurrent fetch SLA
-- [x] IMP-REQ-001-10 — Document `DATA_PIPELINE_INGESTION_ENABLED` flag and rollback
+- [x] IMP-REQ-001-10 — Document pipeline ingestion operations
 - [x] IMP-REQ-001-11 — Fetch-job worker: discover real typeDoc=pv links from Montreal's document listing, fetch/parse/extract each (`pipeline/src/worker.rs`, `pipeline/src/worker/core.rs`)
-- [x] IMP-REQ-001-12 — Wire hourly `tokio::spawn` interval loop in `web/src/main.rs`, gated by live-read `DATA_PIPELINE_INGESTION_ENABLED`
+- [x] IMP-REQ-001-12 — Wire hourly `tokio::spawn` interval loop in `web/src/main.rs`
 - [x] IMP-REQ-001-13 — `agenda_url` column + real Montreal seed (`web/migrations/015_montreal_agenda_url.sql`) ⚠️ Toronto/Vancouver stay unconfigured, see runbook
 
 ## REQ-002 — Surface Projects Across Document Formats
@@ -340,10 +340,10 @@ transfer to them.
 - [x] IMP-REQ-009-04 — Axum routes: list/detail/confirm/reject
 - [x] IMP-REQ-009-05 — Admin-session auth middleware (reuse if one exists) — reused `middleware::admin_auth`, see UX gap note above
 - [x] IMP-REQ-009-08 — Hourly SLA sweep job + overdue metric — plain callable function (`jobs::sla_sweep::compute_overdue_metric`), not a wired-up in-process scheduler, matching REQ-001's `Scheduler` precedent (no periodic-execution infra exists anywhere in this codebase)
-- [x] IMP-REQ-009-09 — `REVIEW_QUEUE_ENABLED` feature flag
+- [x] IMP-REQ-009-09 — Review queue routes enabled by default
 - [x] IMP-REQ-009-10 — Integration test: candidate → queue → confirm → timeline
 - [x] IMP-REQ-009-11 — k6 performance script for queue list endpoint (run and passing, see note above)
-- [x] IMP-REQ-009-13 — Operational runbook (SLA sweep, flag disable, reprocess)
+- [x] IMP-REQ-009-13 — Operational runbook (SLA sweep and reprocess)
 #### Frontend Engineer
 - [x] IMP-REQ-009-06 — Review queue list template (tabs, states, EN/FR)
 - [x] IMP-REQ-009-07 — Wire Confirm/Reject buttons, handle 409 stale-conflict banner

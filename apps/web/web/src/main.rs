@@ -4,10 +4,9 @@ use shovelsup_pipeline::extractor::llm::AnthropicProvider;
 use shovelsup_pipeline::parser::ocr::TesseractOcrProvider;
 use shovelsup_pipeline::scheduler::Scheduler;
 use shovelsup_pipeline::worker;
-use shovelsup_web::config::flags::data_pipeline_ingestion_enabled;
 use sqlx::postgres::PgPoolOptions;
-use std::{net::SocketAddr, sync::Arc};
 use std::time::Duration;
+use std::{net::SocketAddr, sync::Arc};
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -58,9 +57,6 @@ async fn main() {
         let mut interval = tokio::time::interval(Duration::from_secs(3600));
         loop {
             interval.tick().await;
-            if !data_pipeline_ingestion_enabled() {
-                continue;
-            }
             if let Err(e) = Scheduler::enqueue_due_fetches(&pipeline_db, Utc::now()).await {
                 tracing::error!(error = %e, "enqueue_due_fetches failed");
             }

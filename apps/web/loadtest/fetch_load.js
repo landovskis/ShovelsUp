@@ -1,9 +1,8 @@
 // IMP-REQ-001-09 / TC-REQ-001-5: post-meeting fetch load stays within SLA.
 //
 // Drives 30 concurrent fixture fetches against a running instance's
-// municipal-fetch code path. Point BASE_URL at a staging deployment with
-// DATA_PIPELINE_INGESTION_ENABLED=true and a reachable fixture HTTP server
-// standing in for a municipal site.
+// municipal-fetch code path. Point BASE_URL at a staging deployment with a
+// reachable fixture HTTP server standing in for a municipal site.
 //
 // LIMITATION: exercises Fetcher indirectly via the admin reprocess endpoint,
 // the only HTTP-reachable trigger currently wired to it — there is no

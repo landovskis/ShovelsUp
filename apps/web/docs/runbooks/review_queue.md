@@ -4,24 +4,11 @@ Covers the human-review queue introduced by REQ-009 (IMP-REQ-009-13):
 ambiguous project-mention matches flagged by the REQ-005 resolver, an
 operator Confirm/Reject workflow, and an hourly SLA-overdue metric.
 
-## Feature flag
+## Availability
 
-The whole feature is gated by `REVIEW_QUEUE_ENABLED` (default unset/`false`).
-When disabled, every `/admin/review_candidates*` route returns `404` — not
-`403` — so the routes are indistinguishable from not existing at all to an
-unauthenticated prober (`src/config/flags.rs`).
-
-**To enable:** set `REVIEW_QUEUE_ENABLED=true` in the environment and
-restart. Per the plan's Release Plan, only enable this once REQ-005's
-resolver is deployed to that environment — the queue is otherwise always
-empty and there's nothing to review.
-
-**To disable (rollback):** unset `REVIEW_QUEUE_ENABLED` or set it to
-`false` and restart. This is non-destructive — no migration in REQ-009 is
-destructive (`014_review_queue_schema.sql` only adds columns/a new table),
-so disabling never loses data. Any candidates left `open` when the flag is
-disabled remain `open` in the database and reappear in the queue exactly as
-they were once the flag is re-enabled.
+The review queue routes are always registered and require HTTP Basic admin
+authentication. REQ-005's resolver must be deployed for the queue to receive
+ambiguous-match candidates.
 
 ## Routes (all require HTTP Basic admin auth, `middleware::admin_auth`)
 

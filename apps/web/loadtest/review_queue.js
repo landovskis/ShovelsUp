@@ -4,8 +4,8 @@
 // Run: k6 run -e BASE_URL=https://staging.shovelsup.example \
 //        -e ADMIN_USER=admin -e ADMIN_PASSWORD=<pw> loadtest/review_queue.js
 //
-// Requires REVIEW_QUEUE_ENABLED=true on the target and review_candidates
-// seeded to ~5,000 open rows first (this script only reads, it doesn't seed).
+// Requires review_candidates seeded to ~5,000 open rows first (this script
+// only reads, it doesn't seed).
 //
 // Run against a local `cargo run --release` instance (5,000 synthetic open
 // rows, 20 constant VUs, 1 minute, cleaned up afterward — not against
