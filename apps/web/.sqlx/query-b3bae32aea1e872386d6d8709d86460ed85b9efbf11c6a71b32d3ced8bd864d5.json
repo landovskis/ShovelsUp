@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT extraction_status FROM document_chunks WHERE id = $1",
+  "query": "SELECT agenda_url FROM municipalities WHERE id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "extraction_status",
+        "name": "agenda_url",
         "type_info": "Text"
       }
     ],
@@ -15,8 +15,8 @@
       ]
     },
     "nullable": [
-      false
+      true
     ]
   },
-  "hash": "def7601328e8fc9c2572f8e722f154663084ecfdd4ff5906211d15b64c909ed5"
+  "hash": "b3bae32aea1e872386d6d8709d86460ed85b9efbf11c6a71b32d3ced8bd864d5"
 }

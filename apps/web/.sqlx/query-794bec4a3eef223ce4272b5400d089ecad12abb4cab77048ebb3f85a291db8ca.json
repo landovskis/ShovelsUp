@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT candidate_type FROM review_candidates WHERE id = $1",
+  "query": "SELECT normalized_status FROM project_mentions WHERE id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "candidate_type",
+        "name": "normalized_status",
         "type_info": "Text"
       }
     ],
@@ -15,8 +15,8 @@
       ]
     },
     "nullable": [
-      false
+      true
     ]
   },
-  "hash": "e81ee0d7f0db7e59d3f1dae69ecc1dfe6c300a2913b1d3f3886607f360ff4dcd"
+  "hash": "794bec4a3eef223ce4272b5400d089ecad12abb4cab77048ebb3f85a291db8ca"
 }

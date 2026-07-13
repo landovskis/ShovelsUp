@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT project_id FROM project_mentions WHERE reference_number = $1 AND project_id IS NOT NULL AND id != $2 LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "project_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "1b73b8afb53cb37166e59803fbfb51dc41a3760d6db48d12d0fa6295a873726b"
+}

@@ -16,15 +16,21 @@ target 2026-07-19).
 Once cleared:
 
 1. Set `DATA_PIPELINE_INGESTION_ENABLED=true` in the target environment.
-2. Restart the app so migrations/config are picked up.
+2. The change takes effect on the next hourly tick — the flag is read live
+   (not cached) by the `tokio::spawn` interval loop in `main.rs`, so no
+   restart is required. If you also want it to take effect before the next
+   scheduled tick, there is currently no way to force an out-of-schedule
+   tick — this is a known limitation.
 
 ## Rollback
 
 All migrations under this flag are additive-only (no destructive schema
 changes). To roll back:
 
-1. Set `DATA_PIPELINE_INGESTION_ENABLED=false` and restart.
-2. No data cleanup is required — existing `source_documents`/`fetch_jobs`
+1. Set `DATA_PIPELINE_INGESTION_ENABLED=false`.
+2. The change takes effect on the next hourly tick, same as enabling — no
+   restart is required (see "Enabling in production" above).
+3. No data cleanup is required — existing `source_documents`/`fetch_jobs`
    rows are inert once the flag is off.
 
 ## Current implementation status (as of the fetch-job worker, 2026-07-11)
