@@ -12,11 +12,129 @@ use crate::{routes::detect_lang, AppState};
 const DEFAULT_PER_PAGE: i64 = 20;
 const MAX_PER_PAGE: i64 = 100;
 
+/// Pure, I/O-free validation of raw search query params (IMP-REQ-001-02).
+/// Extracted out of `run_search`'s inline `per_page` bounds check so the
+/// validation rule is independently unit-testable without a DB/HTTP server.
+///
+/// Not yet wired into `run_search` — that's IMP-REQ-001-04's job. Until
+/// then this module is exercised only by its own unit tests below, hence
+/// `#[allow(dead_code)]` on the public items.
+#[allow(dead_code)]
+mod core {
+    use super::{DEFAULT_PER_PAGE, MAX_PER_PAGE};
+
+    /// Search params that have passed validation and are ready to drive a
+    /// query.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct ValidatedSearchParams {
+        pub per_page: i64,
+    }
+
+    /// Reasons `validate_search_params` can reject raw input.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum SearchValidationError {
+        /// `per_page`, after defaulting, fell outside `1..=MAX_PER_PAGE`.
+        PerPageOutOfRange,
+    }
+
+    /// Validates raw search query params. Currently covers `per_page`
+    /// (defaulting to `DEFAULT_PER_PAGE` when absent, rejecting anything
+    /// outside `1..=MAX_PER_PAGE`); the plan does not call for `q`
+    /// validation beyond what already exists (an empty `q` is a valid "no
+    /// search yet" state handled by the caller), so this function stays
+    /// scoped to `per_page` rather than growing speculative checks.
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    pub fn validate_search_params(
+        per_page: Option<i64>,
+    ) -> Result<ValidatedSearchParams, SearchValidationError> {
+        let per_page = per_page.unwrap_or(DEFAULT_PER_PAGE);
+        if !(1..=MAX_PER_PAGE).contains(&per_page) {
+            return Err(SearchValidationError::PerPageOutOfRange);
+        }
+        Ok(ValidatedSearchParams { per_page })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn defaults_to_default_per_page_when_absent() {
+            let result = validate_search_params(None).unwrap();
+            assert_eq!(result.per_page, DEFAULT_PER_PAGE);
+        }
+
+        #[test]
+        fn accepts_a_valid_mid_range_value() {
+            let result = validate_search_params(Some(50)).unwrap();
+            assert_eq!(result.per_page, 50);
+        }
+
+        #[test]
+        fn accepts_the_lower_bound() {
+            let result = validate_search_params(Some(1)).unwrap();
+            assert_eq!(result.per_page, 1);
+        }
+
+        #[test]
+        fn accepts_the_upper_bound() {
+            let result = validate_search_params(Some(MAX_PER_PAGE)).unwrap();
+            assert_eq!(result.per_page, MAX_PER_PAGE);
+        }
+
+        #[test]
+        fn rejects_zero() {
+            let result = validate_search_params(Some(0));
+            assert_eq!(result, Err(SearchValidationError::PerPageOutOfRange));
+        }
+
+        #[test]
+        fn rejects_one_above_the_max() {
+            let result = validate_search_params(Some(MAX_PER_PAGE + 1));
+            assert_eq!(result, Err(SearchValidationError::PerPageOutOfRange));
+        }
+
+        #[test]
+        fn rejects_negative_values() {
+            let result = validate_search_params(Some(-1));
+            assert_eq!(result, Err(SearchValidationError::PerPageOutOfRange));
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SearchParams {
     #[serde(default)]
     pub q: String,
     pub per_page: Option<i64>,
+    // Loop A stub: filtering logic added by IMP-REQ-002-04. Field exists so
+    // TC-002-* tests in search_integration.rs compile against the future
+    // `municipality_slug` query param; `run_search` does not read it yet,
+    // and no validation against the `municipalities` table happens yet
+    // (that's IMP-REQ-002-03/-04).
+    pub municipality_slug: Option<String>,
+    // Loop A stub: pagination wired by IMP-REQ-004-03/04. `run_search` does
+    // not read this yet; TC-004-5 documents today's unpaginated-boundary gap.
+    pub page: Option<i64>,
+    // Loop A stub: DateFilter parsing/validation wired by IMP-REQ-007-03/05
+    // against public_search_documents.first_surfaced_at once
+    // IMP-REQ-004-01 lands.
+    pub date_preset: Option<String>,
+    pub date_from: Option<String>,
+    pub date_to: Option<String>,
+    // Loop A stub: category_taxonomy + validation wired by
+    // IMP-REQ-008-02/03/04. Field exists so TC-008-* tests in
+    // search_integration.rs compile against the future `category` query
+    // param (e.g. `residential`, or the explicit `uncategorised`
+    // pseudo-value for `category_code IS NULL`); `run_search` does not read
+    // it yet, and no validation against the (not-yet-existing)
+    // `category_taxonomy` table happens yet.
+    pub category: Option<String>,
+    // Loop A stub: sort param + latest_meeting_date ORDER BY wired by
+    // IMP-REQ-009-04/06
+    pub sort: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -26,6 +144,37 @@ pub struct SearchResult {
     pub municipality_name: Option<String>,
     pub project_type: Option<String>,
     pub normalized_status: Option<String>,
+    // Loop A stub: populated by IMP-REQ-003-02/03/04 migration+backfill.
+    pub source_language: Option<String>,
+    // Loop A stub: synthesized display name (civic address + project type,
+    // e.g. "Demolition — 123 Main St") added by IMP-REQ-004-09. There is no
+    // `project_name` field to derive from yet, and `run_search` does not
+    // populate this; TC-004-3 documents today's gap of it being absent.
+    pub display_name: Option<String>,
+    // Loop A stub: populated by IMP-REQ-015-02/03/04 migration+materializer.
+    // `public_search_documents` has neither `first_detected_at` nor
+    // `source_count` columns yet — that migration is this requirement's own
+    // job, out of scope for this Loop A pass. Once both land, the
+    // "Detected N days ago from M council source(s)" indicator
+    // (IMP-REQ-015-06/-11) is derived from these two fields together and
+    // omitted entirely when either is `None` (TC-015-5).
+    pub first_detected_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub source_count: Option<i64>,
+}
+
+/// Loop A stub: target-state paginated envelope for `GET
+/// /api/v1/projects/search` (TC-004-1). `search_projects` still returns a
+/// bare `Json<Vec<SearchResult>>` today — IMP-REQ-004-04 must change the
+/// handler's return type to this envelope and populate `total`/`page`/
+/// `per_page`/`has_more` from `run_search`'s (future) paginated query.
+#[allow(dead_code)]
+#[derive(Debug, Serialize)]
+pub struct SearchResultsEnvelope {
+    pub results: Vec<SearchResult>,
+    pub total: i64,
+    pub page: i64,
+    pub per_page: i64,
+    pub has_more: bool,
 }
 
 /// Validates `per_page` (TC-REQ-008-3: rejected before any DB query runs)
@@ -65,6 +214,16 @@ async fn run_search(
         municipality_name: row.municipality_name,
         project_type: row.project_type,
         normalized_status: row.normalized_status,
+        // Loop A stub: `public_search_documents.source_language` doesn't
+        // exist yet; IMP-REQ-003-02 (migration) + IMP-REQ-003-04 (route
+        // wiring) must select and set the real value here.
+        source_language: None,
+        // Loop A stub: see `SearchResult::display_name` doc comment.
+        display_name: None,
+        // Loop A stub: see `SearchResult::first_detected_at`/`source_count`
+        // doc comment — IMP-REQ-015-02/03/04 migration+materializer.
+        first_detected_at: None,
+        source_count: None,
     })
     .collect();
 
@@ -79,6 +238,17 @@ pub async fn search_projects(
 ) -> Result<Json<Vec<SearchResult>>, StatusCode> {
     let results = run_search(&state.db, &params.q, params.per_page).await?;
     Ok(Json(results))
+}
+
+/// Loop A stub: target-state category facet endpoint (`GET /categories`,
+/// TC-008-4/-5). Not yet wired into the router in `web/src/lib.rs` — that's
+/// IMP-REQ-008-04's job, once the `category_taxonomy` table exists
+/// (IMP-REQ-008-02) for it to query. Today it unconditionally returns 501
+/// regardless of DB state; IMP-REQ-008-04/-13 must replace this with a real
+/// `State<AppState>`-taking handler that queries `category_taxonomy` and
+/// degrades gracefully (e.g. 503) if that query fails, per TC-008-5.
+pub async fn list_categories() -> StatusCode {
+    StatusCode::NOT_IMPLEMENTED
 }
 
 struct SearchLabels {
