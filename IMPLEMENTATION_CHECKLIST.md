@@ -55,8 +55,8 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-001-03 — Unit tests for core function (existing 7 confirmed thorough, no additions needed; also fixed a pre-existing clippy doc-lint break in responsive_e2e.rs blocking the workspace-wide `-D warnings` gate)
 - [x] IMP-REQ-001-04 — Wire `run_search` to call the core function (isolated before/after diff confirms zero regression)
 - [x] IMP-REQ-001-05 — Verify/fix X-Forwarded-For rate-limit trust assumption (real security fix: no reverse proxy fronts this app, so XFF was forgeable; switched rate-limit key to unspoofable ConnectInfo<SocketAddr>; verified deterministic across 2 independent full-suite runs, 284 total/231 pass/53 fail, zero regressions)
-- [ ] IMP-REQ-001-09 — Integration test: French locale + no-modal assertion (TC-001-6)
-- [ ] IMP-REQ-001-10 — Accessibility (WCAG AA) verification pass
+- [x] IMP-REQ-001-09 — Integration test: French locale + no-modal assertion (TC-001-6) (already satisfied by Loop A's tc_001_6, reverified passing)
+- [x] IMP-REQ-001-10 — Accessibility (WCAG AA) verification pass (all items already correct from 06/07/08; no template changes needed; contract locked in by new test, 296/243/53)
 - [ ] IMP-REQ-001-11 — Full regression run
 #### Frontend Engineer
 - [x] IMP-REQ-001-06 — Add empty-state guidance line (EN/FR) (distinct markup from REQ-012's future element IDs, verified no collision)

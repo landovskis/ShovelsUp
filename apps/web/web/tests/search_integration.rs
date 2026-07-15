@@ -5,7 +5,7 @@
 use axum::body::Body;
 use axum::extract::connect_info::MockConnectInfo;
 use axum::http::{Request, StatusCode};
-use minijinja::{path_loader, Environment};
+use minijinja::{context, path_loader, Environment};
 use serde_json::Value;
 use shovelsup_web::jobs::public_search_refresh::refresh_public_search_index;
 use shovelsup_web::{app, AppState};
@@ -2921,6 +2921,105 @@ async fn imp_req_001_08_count_label_reflects_per_page_truncated_count(pool: PgPo
         !html.contains("5 results found"),
         "the count header must not reflect the total match count of 5 when \
          per_page truncated the returned Vec to 2, got: {html}"
+    );
+}
+
+/// IMP-REQ-001-10: manual WCAG AA review of `search.html` (form, results
+/// list, error state, lang badges — the markup added by
+/// IMP-REQ-001-06/07/08). Renders the template directly (rather than going
+/// through `/search` + `run_search`) so the assertions exercise the actual
+/// markup contract in isolation from unrelated, already-documented data-layer
+/// gaps (e.g. `SearchResult.source_language` being a stub the DB path doesn't
+/// populate yet, per TC-003-5 above). Asserts:
+///   - the search `<input>` has a `<label for="search-q">` matching its
+///     `id="search-q"` (not just a placeholder);
+///   - the submit button carries plain, non-icon-only text;
+///   - a successful search renders results as a semantic `<ul>`/`<li>` list,
+///     not bare `<div>`s;
+///   - the per-result source-language badge is real text (`[EN]`), not a
+///     color-only indicator;
+///   - exactly one `<h1>` establishes the page's heading hierarchy;
+///   - the error state carries `role="alert"` so assistive tech announces it.
+#[test]
+fn imp_req_001_10_search_page_meets_basic_accessibility_requirements() {
+    let mut env = Environment::new();
+    env.set_loader(path_loader("../templates"));
+    let tmpl = env.get_template("search.html").unwrap();
+
+    // --- Results state ---------------------------------------------------
+    let html = tmpl
+        .render(context! {
+            lang => "en",
+            nav_permits => "Permits",
+            nav_council => "Council",
+            page_title => "Search projects",
+            heading => "Search for a project",
+            search_label => "Civic address or municipality",
+            submit_label => "Search",
+            empty_message => "No projects match your search.",
+            empty_guidance => "Try broadening your search: use a more general keyword, or double-check the spelling of the address or municipality.",
+            query => "accessible",
+            has_searched => true,
+            search_results => vec![minijinja::value::Value::from_serialize(
+                serde_json::json!({
+                    "project_id": "11111111-1111-1111-1111-111111111111",
+                    "civic_address_normalized": "15 rue accessible",
+                    "municipality_name": "Ville de Accessibilite",
+                    "normalized_status": "approved",
+                    "source_language": "en",
+                }),
+            )],
+            search_error => false,
+            result_count_label => "1 result found",
+        })
+        .unwrap();
+
+    assert!(
+        html.contains(r#"<label for="search-q">"#) && html.contains(r#"id="search-q""#),
+        "search input must have a <label for> matching its id, got: {html}"
+    );
+    assert!(
+        html.contains("<button type=\"submit\">Search</button>"),
+        "submit button must carry plain, non-icon-only text, got: {html}"
+    );
+    assert!(
+        html.contains(r#"<ul class="search-results-list">"#)
+            && html.contains(r#"<li class="search-result">"#),
+        "search results must be rendered as a semantic ul/li list, not bare divs, got: {html}"
+    );
+    assert!(
+        html.contains("[EN]"),
+        "the source-language badge must be real text, not color-only, got: {html}"
+    );
+    assert_eq!(
+        html.matches("<h1").count(),
+        1,
+        "the page must establish a single, unambiguous <h1> heading, got: {html}"
+    );
+
+    // --- Error state -------------------------------------------------------
+    let error_html = tmpl
+        .render(context! {
+            lang => "en",
+            nav_permits => "Permits",
+            nav_council => "Council",
+            page_title => "Search projects",
+            heading => "Search for a project",
+            search_label => "Civic address or municipality",
+            submit_label => "Search",
+            empty_message => "No projects match your search.",
+            empty_guidance => "Try broadening your search: use a more general keyword, or double-check the spelling of the address or municipality.",
+            query => "accessible",
+            has_searched => true,
+            search_results => Vec::<minijinja::value::Value>::new(),
+            search_error => true,
+            search_error_message => "We couldn't complete that search.",
+        })
+        .unwrap();
+
+    assert!(
+        error_html.contains(r#"role="alert""#),
+        "the error state must carry role=\"alert\" so assistive tech announces it, got: {error_html}"
     );
 }
 
