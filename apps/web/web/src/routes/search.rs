@@ -140,6 +140,24 @@ mod core {
                 "3 résultats trouvés"
             );
         }
+
+        /// Documents `format_result_count_label`'s actual behavior at
+        /// `count = 0`. `get_search_page` never calls this function with 0
+        /// today (the call site is gated on `!search_results.is_empty()`),
+        /// but the function is a public part of `core`'s contract and its
+        /// match arms have no special-case for zero, so it falls into the
+        /// plural branch in both languages ("0 results found" /
+        /// "0 résultats trouvés") rather than returning `None` or an empty
+        /// string. This test pins that behavior; it does not assert it is
+        /// the "right" UX for a hypothetical future caller.
+        #[test]
+        fn formats_zero_as_plural_in_both_languages() {
+            assert_eq!(format_result_count_label("en", 0), "0 results found");
+            assert_eq!(
+                format_result_count_label("fr", 0),
+                "0 résultats trouvés"
+            );
+        }
     }
 }
 

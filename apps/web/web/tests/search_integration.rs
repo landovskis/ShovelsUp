@@ -2762,6 +2762,168 @@ async fn imp_req_001_08_result_count_header_pluralization(pool: PgPool) {
     );
 }
 
+/// IMP-REQ-001-08 gap: `get_search_page` gates `result_count_label` on
+/// `!search_results.is_empty()` (search.rs), so the zero-results path must
+/// never render the "N results found" / "N résultats trouvés" header —
+/// that state is exclusively owned by `empty_message`/`empty_guidance`
+/// (IMP-REQ-001-06). Verifies the negative directly, in both languages,
+/// rather than just trusting the code comment.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_001_08_zero_results_omits_count_header(pool: PgPool) {
+    seed_searchable_project(&pool, "1 unrelated way", "Some Other Town 00108z").await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+
+    let en_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=zzz-no-such-project-00108z")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(en_response.status(), StatusCode::OK);
+    let en_body = http_body_util::BodyExt::collect(en_response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let en_html = String::from_utf8(en_body.to_vec()).unwrap();
+    assert!(
+        !en_html.contains("class=\"search-result-count\""),
+        "zero-results EN response must not render the result-count element, got: {en_html}"
+    );
+    assert!(
+        !en_html.contains("result found"),
+        "zero-results EN response must not render 'result found' text, got: {en_html}"
+    );
+
+    let fr_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=zzz-no-such-project-00108z")
+                .header("accept-language", "fr")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(fr_response.status(), StatusCode::OK);
+    let fr_body = http_body_util::BodyExt::collect(fr_response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let fr_html = String::from_utf8(fr_body.to_vec()).unwrap();
+    assert!(
+        !fr_html.contains("class=\"search-result-count\""),
+        "zero-results FR response must not render the result-count element, got: {fr_html}"
+    );
+    assert!(
+        !fr_html.contains("résultat"),
+        "zero-results FR response must not render any 'résultat' text, got: {fr_html}"
+    );
+}
+
+/// IMP-REQ-001-08 gap: `result_count_label` is gated on `!search_error &&
+/// !search_results.is_empty()`, so a DB-failure response (which forces
+/// `search_results` to `Vec::new()` and `search_error` to `true`, per
+/// `get_search_page`'s `match search_outcome`) must never render the
+/// result-count header alongside the error banner. Uses the same
+/// `pool.close()` fault-injection pattern as
+/// `tc_012_5_error_state_and_empty_state_are_mutually_exclusive` and
+/// `tc_req_008_4_returns_503_when_pool_unavailable`.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_001_08_db_error_omits_count_header(pool: PgPool) {
+    pool.close().await;
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=whatever-00108e")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "a DB failure on /search must still render the page with an error banner"
+    );
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains("class=\"search-error\""),
+        "expected the error-state markup to render on DB failure, got: {html}"
+    );
+    assert!(
+        !html.contains("class=\"search-result-count\""),
+        "a DB-failure response must never render the result-count header, got: {html}"
+    );
+    assert!(
+        !html.contains("result found") && !html.contains("résultat"),
+        "a DB-failure response must never render 'result found'/'résultat' text, got: {html}"
+    );
+}
+
+/// IMP-REQ-001-08 / per_page interaction gap: `run_search` caps the returned
+/// `Vec<SearchResult>` at `per_page` via `LIMIT $2` in the SQL query
+/// (search.rs), and `format_result_count_label` is called with
+/// `search_results.len()` — the length of that already-truncated Vec, not
+/// the total number of matching rows in the database. Seeds 5 matching
+/// rows and requests `per_page=2`: this test confirms the rendered header
+/// says "2 results found" (the truncated/returned count), not "5 results
+/// found" (the total match count). This is flagged in the task report as
+/// potentially misleading: a user sees "2 results found" with no
+/// indication 3 more matches exist and were dropped, rather than a
+/// "showing 2 of 5" style label — but per instructions this test documents
+/// today's actual behavior rather than redesigning the label.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_001_08_count_label_reflects_per_page_truncated_count(pool: PgPool) {
+    seed_searchable_project(&pool, "1 rue troncature alpha", "Ville de Troncature Un").await;
+    seed_searchable_project(&pool, "2 rue troncature beta", "Ville de Troncature Deux").await;
+    seed_searchable_project(&pool, "3 rue troncature gamma", "Ville de Troncature Trois").await;
+    seed_searchable_project(&pool, "4 rue troncature delta", "Ville de Troncature Quatre").await;
+    seed_searchable_project(&pool, "5 rue troncature epsilon", "Ville de Troncature Cinq").await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=troncature&per_page=2")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains("2 results found"),
+        "expected the count header to reflect the per_page-truncated (returned) \
+         count of 2, got: {html}"
+    );
+    assert!(
+        !html.contains("5 results found"),
+        "the count header must not reflect the total match count of 5 when \
+         per_page truncated the returned Vec to 2, got: {html}"
+    );
+}
+
 fn rand_octet() -> u8 {
     use std::time::{SystemTime, UNIX_EPOCH};
     (SystemTime::now()

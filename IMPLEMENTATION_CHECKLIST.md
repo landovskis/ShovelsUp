@@ -61,7 +61,9 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 #### Frontend Engineer
 - [x] IMP-REQ-001-06 — Add empty-state guidance line (EN/FR) (distinct markup from REQ-012's future element IDs, verified no collision)
 - [x] IMP-REQ-001-07 — Add [EN]/[FR] source-language badge (markup only, gates on Some/None; positive-render case deferred to REQ-003's own Loop B once source_language column lands; confirmed tc_003_5 unaffected)
-- [x] IMP-REQ-001-08 — Add result-count header with correct pluralization (291/238/53, zero regressions)
+- [x] IMP-REQ-001-08 — Add result-count header with correct pluralization (295/242/53, zero regressions; closed 4 post-commit coverage gaps)
+
+⚠️ **Product/UX note (not a bug, not fixed, flagged only):** the result-count header reflects the `per_page`-truncated count, not the true total match count (e.g. 5 real matches + `per_page=2` renders "2 results found" with no "of 5" indication). Worth a follow-up UX decision, out of this task's scope.
 
 ## REQ-002 — Location-based search by municipality
 
