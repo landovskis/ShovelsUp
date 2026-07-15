@@ -77,7 +77,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-002-01 — Migration: `municipality_slug` column + backfill + index
+- [x] IMP-REQ-002-01 — Migration: `municipality_slug` column + backfill + index (017_public_search_municipality_slug.sql; live-verified against Postgres including a deliberate mismatch triggering the parity check)
 - [ ] IMP-REQ-002-02 — Update refresh job to upsert `municipality_slug`
 - [ ] IMP-REQ-002-03 — Pure `validate_municipality_slug` core function
 - [ ] IMP-REQ-002-04 — Wire municipality filter + validation into handlers
