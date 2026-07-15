@@ -59,7 +59,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [ ] IMP-REQ-001-10 — Accessibility (WCAG AA) verification pass
 - [ ] IMP-REQ-001-11 — Full regression run
 #### Frontend Engineer
-- [ ] IMP-REQ-001-06 — Add empty-state guidance line (EN/FR)
+- [x] IMP-REQ-001-06 — Add empty-state guidance line (EN/FR) (distinct markup from REQ-012's future element IDs, verified no collision)
 - [ ] IMP-REQ-001-07 — Add [EN]/[FR] source-language badge
 - [ ] IMP-REQ-001-08 — Add result-count header with correct pluralization
 

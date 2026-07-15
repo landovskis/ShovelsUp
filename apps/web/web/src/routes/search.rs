@@ -251,6 +251,16 @@ struct SearchLabels {
     search_label: &'static str,
     submit_label: &'static str,
     empty_message: &'static str,
+    // IMP-REQ-001-06: one extra guidance line shown alongside
+    // `empty_message` in the zero-results state, suggesting the user
+    // broaden/adjust their query. Deliberately a single, narrowly-scoped
+    // addition — NOT the richer headline/body/suggestions/action-links
+    // empty-state redesign that REQ-012 will add later to this same
+    // template area (see `search-empty-guidance` in search.html, kept
+    // distinct from REQ-012's future `search-empty-heading` /
+    // `search-empty-body` / `search-empty-suggestion` /
+    // `search-empty-action` element classes).
+    empty_guidance: &'static str,
     nav_permits: &'static str,
     nav_council: &'static str,
 }
@@ -263,6 +273,7 @@ fn search_labels(lang: &str) -> SearchLabels {
             search_label: "Adresse civique ou municipalité",
             submit_label: "Rechercher",
             empty_message: "Aucun projet ne correspond à votre recherche.",
+            empty_guidance: "Essayez une recherche plus large : utilisez un mot-clé plus général ou vérifiez l'orthographe de l'adresse ou de la municipalité.",
             nav_permits: "Permis",
             nav_council: "Conseil",
         },
@@ -272,6 +283,7 @@ fn search_labels(lang: &str) -> SearchLabels {
             search_label: "Civic address or municipality",
             submit_label: "Search",
             empty_message: "No projects match your search.",
+            empty_guidance: "Try broadening your search: use a more general keyword, or double-check the spelling of the address or municipality.",
             nav_permits: "Permits",
             nav_council: "Council",
         },
@@ -320,6 +332,7 @@ pub async fn get_search_page(
             search_label => labels.search_label,
             submit_label => labels.submit_label,
             empty_message => labels.empty_message,
+            empty_guidance => labels.empty_guidance,
             query => params.q,
             has_searched => has_searched,
             search_results => search_results,

@@ -2159,6 +2159,78 @@ async fn tc_012_5_error_state_and_empty_state_are_mutually_exclusive(pool: PgPoo
     );
 }
 
+/// IMP-REQ-001-06: zero-result search renders a distinct guidance line
+/// (beyond today's single `empty_message`) suggesting the user broaden or
+/// adjust their query, in both EN and FR. Deliberately scoped to just this
+/// one line — the richer headline/body/suggestions/action-links empty state
+/// is REQ-012's later job (see `tc_012_*` above); this test's markup
+/// (`class="search-empty-guidance"`) is intentionally distinct from
+/// REQ-012's future `search-empty-heading` / `search-empty-body` /
+/// `search-empty-suggestion` / `search-empty-action` element classes.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_001_06_empty_state_shows_guidance_line(pool: PgPool) {
+    seed_searchable_project(&pool, "1 unrelated street", "Some Other Town 00106").await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+
+    let en_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=zzz-no-such-project-00106")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(en_response.status(), StatusCode::OK);
+    let en_body = http_body_util::BodyExt::collect(en_response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let en_html = String::from_utf8(en_body.to_vec()).unwrap();
+
+    assert!(
+        en_html.contains("class=\"search-empty-guidance\""),
+        "expected a distinct empty-state guidance element, got: {en_html}"
+    );
+    assert!(
+        en_html.contains("Try broadening your search"),
+        "expected English guidance copy suggesting the user broaden their query, got: {en_html}"
+    );
+
+    let fr_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=zzz-aucun-projet-00106")
+                .header("accept-language", "fr")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(fr_response.status(), StatusCode::OK);
+    let fr_body = http_body_util::BodyExt::collect(fr_response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let fr_html = String::from_utf8(fr_body.to_vec()).unwrap();
+
+    assert!(
+        fr_html.contains("class=\"search-empty-guidance\""),
+        "expected a distinct empty-state guidance element in French render, got: {fr_html}"
+    );
+    assert!(
+        fr_html.contains("Essayez une recherche plus large"),
+        "expected French guidance copy suggesting the user broaden their query, got: {fr_html}"
+    );
+    assert!(
+        !fr_html.contains("Try broadening your search"),
+        "French empty state must not contain leftover English guidance copy, got: {fr_html}"
+    );
+}
+
 // ---------------------------------------------------------------------
 // REQ-015 Loop A: search-result confidence indicator ("Detected N days ago
 // from M council source(s)").

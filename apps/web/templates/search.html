@@ -29,6 +29,7 @@
         </ul>
         {% elif has_searched | default(false) %}
         <p class="search-empty">{{ empty_message | default("No projects match your search.", true) }}</p>
+        <p class="search-empty-guidance">{{ empty_guidance | default("Try broadening your search: use a more general keyword, or double-check the spelling of the address or municipality.", true) }}</p>
         {% endif %}
     </div>
 </section>
