@@ -23,11 +23,12 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
     let result = sqlx::query!(
         r#"
         INSERT INTO public_search_documents
-            (project_id, civic_address_normalized, municipality_name, project_type, normalized_status, updated_at)
+            (project_id, civic_address_normalized, municipality_name, municipality_slug, project_type, normalized_status, updated_at)
         SELECT
             p.id,
             p.civic_address_normalized,
             m.name,
+            m.slug,
             p.project_type,
             latest.normalized_status,
             now()
@@ -46,6 +47,7 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
         ON CONFLICT (project_id) DO UPDATE SET
             civic_address_normalized = EXCLUDED.civic_address_normalized,
             municipality_name = EXCLUDED.municipality_name,
+            municipality_slug = EXCLUDED.municipality_slug,
             project_type = EXCLUDED.project_type,
             normalized_status = EXCLUDED.normalized_status,
             updated_at = now()
@@ -137,7 +139,7 @@ mod tests {
         assert_eq!(affected, 1);
 
         let row = sqlx::query!(
-            "SELECT municipality_name, project_type, normalized_status \
+            "SELECT municipality_name, municipality_slug, project_type, normalized_status \
              FROM public_search_documents WHERE project_id = $1",
             project_id
         )
@@ -145,6 +147,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(row.municipality_name.as_deref(), Some("Test City"));
+        assert_eq!(row.municipality_slug.as_deref(), Some("test-city"));
         assert_eq!(row.project_type.as_deref(), Some("residential"));
         assert_eq!(row.normalized_status.as_deref(), Some("approved"));
     }
@@ -182,17 +185,22 @@ mod tests {
         .unwrap();
         assert_eq!(count, 1, "must not create a duplicate row on re-run");
 
-        let status: Option<String> = sqlx::query_scalar!(
-            "SELECT normalized_status FROM public_search_documents WHERE project_id = $1",
+        let row = sqlx::query!(
+            "SELECT normalized_status, municipality_slug FROM public_search_documents WHERE project_id = $1",
             project_id
         )
         .fetch_one(&pool)
         .await
         .unwrap();
         assert_eq!(
-            status.as_deref(),
+            row.normalized_status.as_deref(),
             Some("approved"),
             "must reflect the latest mention status"
+        );
+        assert_eq!(
+            row.municipality_slug.as_deref(),
+            Some("other-city"),
+            "municipality_slug must be set correctly on the upsert (update) path too"
         );
     }
 }

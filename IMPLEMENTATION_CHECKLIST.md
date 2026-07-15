@@ -78,7 +78,9 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 ### Loop B — Task Breakdown
 #### Backend Engineer
 - [x] IMP-REQ-002-01 — Migration: `municipality_slug` column + backfill + index (017_public_search_municipality_slug.sql; live-verified against Postgres including a deliberate mismatch triggering the parity check)
-- [ ] IMP-REQ-002-02 — Update refresh job to upsert `municipality_slug`
+- [x] IMP-REQ-002-02 — Update refresh job to upsert `municipality_slug` (insert + ON CONFLICT UPDATE paths both verified against real DB state, 314/261/53, zero regressions)
+
+⚠️ **Local-environment note (not a code issue):** local dev Postgres had a pre-existing checksum drift on migration 2 blocking `sqlx migrate run` (predates this session). Migration 017 was applied directly via psql to unblock compile-time query checks; the migration file itself is untouched. Flagging so a real deploy/CI environment run applies migrations normally rather than assuming this workaround is needed elsewhere.
 - [x] IMP-REQ-002-03 — Pure `validate_municipality_slug` core function (syntactic-only; live-table check deferred to IMP-REQ-002-04 per plan's own notes; 10 unit tests, 306/253/53, zero regressions)
 - [ ] IMP-REQ-002-04 — Wire municipality filter + validation into handlers
 - [x] IMP-REQ-002-05 — `municipality_display_name` EN/FR helper (8 unit tests, 314/261/53, zero regressions)
