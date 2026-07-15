@@ -31,7 +31,17 @@ mod core {
     pub enum SearchValidationError {
         /// `per_page`, after defaulting, fell outside `1..=MAX_PER_PAGE`.
         PerPageOutOfRange,
+        /// `municipality_slug`, after lowercasing, contained characters
+        /// outside `[a-z0-9-]`, or was longer than
+        /// `MAX_MUNICIPALITY_SLUG_LEN`.
+        InvalidMunicipalitySlugFormat,
     }
+
+    /// Generous upper bound on a syntactically valid slug's length. Real
+    /// municipality slugs (`montreal`, `toronto`, `vancouver`, ...) are a
+    /// handful of characters; this just guards against pathological input
+    /// before it ever reaches a query, not a precise business rule.
+    const MAX_MUNICIPALITY_SLUG_LEN: usize = 100;
 
     /// Validates raw search query params. Currently covers `per_page`
     /// (defaulting to `DEFAULT_PER_PAGE` when absent, rejecting anything
@@ -50,6 +60,52 @@ mod core {
             return Err(SearchValidationError::PerPageOutOfRange);
         }
         Ok(ValidatedSearchParams { per_page })
+    }
+
+    /// Pure, syntactic-only validation of a raw `municipality_slug` query
+    /// param (IMP-REQ-002-03). Deliberately does NOT check whether the slug
+    /// exists in the `municipalities` table — that's a DB-touching concern
+    /// layered on top by the handler wiring (IMP-REQ-002-04), which queries
+    /// the live table rather than a hardcoded list.
+    ///
+    /// - `None` or an empty/whitespace-only string means "no filter
+    ///   applied", so it returns `Ok(None)`.
+    /// - Otherwise the value is trimmed and lowercased (TC-002-6: a
+    ///   mixed-case slug like `MONTREAL` is normalized and accepted, not
+    ///   rejected — slugs are rendered lowercase by the server's own
+    ///   `<select>` markup, so case seen server-side signals a client
+    ///   normalization quirk, not an implausible lookup).
+    /// - After normalization, anything other than lowercase ASCII
+    ///   alphanumerics and hyphens, or a length beyond
+    ///   `MAX_MUNICIPALITY_SLUG_LEN`, is rejected.
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    ///
+    /// Loop A stub: not called from `run_search` yet — wiring it in
+    /// (including the live-table existence check) is IMP-REQ-002-04's job.
+    #[allow(dead_code)]
+    pub fn validate_municipality_slug(
+        raw: Option<String>,
+    ) -> Result<Option<String>, SearchValidationError> {
+        let Some(raw) = raw else {
+            return Ok(None);
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+
+        let normalized = trimmed.to_lowercase();
+        let is_valid_shape = normalized.len() <= MAX_MUNICIPALITY_SLUG_LEN
+            && normalized
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if !is_valid_shape {
+            return Err(SearchValidationError::InvalidMunicipalitySlugFormat);
+        }
+
+        Ok(Some(normalized))
     }
 
     /// Builds the "N results found" header shown above a non-empty result
@@ -158,6 +214,96 @@ mod core {
                 "0 résultats trouvés"
             );
         }
+
+        #[test]
+        fn municipality_slug_none_input_means_no_filter() {
+            let result = validate_municipality_slug(None).unwrap();
+            assert_eq!(result, None);
+        }
+
+        #[test]
+        fn municipality_slug_empty_string_means_no_filter() {
+            let result = validate_municipality_slug(Some(String::new())).unwrap();
+            assert_eq!(result, None);
+        }
+
+        #[test]
+        fn municipality_slug_valid_lowercase_is_accepted_unchanged() {
+            let result = validate_municipality_slug(Some("montreal".to_string())).unwrap();
+            assert_eq!(result, Some("montreal".to_string()));
+        }
+
+        #[test]
+        fn municipality_slug_with_hyphens_and_digits_is_accepted() {
+            let result =
+                validate_municipality_slug(Some("saint-jean-2".to_string())).unwrap();
+            assert_eq!(result, Some("saint-jean-2".to_string()));
+        }
+
+        /// TC-002-6's committed behavior: uppercase/mixed-case input is
+        /// normalized to lowercase and accepted, not rejected.
+        #[test]
+        fn municipality_slug_uppercase_is_normalized_to_lowercase() {
+            let result = validate_municipality_slug(Some("MONTREAL".to_string())).unwrap();
+            assert_eq!(result, Some("montreal".to_string()));
+
+            let result = validate_municipality_slug(Some("Montreal".to_string())).unwrap();
+            assert_eq!(result, Some("montreal".to_string()));
+        }
+
+        #[test]
+        fn municipality_slug_with_invalid_characters_is_rejected() {
+            let result = validate_municipality_slug(Some("mont real!".to_string()));
+            assert_eq!(
+                result,
+                Err(SearchValidationError::InvalidMunicipalitySlugFormat)
+            );
+
+            let result = validate_municipality_slug(Some("montreal_qc".to_string()));
+            assert_eq!(
+                result,
+                Err(SearchValidationError::InvalidMunicipalitySlugFormat)
+            );
+
+            let result = validate_municipality_slug(Some("montréal".to_string()));
+            assert_eq!(
+                result,
+                Err(SearchValidationError::InvalidMunicipalitySlugFormat)
+            );
+        }
+
+        /// Whitespace-only input is treated the same as an empty string
+        /// (trimmed to nothing) rather than rejected: a caller sending
+        /// `municipality_slug=%20` almost certainly means "no filter", the
+        /// same as omitting the param entirely, not an invalid value.
+        #[test]
+        fn municipality_slug_whitespace_only_is_trimmed_to_no_filter() {
+            let result = validate_municipality_slug(Some("   ".to_string())).unwrap();
+            assert_eq!(result, None);
+        }
+
+        #[test]
+        fn municipality_slug_surrounding_whitespace_is_trimmed() {
+            let result = validate_municipality_slug(Some("  montreal  ".to_string())).unwrap();
+            assert_eq!(result, Some("montreal".to_string()));
+        }
+
+        #[test]
+        fn municipality_slug_too_long_is_rejected() {
+            let too_long = "a".repeat(MAX_MUNICIPALITY_SLUG_LEN + 1);
+            let result = validate_municipality_slug(Some(too_long));
+            assert_eq!(
+                result,
+                Err(SearchValidationError::InvalidMunicipalitySlugFormat)
+            );
+        }
+
+        #[test]
+        fn municipality_slug_at_max_length_is_accepted() {
+            let max_len = "a".repeat(MAX_MUNICIPALITY_SLUG_LEN);
+            let result = validate_municipality_slug(Some(max_len.clone())).unwrap();
+            assert_eq!(result, Some(max_len));
+        }
     }
 }
 
@@ -244,8 +390,8 @@ async fn run_search(
     q: &str,
     per_page: Option<i64>,
 ) -> Result<Vec<SearchResult>, StatusCode> {
-    let core::ValidatedSearchParams { per_page } = core::validate_search_params(per_page)
-        .map_err(|core::SearchValidationError::PerPageOutOfRange| StatusCode::BAD_REQUEST)?;
+    let core::ValidatedSearchParams { per_page } =
+        core::validate_search_params(per_page).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let keyword = format!("%{q}%");
     let rows = sqlx::query!(

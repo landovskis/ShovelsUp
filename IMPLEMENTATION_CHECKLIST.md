@@ -79,7 +79,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 #### Backend Engineer
 - [x] IMP-REQ-002-01 — Migration: `municipality_slug` column + backfill + index (017_public_search_municipality_slug.sql; live-verified against Postgres including a deliberate mismatch triggering the parity check)
 - [ ] IMP-REQ-002-02 — Update refresh job to upsert `municipality_slug`
-- [ ] IMP-REQ-002-03 — Pure `validate_municipality_slug` core function
+- [x] IMP-REQ-002-03 — Pure `validate_municipality_slug` core function (syntactic-only; live-table check deferred to IMP-REQ-002-04 per plan's own notes; 10 unit tests, 306/253/53, zero regressions)
 - [ ] IMP-REQ-002-04 — Wire municipality filter + validation into handlers
 - [ ] IMP-REQ-002-05 — `municipality_display_name` EN/FR helper
 - [ ] IMP-REQ-002-09 — Automate all 6 system test cases
