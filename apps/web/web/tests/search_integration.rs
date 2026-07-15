@@ -2231,6 +2231,57 @@ async fn imp_req_001_06_empty_state_shows_guidance_line(pool: PgPool) {
     );
 }
 
+/// IMP-REQ-001-07: the per-result `[EN]`/`[FR]` source-language badge markup
+/// added to `search.html` must gracefully omit itself when
+/// `SearchResult.source_language` is `None` — which is 100% of the time
+/// today, since neither the `public_search_documents.source_language` column
+/// nor its backfill exist yet (that's IMP-REQ-003-02/03/04's job; see the
+/// Loop A stub comment on `SearchResult::source_language` in `search.rs`).
+/// This test only covers the omission case. It deliberately does NOT assert
+/// the positive `[EN]`/`[FR]` rendering case, since there is no real
+/// `source_language` data to seed yet — REQ-003's own `tc_003_5` test
+/// documents that gap and will exercise the positive case once REQ-003's
+/// later Loop B tasks populate real data through this same badge markup.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_001_07_lang_badge_omitted_when_source_language_unknown(pool: PgPool) {
+    seed_searchable_project(&pool, "10 rue badge test 00107", "Ville Badge Test 00107").await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=badge+test+00107")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains("10 rue badge test 00107"),
+        "sanity check that the result actually rendered, got: {html}"
+    );
+    assert!(
+        !html.contains("result-lang-badge"),
+        "no badge markup should render while source_language is None (today's \
+         only real case — the column/backfill are IMP-REQ-003-02/03/04's job), \
+         got: {html}"
+    );
+    assert!(
+        !html.contains("[EN]") && !html.contains("[FR]"),
+        "no [EN]/[FR] badge text should appear anywhere in the response while \
+         source_language is unpopulated, got: {html}"
+    );
+}
+
 // ---------------------------------------------------------------------
 // REQ-015 Loop A: search-result confidence indicator ("Detected N days ago
 // from M council source(s)").
