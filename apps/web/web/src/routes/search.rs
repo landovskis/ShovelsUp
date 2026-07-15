@@ -15,11 +15,7 @@ const MAX_PER_PAGE: i64 = 100;
 /// Pure, I/O-free validation of raw search query params (IMP-REQ-001-02).
 /// Extracted out of `run_search`'s inline `per_page` bounds check so the
 /// validation rule is independently unit-testable without a DB/HTTP server.
-///
-/// Not yet wired into `run_search` — that's IMP-REQ-001-04's job. Until
-/// then this module is exercised only by its own unit tests below, hence
-/// `#[allow(dead_code)]` on the public items.
-#[allow(dead_code)]
+/// Wired into `run_search` (IMP-REQ-001-04).
 mod core {
     use super::{DEFAULT_PER_PAGE, MAX_PER_PAGE};
 
@@ -187,10 +183,8 @@ async fn run_search(
     q: &str,
     per_page: Option<i64>,
 ) -> Result<Vec<SearchResult>, StatusCode> {
-    let per_page = per_page.unwrap_or(DEFAULT_PER_PAGE);
-    if !(1..=MAX_PER_PAGE).contains(&per_page) {
-        return Err(StatusCode::BAD_REQUEST);
-    }
+    let core::ValidatedSearchParams { per_page } = core::validate_search_params(per_page)
+        .map_err(|core::SearchValidationError::PerPageOutOfRange| StatusCode::BAD_REQUEST)?;
 
     let keyword = format!("%{q}%");
     let rows = sqlx::query!(
