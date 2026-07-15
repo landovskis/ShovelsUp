@@ -108,6 +108,35 @@ mod core {
         Ok(Some(normalized))
     }
 
+    /// Maps a normalized municipality slug (as produced by
+    /// `validate_municipality_slug`) to its localized display name
+    /// (IMP-REQ-002-05). Covers the launch set of three municipalities:
+    /// Montreal has a distinct French form ("Montréal"); Toronto and
+    /// Vancouver do not, so both languages share the same spelling.
+    ///
+    /// Returns `None` for a slug outside the launch set rather than
+    /// panicking or guessing at a display name — the plan notes the launch
+    /// set could grow, so an unrecognized slug is a caller-visible "I don't
+    /// know this one yet" rather than a hardcoded failure.
+    ///
+    /// Expects `slug` to already be lowercase-normalized (as
+    /// `validate_municipality_slug` does upstream); this function does not
+    /// itself lowercase or trim, so a mixed-case or unnormalized slug will
+    /// simply fail to match and return `None`.
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    #[allow(dead_code)]
+    pub fn municipality_display_name(slug: &str, lang: &str) -> Option<&'static str> {
+        match (slug, lang) {
+            ("montreal", "fr") => Some("Montréal"),
+            ("montreal", _) => Some("Montreal"),
+            ("toronto", _) => Some("Toronto"),
+            ("vancouver", _) => Some("Vancouver"),
+            _ => None,
+        }
+    }
+
     /// Builds the "N results found" header shown above a non-empty result
     /// list (IMP-REQ-001-08), in EN or FR, with correct singular/plural
     /// wording. Pure string formatting from an already-known count — no
@@ -303,6 +332,75 @@ mod core {
             let max_len = "a".repeat(MAX_MUNICIPALITY_SLUG_LEN);
             let result = validate_municipality_slug(Some(max_len.clone())).unwrap();
             assert_eq!(result, Some(max_len));
+        }
+
+        #[test]
+        fn municipality_display_name_montreal_english() {
+            assert_eq!(
+                municipality_display_name("montreal", "en"),
+                Some("Montreal")
+            );
+        }
+
+        #[test]
+        fn municipality_display_name_montreal_french() {
+            assert_eq!(
+                municipality_display_name("montreal", "fr"),
+                Some("Montréal")
+            );
+        }
+
+        #[test]
+        fn municipality_display_name_toronto_english() {
+            assert_eq!(
+                municipality_display_name("toronto", "en"),
+                Some("Toronto")
+            );
+        }
+
+        /// Toronto has no distinct French form: both languages share the
+        /// same spelling.
+        #[test]
+        fn municipality_display_name_toronto_french() {
+            assert_eq!(
+                municipality_display_name("toronto", "fr"),
+                Some("Toronto")
+            );
+        }
+
+        #[test]
+        fn municipality_display_name_vancouver_english() {
+            assert_eq!(
+                municipality_display_name("vancouver", "en"),
+                Some("Vancouver")
+            );
+        }
+
+        /// Vancouver has no distinct French form: both languages share the
+        /// same spelling.
+        #[test]
+        fn municipality_display_name_vancouver_french() {
+            assert_eq!(
+                municipality_display_name("vancouver", "fr"),
+                Some("Vancouver")
+            );
+        }
+
+        #[test]
+        fn municipality_display_name_unrecognized_slug_returns_none() {
+            assert_eq!(municipality_display_name("gotham", "en"), None);
+            assert_eq!(municipality_display_name("gotham", "fr"), None);
+        }
+
+        /// Documents the lowercase-normalization contract: this function
+        /// does not itself normalize input, so a slug that hasn't already
+        /// been through `validate_municipality_slug` (e.g. still mixed-case)
+        /// simply fails to match and returns `None` rather than being
+        /// case-folded internally.
+        #[test]
+        fn municipality_display_name_requires_lowercase_normalized_input() {
+            assert_eq!(municipality_display_name("Montreal", "en"), None);
+            assert_eq!(municipality_display_name("MONTREAL", "fr"), None);
         }
     }
 }

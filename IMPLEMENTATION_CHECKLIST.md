@@ -81,7 +81,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [ ] IMP-REQ-002-02 — Update refresh job to upsert `municipality_slug`
 - [x] IMP-REQ-002-03 — Pure `validate_municipality_slug` core function (syntactic-only; live-table check deferred to IMP-REQ-002-04 per plan's own notes; 10 unit tests, 306/253/53, zero regressions)
 - [ ] IMP-REQ-002-04 — Wire municipality filter + validation into handlers
-- [ ] IMP-REQ-002-05 — `municipality_display_name` EN/FR helper
+- [x] IMP-REQ-002-05 — `municipality_display_name` EN/FR helper (8 unit tests, 314/261/53, zero regressions)
 - [ ] IMP-REQ-002-09 — Automate all 6 system test cases
 - [ ] IMP-REQ-002-10 — Accessibility verification (keyboard, screen reader, contrast)
 - [ ] IMP-REQ-002-11 — Regression check: REQ-008 keyword-only search unaffected
