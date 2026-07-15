@@ -74,5 +74,15 @@ async fn main() {
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::info!("listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    // IMP-REQ-001-05: exposes the real TCP peer address to middleware (e.g.
+    // the search rate limiter) via the `ConnectInfo<SocketAddr>` extractor,
+    // since this service has no reverse proxy in front of it and must not
+    // rely on a client-supplied `X-Forwarded-For` header for anything
+    // security-relevant.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
 }
