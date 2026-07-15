@@ -52,7 +52,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 #### Backend Engineer
 - [x] IMP-REQ-001-01 — Run baseline `cargo nextest run --workspace` (272 total, 219 pass, 53 fail — matches Loop A A4 exactly; no files changed, nothing to commit)
 - [x] IMP-REQ-001-02 — Add `validate_search_params` pure core function (7/7 unit tests, not yet wired into run_search)
-- [ ] IMP-REQ-001-03 — Unit tests for core function
+- [x] IMP-REQ-001-03 — Unit tests for core function (existing 7 confirmed thorough, no additions needed; also fixed a pre-existing clippy doc-lint break in responsive_e2e.rs blocking the workspace-wide `-D warnings` gate)
 - [ ] IMP-REQ-001-04 — Wire `run_search` to call the core function
 - [ ] IMP-REQ-001-05 — Verify/fix X-Forwarded-For rate-limit trust assumption
 - [ ] IMP-REQ-001-09 — Integration test: French locale + no-modal assertion (TC-001-6)
