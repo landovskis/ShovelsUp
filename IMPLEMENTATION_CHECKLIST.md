@@ -57,7 +57,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-001-05 — Verify/fix X-Forwarded-For rate-limit trust assumption (real security fix: no reverse proxy fronts this app, so XFF was forgeable; switched rate-limit key to unspoofable ConnectInfo<SocketAddr>; verified deterministic across 2 independent full-suite runs, 284 total/231 pass/53 fail, zero regressions)
 - [x] IMP-REQ-001-09 — Integration test: French locale + no-modal assertion (TC-001-6) (already satisfied by Loop A's tc_001_6, reverified passing)
 - [x] IMP-REQ-001-10 — Accessibility (WCAG AA) verification pass (all items already correct from 06/07/08; no template changes needed; contract locked in by new test, 296/243/53)
-- [ ] IMP-REQ-001-11 — Full regression run
+- [x] IMP-REQ-001-11 — Full regression run (build clean, clippy clean, 296/243/53, REQ-001 complete)
 #### Frontend Engineer
 - [x] IMP-REQ-001-06 — Add empty-state guidance line (EN/FR) (distinct markup from REQ-012's future element IDs, verified no collision)
 - [x] IMP-REQ-001-07 — Add [EN]/[FR] source-language badge (markup only, gates on Some/None; positive-render case deferred to REQ-003's own Loop B once source_language column lands; confirmed tc_003_5 unaffected)
