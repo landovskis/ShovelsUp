@@ -2658,6 +2658,110 @@ async fn tc_015_6_indicator_localized_en_fr(pool: PgPool) {
     );
 }
 
+/// IMP-REQ-001-08: the search results page shows a result-count header
+/// ("N results found" / EN, "N résultats trouvés" / FR) computed from the
+/// actual number of results, with correct EN/FR singular/plural wording for
+/// a single result and for several results.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_001_08_result_count_header_pluralization(pool: PgPool) {
+    seed_searchable_project(&pool, "1 rue singulier compte", "Ville de Comptesingulier").await;
+    seed_searchable_project(&pool, "1 rue pluriel compte alpha", "Ville de Comptepluriel Un").await;
+    seed_searchable_project(&pool, "2 rue pluriel compte beta", "Ville de Comptepluriel Deux").await;
+    seed_searchable_project(&pool, "3 rue pluriel compte gamma", "Ville de Comptepluriel Trois").await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+
+    // Singular, English: exactly one match.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=singulier+compte")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        html.contains("1 result found"),
+        "expected singular EN result-count header, got: {html}"
+    );
+
+    // Plural, English: three matches.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=pluriel+compte")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        html.contains("3 results found"),
+        "expected plural EN result-count header with the actual count, got: {html}"
+    );
+
+    // Singular, French: exactly one match.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=singulier+compte")
+                .header("accept-language", "fr")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        html.contains("1 résultat trouvé"),
+        "expected singular FR result-count header, got: {html}"
+    );
+
+    // Plural, French: three matches.
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=pluriel+compte")
+                .header("accept-language", "fr")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        html.contains("3 résultats trouvés"),
+        "expected plural FR result-count header with the actual count, got: {html}"
+    );
+}
+
 fn rand_octet() -> u8 {
     use std::time::{SystemTime, UNIX_EPOCH};
     (SystemTime::now()

@@ -18,6 +18,9 @@
             <p>{{ search_error_message | default("We couldn’t complete that search.", true) }}</p>
         </div>
         {% elif has_searched | default(false) and search_results | default([]) | length > 0 %}
+        {% if result_count_label %}
+        <p class="search-result-count">{{ result_count_label }}</p>
+        {% endif %}
         <ul class="search-results-list">
             {% for result in search_results %}
             <li class="search-result">

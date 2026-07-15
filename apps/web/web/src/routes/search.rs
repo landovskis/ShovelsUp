@@ -52,6 +52,23 @@ mod core {
         Ok(ValidatedSearchParams { per_page })
     }
 
+    /// Builds the "N results found" header shown above a non-empty result
+    /// list (IMP-REQ-001-08), in EN or FR, with correct singular/plural
+    /// wording. Pure string formatting from an already-known count — no
+    /// I/O — so it lives in `core` alongside `validate_search_params` and is
+    /// unit-testable without a DB/HTTP server. `get_search_page` only calls
+    /// this when there's at least one result; the zero-results case is
+    /// handled entirely by the existing `empty_message`/`empty_guidance`
+    /// pair (IMP-REQ-001-06) so the two don't double up.
+    pub fn format_result_count_label(lang: &str, count: usize) -> String {
+        match (lang, count) {
+            ("fr", 1) => "1 résultat trouvé".to_string(),
+            ("fr", n) => format!("{n} résultats trouvés"),
+            (_, 1) => "1 result found".to_string(),
+            (_, n) => format!("{n} results found"),
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -96,6 +113,32 @@ mod core {
         fn rejects_negative_values() {
             let result = validate_search_params(Some(-1));
             assert_eq!(result, Err(SearchValidationError::PerPageOutOfRange));
+        }
+
+        #[test]
+        fn formats_singular_english() {
+            assert_eq!(format_result_count_label("en", 1), "1 result found");
+        }
+
+        #[test]
+        fn formats_plural_english() {
+            assert_eq!(format_result_count_label("en", 3), "3 results found");
+        }
+
+        #[test]
+        fn formats_singular_french() {
+            assert_eq!(
+                format_result_count_label("fr", 1),
+                "1 résultat trouvé"
+            );
+        }
+
+        #[test]
+        fn formats_plural_french() {
+            assert_eq!(
+                format_result_count_label("fr", 3),
+                "3 résultats trouvés"
+            );
         }
     }
 }
@@ -322,6 +365,16 @@ pub async fn get_search_page(
         None => (Vec::new(), false),
     };
 
+    // IMP-REQ-001-08: only shown alongside a non-empty result list — the
+    // zero-results case stays exclusively owned by
+    // `empty_message`/`empty_guidance` (IMP-REQ-001-06) so the two never
+    // double up.
+    let result_count_label = if !search_error && !search_results.is_empty() {
+        Some(core::format_result_count_label(lang, search_results.len()))
+    } else {
+        None
+    };
+
     let html = tmpl
         .render(context! {
             lang => lang,
@@ -337,6 +390,7 @@ pub async fn get_search_page(
             has_searched => has_searched,
             search_results => search_results,
             search_error => search_error,
+            result_count_label => result_count_label,
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
