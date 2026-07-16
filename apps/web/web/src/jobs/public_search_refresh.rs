@@ -107,8 +107,8 @@ mod tests {
         .await
         .unwrap();
         let chunk_id = sqlx::query_scalar!(
-            "INSERT INTO document_chunks (source_document_id, chunk_index, content) \
-             VALUES ($1, 0, 'chunk text') RETURNING id",
+            "INSERT INTO document_chunks (source_document_id, chunk_index, content, language) \
+             VALUES ($1, 0, 'chunk text', 'en') RETURNING id",
             doc_id
         )
         .fetch_one(pool)
@@ -147,7 +147,7 @@ mod tests {
         assert_eq!(affected, 1);
 
         let row = sqlx::query!(
-            "SELECT municipality_name, municipality_slug, project_type, normalized_status \
+            "SELECT municipality_name, municipality_slug, project_type, normalized_status, source_language \
              FROM public_search_documents WHERE project_id = $1",
             project_id
         )
@@ -158,6 +158,11 @@ mod tests {
         assert_eq!(row.municipality_slug.as_deref(), Some("test-city"));
         assert_eq!(row.project_type.as_deref(), Some("residential"));
         assert_eq!(row.normalized_status.as_deref(), Some("approved"));
+        assert_eq!(
+            row.source_language.as_deref(),
+            Some("en"),
+            "source_language must be set correctly on the insert path (IMP-REQ-003-04)"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -194,7 +199,7 @@ mod tests {
         assert_eq!(count, 1, "must not create a duplicate row on re-run");
 
         let row = sqlx::query!(
-            "SELECT normalized_status, municipality_slug FROM public_search_documents WHERE project_id = $1",
+            "SELECT normalized_status, municipality_slug, source_language FROM public_search_documents WHERE project_id = $1",
             project_id
         )
         .fetch_one(&pool)
@@ -204,6 +209,11 @@ mod tests {
             row.normalized_status.as_deref(),
             Some("approved"),
             "must reflect the latest mention status"
+        );
+        assert_eq!(
+            row.source_language.as_deref(),
+            Some("en"),
+            "source_language must be set correctly on the upsert (update) path too"
         );
         assert_eq!(
             row.municipality_slug.as_deref(),
