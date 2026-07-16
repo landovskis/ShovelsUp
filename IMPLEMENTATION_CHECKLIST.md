@@ -117,7 +117,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-003-05 — FR/EN string-table entries + key-parity check (Rust struct exhaustiveness makes literal missing-key bugs impossible; new test catches copy-paste-forgot-to-translate instead; 339/288/51)
 - [x] IMP-REQ-003-09 — Test fixtures (FR/EN seed rows, fault-injecting DB wrapper) (already satisfied: each tc_003_* test seeds its own FR/EN fixtures inline, matching this repo's per-test convention; no TC-003 case needs DB-failure injection, so no fault-injecting wrapper was necessary)
 - [x] IMP-REQ-003-10 — Implement all 5 test cases (already satisfied by IMP-REQ-003-04's wiring — all 5 tc_003_* tests pass)
-- [ ] IMP-REQ-003-11 — Accessibility verification
+- [x] IMP-REQ-003-11 — Accessibility verification (badge/toggle already correct: plain text, own-target-language link text, no keyboard-blocking attrs; 354/302/52, all 5 tc_003_* pass — REQ-003 complete)
 #### Frontend Engineer
 - [x] IMP-REQ-003-06 — Build `search_results.html` states per UI mockup (no separate file exists, confirmed; per-row badge attribution already correct via Minijinja loop scoping, locked in by new mixed-language test)
 - [x] IMP-REQ-003-07 — Responsive breakpoints (badge/toggle stack cleanly at 640px using existing tokens, 353/301/52)

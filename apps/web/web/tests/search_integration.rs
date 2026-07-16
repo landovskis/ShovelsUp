@@ -3811,6 +3811,135 @@ async fn imp_req_003_08_lang_param_sets_cookie_and_cookie_persists_across_reques
     );
 }
 
+/// IMP-REQ-003-11: the REQ-003 elements added by IMP-REQ-003-06/07/08 — the
+/// per-result `[EN]`/`[FR]` source-language badge and the EN/FR toggle link
+/// — must meet basic accessibility requirements: the badge must be plain
+/// text content (not conveyed by color/icon alone), the toggle link must
+/// carry clear, non-ambiguous link text naming its OWN target language
+/// (not "here", not an icon, not empty), and neither element may be pulled
+/// out of the keyboard/assistive-tech tree via `tabindex="-1"` or
+/// `aria-hidden`. Renders the template directly (no DB round-trip needed
+/// for a markup-only assertion), covering both the EN and FR renderings of
+/// the toggle link.
+#[test]
+fn imp_req_003_11_lang_badge_and_toggle_meet_basic_accessibility_requirements() {
+    let mut env = Environment::new();
+    env.set_loader(path_loader("../templates"));
+    let tmpl = env.get_template("search.html").unwrap();
+
+    let base_ctx = serde_json::json!({
+        "lang": "en",
+        "nav_permits": "Permits",
+        "nav_council": "Council",
+        "page_title": "Search projects",
+        "heading": "Search for a project",
+        "search_label": "Civic address or municipality",
+        "submit_label": "Search",
+        "empty_message": "No projects match your search.",
+        "empty_guidance": "Try broadening your search: use a more general keyword, or double-check the spelling of the address or municipality.",
+        "query": "accessible",
+        "has_searched": true,
+        "search_error": false,
+        "result_count_label": "2 results found",
+        "search_results": [
+            {
+                "project_id": "11111111-1111-1111-1111-111111111111",
+                "civic_address_normalized": "15 rue accessible",
+                "municipality_name": "Ville de Accessibilite",
+                "normalized_status": "approved",
+                "source_language": "en",
+            },
+            {
+                "project_id": "22222222-2222-2222-2222-222222222222",
+                "civic_address_normalized": "16 rue accessible",
+                "municipality_name": "Ville de Accessibilite",
+                "normalized_status": "approved",
+                "source_language": "fr",
+            },
+        ],
+    });
+
+    // --- English page: toggle names the target language, "Français" -------
+    let mut en_ctx = base_ctx.clone();
+    en_ctx["lang_toggle_href"] = serde_json::json!("/search?lang=fr");
+    en_ctx["lang_toggle_label"] = serde_json::json!("Français");
+    let en_html = tmpl
+        .render(minijinja::value::Value::from_serialize(&en_ctx))
+        .unwrap();
+
+    assert_lang_badges_and_toggle_are_accessible(&en_html, "Français");
+
+    // --- French page: toggle names the target language, "English" ---------
+    let mut fr_ctx = base_ctx;
+    fr_ctx["lang_toggle_href"] = serde_json::json!("/search?lang=en");
+    fr_ctx["lang_toggle_label"] = serde_json::json!("English");
+    let fr_html = tmpl
+        .render(minijinja::value::Value::from_serialize(&fr_ctx))
+        .unwrap();
+
+    assert_lang_badges_and_toggle_are_accessible(&fr_html, "English");
+}
+
+/// Shared assertions for `imp_req_003_11`: given a rendered search page and
+/// the expected toggle-link text (the target language's own name), verify
+/// the badge and toggle both meet the acceptance criteria.
+fn assert_lang_badges_and_toggle_are_accessible(html: &str, expected_toggle_text: &str) {
+    // The `[EN]`/`[FR]` badges must be literal text content inside the
+    // markup (not a `::before`/`::after` CSS-generated swatch, and not
+    // hidden from assistive tech), so a plain substring match on the
+    // rendered HTML is sufficient proof they are real, readable text nodes.
+    assert!(
+        html.contains(r#"<span class="result-lang-badge">[EN]</span>"#),
+        "the EN badge must be plain text content, not color/icon-only, got: {html}"
+    );
+    assert!(
+        html.contains(r#"<span class="result-lang-badge">[FR]</span>"#),
+        "the FR badge must be plain text content, not color/icon-only, got: {html}"
+    );
+
+    // The toggle link's inner text must be its own non-empty target-language
+    // name — not "here", not an icon-only glyph. Extract the anchor's exact
+    // text content between its opening and closing tags to assert on it
+    // concretely, rather than merely checking substring containment.
+    let anchor_start = html
+        .find(r#"<a id="lang-toggle-link""#)
+        .expect("expected a #lang-toggle-link anchor to be present");
+    let tag_open_end = html[anchor_start..]
+        .find('>')
+        .map(|i| anchor_start + i + 1)
+        .expect("malformed anchor tag: no closing '>' found");
+    let tag_close_start = html[tag_open_end..]
+        .find("</a>")
+        .map(|i| tag_open_end + i)
+        .expect("malformed anchor tag: no closing </a> found");
+    let anchor_tag = &html[anchor_start..tag_open_end];
+    let link_text = html[tag_open_end..tag_close_start].trim();
+
+    assert_eq!(
+        link_text, expected_toggle_text,
+        "the toggle link's text content must be exactly its own target \
+         language's name, not a generic phrase or icon, got link text: {link_text:?}"
+    );
+    assert!(
+        !link_text.is_empty() && link_text != "here",
+        "the toggle link text must not be empty or a bare \"here\", got: {link_text:?}"
+    );
+
+    // Neither the toggle link nor the badges may be removed from the
+    // keyboard/assistive-tech tree.
+    assert!(
+        !anchor_tag.contains("tabindex=\"-1\"") && !anchor_tag.contains("aria-hidden"),
+        "the toggle link must remain keyboard-reachable and exposed to \
+         assistive tech (no tabindex=-1 / aria-hidden), got anchor tag: {anchor_tag}"
+    );
+    assert!(
+        !html.contains(r#"<span class="result-lang-badge" aria-hidden"#)
+            && !html.contains(r#"<span class="result-lang-badge" tabindex="-1""#),
+        "the language badges must not be hidden from assistive tech or \
+         pulled out of tab order, got: {html}"
+    );
+}
+
 fn rand_octet() -> u8 {
     use std::time::{SystemTime, UNIX_EPOCH};
     (SystemTime::now()
