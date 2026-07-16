@@ -141,11 +141,11 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-004-05 — HTML route HTMX branching (full page vs. fragment) (new results_fragment.html partial; tc_004_2/tc_004_5 both pass now; verified all 21 REQ-001/002/003/004/008 tests pass single-threaded, zero regressions)
 - [x] IMP-REQ-004-09 — Unit tests (pagination math, status labels) (already satisfied by IMP-REQ-004-03's 25 unit tests)
 - [x] IMP-REQ-004-10 — Integration tests TC-004-1..5 (already satisfied — all 5 tc_004_* tests pass)
-- [ ] IMP-REQ-004-11 — Accessibility verification
+- [x] IMP-REQ-004-11 — Accessibility verification (real `<a>` pagination links, non-color-only status, locked in by test — REQ-004 complete)
 #### Frontend Engineer
 - [x] IMP-REQ-004-06 — `search.html` results/pagination markup (real Next/Previous controls from PaginationInfo, display_name rendered per row; also fixed a stale imp_req_001_10 test assertion that hardcoded exact button markup, broken by IMP-REQ-002-07's earlier CSS-class addition, not a real accessibility regression; 23/23 verified single-threaded)
 - [x] IMP-REQ-004-07 — `results_fragment.html` + infinite-scroll wiring (hx-get/hx-trigger=revealed/hx-swap=outerHTML layered on the existing plain href, self-replacing chain; 24/24 verified single-threaded)
-- [ ] IMP-REQ-004-08 — CSS for status indicator/pagination/responsive
+- [x] IMP-REQ-004-08 — CSS for status indicator/pagination/responsive (per-status color-coding via color-mix on existing tokens, text always shown; 26/26 verified single-threaded)
 
 ## REQ-005 — Project detail view
 

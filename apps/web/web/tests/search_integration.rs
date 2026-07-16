@@ -4180,6 +4180,152 @@ async fn imp_req_004_07_next_link_carries_htmx_infinite_scroll_attributes_alongs
     );
 }
 
+/// IMP-REQ-004-08: the `normalized_status` value rendered in each result row
+/// must carry a `status-indicator`/`status-indicator--<status>` class pair
+/// so the per-status CSS (main.css) can color-code it, and the class must
+/// reflect the row's *actual* `normalized_status` value (migration 008's
+/// vocabulary: proposed/approved/deferred/referred/rejected) rather than a
+/// hardcoded default.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_004_08_status_indicator_carries_status_specific_class(pool: PgPool) {
+    // `seed_searchable_project` always inserts `normalized_status = 'approved'`.
+    seed_searchable_project(&pool, "1 rue status indicator", "Ville de Statut").await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=indicator")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"class="status-indicator status-indicator--approved""#),
+        "expected the status span to carry a status-specific \
+         status-indicator--approved class reflecting the row's actual \
+         normalized_status, got: {html}"
+    );
+    assert!(
+        html.contains(">approved<"),
+        "the status class alone is not enough — the actual status word \
+         must still be rendered as visible text, got: {html}"
+    );
+}
+
+/// IMP-REQ-004-11: confirms the accessibility properties the pagination
+/// controls and status indicator must have — pagination links carry real,
+/// non-empty text (not icon-only), the status indicator's meaning is
+/// carried by text and not by color alone, and the htmx-enhanced "Next"
+/// link (IMP-REQ-004-07) remains a genuine `<a href>` rather than a
+/// `<button>`/`<div>` that would lose native link keyboard/screen-reader
+/// semantics.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_004_11_pagination_and_status_preserve_accessible_semantics(pool: PgPool) {
+    seed_searchable_project(&pool, "1 rue a11y alpha", "Ville de Accessible Alpha").await;
+    seed_searchable_project(&pool, "2 rue a11y beta", "Ville de Accessible Beta").await;
+    seed_searchable_project(&pool, "3 rue a11y gamma", "Ville de Accessible Gamma").await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+
+    // Page 2 so both Previous and (via page 1) Next links can be inspected
+    // in the same fetch pair below.
+    let page_1_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=a11y&per_page=2")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(page_1_response.status(), StatusCode::OK);
+    let page_1_body = http_body_util::BodyExt::collect(page_1_response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let page_1_html = String::from_utf8(page_1_body.to_vec()).unwrap();
+
+    // --- Status is real text, not just a color class ------------------------
+    assert!(
+        page_1_html.contains(">approved<"),
+        "the status indicator must render the status as visible text \
+         alongside its color class, got: {page_1_html}"
+    );
+
+    // --- Next link is a genuine <a>, carries the exact same href/hx-get, and
+    //     has non-empty, non-icon-only link text ----------------------------
+    let next_link_start = page_1_html
+        .find(r#"class="search-pagination-next""#)
+        .expect("expected a Next link on page 1 of a 2-page result set");
+    let tag_start = page_1_html[..next_link_start].rfind("<a").unwrap();
+    let tag_end = tag_start + page_1_html[tag_start..].find('>').unwrap() + 1;
+    let next_link_tag = &page_1_html[tag_start..tag_end];
+    assert!(
+        next_link_tag.starts_with("<a "),
+        "the Next control must be a real <a> element (not a <button> or \
+         <div> masquerading as a link), got tag: {next_link_tag}"
+    );
+    assert!(
+        next_link_tag.contains("href=\""),
+        "the Next link must keep a plain href so it stays keyboard- and \
+         screen-reader-navigable without JS, got tag: {next_link_tag}"
+    );
+    let close_tag_idx = page_1_html[tag_end..].find("</a>").unwrap();
+    let next_link_text = page_1_html[tag_end..tag_end + close_tag_idx].trim();
+    assert!(
+        !next_link_text.is_empty(),
+        "the Next link must have non-empty, human-readable text content \
+         (not icon-only), got tag+text: {next_link_tag}{next_link_text}"
+    );
+
+    // --- Previous link on page 2: same non-empty-text requirement -----------
+    let page_2_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=a11y&per_page=2&page=2")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(page_2_response.status(), StatusCode::OK);
+    let page_2_body = http_body_util::BodyExt::collect(page_2_response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let page_2_html = String::from_utf8(page_2_body.to_vec()).unwrap();
+
+    let prev_link_start = page_2_html
+        .find(r#"class="search-pagination-prev""#)
+        .expect("expected a Previous link on page 2");
+    let prev_tag_start = page_2_html[..prev_link_start].rfind("<a").unwrap();
+    let prev_tag_end = prev_tag_start + page_2_html[prev_tag_start..].find('>').unwrap() + 1;
+    let prev_link_tag = &page_2_html[prev_tag_start..prev_tag_end];
+    assert!(
+        prev_link_tag.starts_with("<a "),
+        "the Previous control must be a real <a> element, got tag: {prev_link_tag}"
+    );
+    let prev_close_idx = page_2_html[prev_tag_end..].find("</a>").unwrap();
+    let prev_link_text = page_2_html[prev_tag_end..prev_tag_end + prev_close_idx].trim();
+    assert!(
+        !prev_link_text.is_empty(),
+        "the Previous link must have non-empty, human-readable text content, \
+         got tag+text: {prev_link_tag}{prev_link_text}"
+    );
+}
+
 fn rand_octet() -> u8 {
     use std::time::{SystemTime, UNIX_EPOCH};
     (SystemTime::now()

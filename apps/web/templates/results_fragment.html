@@ -11,7 +11,8 @@
     <li class="search-result">
         <a href="/projects/{{ result.project_id }}">{{ result.display_name | default(result.civic_address_normalized, true) }}</a>
         <span>{{ result.municipality_name | default("", true) }}</span>
-        <span>{{ result.normalized_status | default("", true) }}</span>
+        {% set status = result.normalized_status | default("", true) %}
+        <span class="status-indicator{% if status %} status-indicator--{{ status }}{% endif %}">{{ status }}</span>
         {% if result.source_language == "en" %}<span class="result-lang-badge">[EN]</span>
         {%- elif result.source_language == "fr" %}<span class="result-lang-badge">[FR]</span>{% endif %}
     </li>

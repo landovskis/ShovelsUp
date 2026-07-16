@@ -736,6 +736,97 @@ shovels-header {
     letter-spacing: 0.05em;
 }
 
+/* Status is always rendered as text (see DESIGN.md "Status must always be
+   written as text"); the per-status color below is a supporting cue only,
+   never the sole distinguishing signal. Built entirely from the existing
+   semantic tokens — no new hex literals. */
+.status-indicator {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.55rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--color-line);
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: capitalize;
+    letter-spacing: 0.02em;
+}
+
+.status-indicator--approved {
+    color: var(--color-success);
+    border-color: var(--color-success);
+    background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface));
+}
+
+.status-indicator--proposed {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+}
+
+.status-indicator--deferred {
+    color: var(--color-text-muted);
+    border-color: var(--color-text-muted);
+    background: color-mix(in srgb, var(--color-text-muted) 10%, var(--color-surface));
+}
+
+.status-indicator--referred {
+    color: var(--color-text);
+    border-color: color-mix(in srgb, var(--color-text) 40%, transparent);
+    background: color-mix(in srgb, var(--color-text) 8%, var(--color-surface));
+}
+
+.status-indicator--rejected {
+    color: color-mix(in srgb, var(--color-primary) 65%, var(--color-text) 35%);
+    border-width: 2px;
+    border-color: color-mix(in srgb, var(--color-primary) 65%, var(--color-text) 35%);
+    background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+}
+
+.search-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-line);
+}
+
+.search-pagination-prev,
+.search-pagination-next {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-weight: 700;
+    font-size: 0.85rem;
+    text-decoration: none;
+}
+
+.search-pagination-prev:hover,
+.search-pagination-next:hover,
+.search-pagination-prev:focus-visible,
+.search-pagination-next:focus-visible {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.search-pagination-next {
+    margin-left: auto;
+}
+
+.search-pagination-current {
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
 @keyframes card-arrive {
     from { opacity: 0; transform: translateY(24px); }
     to { opacity: 1; transform: translateY(0); }
@@ -778,6 +869,14 @@ shovels-header {
     .hero-lede { margin-top: 1.5rem; }
     .hero-search-controls { grid-template-columns: auto 1fr; padding: 5px; }
     .hero-search button { grid-column: 1 / -1; width: 100%; justify-content: center; }
+    .search-pagination { flex-wrap: wrap; justify-content: center; text-align: center; }
+    .search-pagination-prev,
+    .search-pagination-next {
+        flex: 1 1 auto;
+        justify-content: center;
+        margin-left: 0;
+    }
+    .search-pagination-current { flex: 0 0 100%; order: -1; }
     .hero-visual { min-height: 480px; width: 94%; border-radius: 44% 44% 4px 4px; }
     .visual-index { display: none; }
     .permit-card { left: -4%; top: 23%; width: 96%; }
