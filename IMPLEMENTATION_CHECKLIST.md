@@ -88,7 +88,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-002-10 — Accessibility verification (keyboard, screen reader, contrast) (label association/keyboard-operability/no color-only state already correct, locked in by new test)
 
 ⚠️ **Broader test-suite flakiness confirmed (environmental, not a code defect, not caused by any REQ-002 task):** with 320+ integration tests now, `#[sqlx::test]`'s per-test ephemeral-DB creation under nextest's default parallelism shows run-to-run variance of ±1-2 tests among the pre-existing documented-gap failures (confirmed via repeated full-suite runs; the SET of tests affected shifts, consistent with DB-connection-pool contention under load, not a real regression). Recommend increasing Postgres `max_connections` or reducing nextest test-thread count in CI if this becomes disruptive; out of scope for any task in this Implementation Plan, flagging for awareness only.
-- [ ] IMP-REQ-002-11 — Regression check: REQ-008 keyword-only search unaffected
+- [x] IMP-REQ-002-11 — Regression check: REQ-008 keyword-only search unaffected (all 5 tc_req_008_* tests pass in isolation, REQ-002 complete)
 #### Frontend Engineer
 - [x] IMP-REQ-002-06 — Add select control to search form (populated from live municipalities table, selection preserved across resubmission, 315/267/48)
 - [x] IMP-REQ-002-07 — Responsive/CSS for the filter bar (uses existing design tokens/breakpoint convention, 322/271/51)
