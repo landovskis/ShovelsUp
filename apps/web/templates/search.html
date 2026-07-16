@@ -42,7 +42,11 @@
             {% endfor %}
         </ul>
         {% elif has_searched | default(false) %}
+        {% if municipality_empty_message %}
+        <p class="search-empty">{{ municipality_empty_message }}</p>
+        {% else %}
         <p class="search-empty">{{ empty_message | default("No projects match your search.", true) }}</p>
+        {% endif %}
         <p class="search-empty-guidance">{{ empty_guidance | default("Try broadening your search: use a more general keyword, or double-check the spelling of the address or municipality.", true) }}</p>
         {% endif %}
     </div>

@@ -152,6 +152,28 @@ mod core {
         }
     }
 
+    /// Builds the municipality-specific zero-results message (IMP-REQ-002-08),
+    /// shown in place of the generic `empty_message` (IMP-REQ-001-06) when a
+    /// search was scoped to a specific municipality and returned no matches.
+    /// `municipality_display_name` is the already-localized name (e.g.
+    /// "Montréal" in `fr`), so this function only interpolates it into a
+    /// language-appropriate sentence — it does not itself resolve or
+    /// localize the name.
+    ///
+    /// Pure string formatting — no I/O — so it lives in `core` alongside
+    /// `format_result_count_label` and is unit-testable without a DB/HTTP
+    /// server.
+    pub fn format_municipality_empty_message(lang: &str, municipality_display_name: &str) -> String {
+        match lang {
+            "fr" => format!(
+                "Aucun projet trouvé à {municipality_display_name} correspondant à votre recherche."
+            ),
+            _ => format!(
+                "No projects found in {municipality_display_name} matching your search."
+            ),
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -399,6 +421,33 @@ mod core {
         fn municipality_display_name_requires_lowercase_normalized_input() {
             assert_eq!(municipality_display_name("Montreal", "en"), None);
             assert_eq!(municipality_display_name("MONTREAL", "fr"), None);
+        }
+
+        #[test]
+        fn format_municipality_empty_message_english() {
+            assert_eq!(
+                format_municipality_empty_message("en", "Montreal"),
+                "No projects found in Montreal matching your search."
+            );
+        }
+
+        #[test]
+        fn format_municipality_empty_message_french() {
+            assert_eq!(
+                format_municipality_empty_message("fr", "Montréal"),
+                "Aucun projet trouvé à Montréal correspondant à votre recherche."
+            );
+        }
+
+        /// Any language other than `"fr"` falls back to the English wording,
+        /// matching the same convention as `format_result_count_label`'s
+        /// `(_, n)` match arm.
+        #[test]
+        fn format_municipality_empty_message_unknown_lang_falls_back_to_english() {
+            assert_eq!(
+                format_municipality_empty_message("de", "Vancouver"),
+                "No projects found in Vancouver matching your search."
+            );
         }
     }
 }
@@ -714,6 +763,27 @@ pub async fn get_search_page(
         None
     };
 
+    // IMP-REQ-002-08: when the search was scoped to a specific, real
+    // municipality (syntactically valid slug that also matched a row in
+    // `municipalities` — otherwise `run_search` would have rejected it with
+    // `search_error = true` before this point) and came back with zero
+    // matches, replace the generic `empty_message` with one naming that
+    // municipality. Looked up from the already-fetched `municipalities` list
+    // (rather than re-deriving from `core::municipality_display_name`
+    // directly) so the message uses the exact same localized display name
+    // already shown as "selected" in the `<select>` control, including the
+    // DB-`name` fallback for any municipality outside the hardcoded launch
+    // set.
+    let municipality_empty_message = if has_searched && !search_error && search_results.is_empty() {
+        core::validate_municipality_slug(params.municipality_slug.clone())
+            .ok()
+            .flatten()
+            .and_then(|slug| municipalities.iter().find(|m| m.slug == slug))
+            .map(|m| core::format_municipality_empty_message(lang, &m.display_name))
+    } else {
+        None
+    };
+
     let html = tmpl
         .render(context! {
             lang => lang,
@@ -725,6 +795,7 @@ pub async fn get_search_page(
             submit_label => labels.submit_label,
             empty_message => labels.empty_message,
             empty_guidance => labels.empty_guidance,
+            municipality_empty_message => municipality_empty_message,
             municipality_select_label => labels.municipality_select_label,
             municipality_all_option => labels.municipality_all_option,
             query => params.q,

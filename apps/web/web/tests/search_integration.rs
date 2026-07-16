@@ -3200,6 +3200,161 @@ async fn imp_req_002_06_search_form_has_municipality_select_with_preserved_selec
     );
 }
 
+/// IMP-REQ-002-08: a municipality-scoped search that returns zero matches
+/// must render a message naming that specific municipality (e.g. "No
+/// projects found in Montreal matching your search"), not the generic
+/// `empty_message` from IMP-REQ-001-06. Seeds a project under Toronto only,
+/// then searches with `municipality_slug=montreal`: the montreal filter
+/// excludes the Toronto project, so the zero-results branch renders — and it
+/// must name Montreal specifically, in both English and French.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_002_08_municipality_scoped_empty_state_names_the_municipality(pool: PgPool) {
+    seed_searchable_project_for_municipality_slug(&pool, "88 bay street unique002 08", "toronto")
+        .await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+
+    let en_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=unique002+08&municipality_slug=montreal")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(en_response.status(), StatusCode::OK);
+    let en_body = http_body_util::BodyExt::collect(en_response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let en_html = String::from_utf8(en_body.to_vec()).unwrap();
+
+    assert!(
+        en_html.contains("No projects found in Montreal matching your search."),
+        "expected the English empty state to name Montreal specifically, got: {en_html}"
+    );
+    assert!(
+        !en_html.contains("No projects match your search."),
+        "the generic IMP-REQ-001-06 empty message must not also render \
+         alongside the municipality-specific one, got: {en_html}"
+    );
+
+    let fr_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=unique002+08&municipality_slug=montreal")
+                .header("accept-language", "fr")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(fr_response.status(), StatusCode::OK);
+    let fr_body = http_body_util::BodyExt::collect(fr_response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let fr_html = String::from_utf8(fr_body.to_vec()).unwrap();
+
+    assert!(
+        fr_html.contains("Aucun projet trouvé à Montréal correspondant à votre recherche."),
+        "expected the French empty state to name Montréal specifically, got: {fr_html}"
+    );
+    assert!(
+        !fr_html.contains("Aucun projet ne correspond à votre recherche."),
+        "the generic IMP-REQ-001-06 French empty message must not also render \
+         alongside the municipality-specific one, got: {fr_html}"
+    );
+}
+
+/// IMP-REQ-002-08 regression guard: a zero-results search with NO
+/// municipality filter applied must keep showing the generic IMP-REQ-001-06
+/// `empty_message` — the municipality-specific message must only replace it
+/// when a municipality filter was actually active.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_002_08_generic_empty_message_unaffected_when_no_municipality_filter(
+    pool: PgPool,
+) {
+    seed_searchable_project(&pool, "1 unrelated street 00208", "Some Other Town 00208").await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=zzz-no-such-project-00208")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains("No projects match your search."),
+        "the generic empty message must still render when no municipality \
+         filter is active, got: {html}"
+    );
+    assert!(
+        !html.contains("No projects found in"),
+        "the municipality-specific phrasing must not appear when no \
+         municipality filter is active, got: {html}"
+    );
+}
+
+/// IMP-REQ-002-08: documents the current (intentional) behavior of the
+/// server-rendered `/search` page when `municipality_slug` is syntactically
+/// valid but doesn't match any row in `municipalities`. `run_search` (used
+/// by both the JSON API and this page) rejects it with
+/// `StatusCode::BAD_REQUEST`, but `get_search_page` never propagates that
+/// status out of the handler — it's caught by the `Some(Err(_)) => (Vec::new(),
+/// true)` arm and rendered as the existing friendly `search-error` state
+/// (`role="alert"`, "We couldn't complete that search.") with an HTTP 200.
+/// This is already a rendered, user-friendly message rather than a bare
+/// status code, so this task leaves it as-is; this test pins that decision
+/// rather than silently relying on undocumented behavior.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_002_08_invalid_municipality_slug_renders_friendly_error_not_bare_status(
+    pool: PgPool,
+) {
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=test&municipality_slug=nonexistent-city-00208")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "the HTML page path must render a friendly page, not propagate the \
+         underlying 400 as the HTTP response status"
+    );
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"role="alert""#) && html.contains("We couldn’t complete that search."),
+        "expected the existing friendly search-error state to render for an \
+         invalid municipality_slug, got: {html}"
+    );
+}
+
 fn rand_octet() -> u8 {
     use std::time::{SystemTime, UNIX_EPOCH};
     (SystemTime::now()

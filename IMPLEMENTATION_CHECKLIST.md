@@ -90,7 +90,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 #### Frontend Engineer
 - [x] IMP-REQ-002-06 — Add select control to search form (populated from live municipalities table, selection preserved across resubmission, 315/267/48)
 - [ ] IMP-REQ-002-07 — Responsive/CSS for the filter bar
-- [ ] IMP-REQ-002-08 — Municipality-aware empty-state + invalid-filter copy
+- [x] IMP-REQ-002-08 — Municipality-aware empty-state + invalid-filter copy (invalid-slug path already rendered a friendly error, confirmed and pinned by test; 321/270/51 confirmed stable across 2 independent full-suite runs, no flakiness found)
 
 ## REQ-003 — Bilingual search input and results
 
