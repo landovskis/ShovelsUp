@@ -20,10 +20,16 @@ use sqlx::PgPool;
 /// at least one mention resolved to it, and the latest mention is the best
 /// available signal for "current" status.
 pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Error> {
+    // IMP-REQ-003-04: `source_language` (migration 018) needs the same
+    // ongoing maintenance on every insert/update this job already gives
+    // `municipality_slug` (IMP-REQ-002-02) — the one-time migration backfill
+    // only covered rows that existed at migration time, not new/updated
+    // ones. Sourced from the same latest-mention's chunk already joined here
+    // for `normalized_status`.
     let result = sqlx::query!(
         r#"
         INSERT INTO public_search_documents
-            (project_id, civic_address_normalized, municipality_name, municipality_slug, project_type, normalized_status, updated_at)
+            (project_id, civic_address_normalized, municipality_name, municipality_slug, project_type, normalized_status, source_language, updated_at)
         SELECT
             p.id,
             p.civic_address_normalized,
@@ -31,10 +37,11 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
             m.slug,
             p.project_type,
             latest.normalized_status,
+            latest.language,
             now()
         FROM projects p
         LEFT JOIN LATERAL (
-            SELECT pm.normalized_status, dc.source_document_id
+            SELECT pm.normalized_status, dc.source_document_id, dc.language
             FROM project_mentions pm
             JOIN document_chunks dc ON dc.id = pm.document_chunk_id
             WHERE pm.project_id = p.id
@@ -50,6 +57,7 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
             municipality_slug = EXCLUDED.municipality_slug,
             project_type = EXCLUDED.project_type,
             normalized_status = EXCLUDED.normalized_status,
+            source_language = EXCLUDED.source_language,
             updated_at = now()
         "#
     )

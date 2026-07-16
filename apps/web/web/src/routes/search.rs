@@ -7,7 +7,7 @@ use axum::{
 use minijinja::context;
 use serde::{Deserialize, Serialize};
 
-use crate::{routes::detect_lang, AppState};
+use crate::AppState;
 
 const DEFAULT_PER_PAGE: i64 = 20;
 const MAX_PER_PAGE: i64 = 100;
@@ -194,7 +194,6 @@ mod core {
     ///
     /// Pure data-in/data-out: no database access, no HTTP, no clock, no
     /// environment reads.
-    #[allow(dead_code)]
     pub fn normalize_query(q: &str) -> String {
         q.split_whitespace().collect::<Vec<_>>().join(" ")
     }
@@ -262,7 +261,6 @@ mod core {
     ///
     /// Pure data-in/data-out: no database access, no HTTP, no clock, no
     /// environment reads.
-    #[allow(dead_code)]
     pub fn resolve_ui_locale(
         explicit_param: Option<&str>,
         cookie: Option<&str>,
@@ -695,6 +693,22 @@ pub struct SearchParams {
     // Loop A stub: sort param + latest_meeting_date ORDER BY wired by
     // IMP-REQ-009-04/06
     pub sort: Option<String>,
+    // IMP-REQ-003-04: explicit UI-locale override, highest-precedence input
+    // to `core::resolve_ui_locale`.
+    pub lang: Option<String>,
+}
+
+/// Extracts the `lang` cookie's value from a raw `Cookie` request header
+/// (IMP-REQ-003-04). `Cookie` headers are a single `; `-separated list of
+/// `name=value` pairs (RFC 6265 §5.4) — this is a minimal parser scoped to
+/// finding one specific cookie by name, not a general cookie-jar
+/// implementation, since that's all `resolve_ui_locale` needs.
+fn extract_cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    let raw = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
+    raw.split(';').find_map(|pair| {
+        let (key, value) = pair.split_once('=')?;
+        (key.trim() == name).then(|| value.trim())
+    })
 }
 
 /// A single `<option>` in the search form's municipality `<select>`
@@ -789,18 +803,33 @@ async fn run_search(
     }
 
     let keyword = format!("%{q}%");
+    // IMP-REQ-003-04: `search_vector_fr`/`search_vector_en` (migration 018)
+    // give FTS-stemmed matching alongside the existing ILIKE substring
+    // match, so a French-stemmed query (e.g. "démolition") can match a
+    // document containing a different inflected form ("démolir") the way
+    // plain ILIKE cannot (TC-003-1). Matched against BOTH language vectors
+    // regardless of the resolved UI locale — a French speaker's UI can
+    // still find an English-sourced document and vice versa; `q`'s
+    // language, not the page's rendering language, decides the match.
+    let normalized_query = core::normalize_query(q);
     let rows = sqlx::query!(
         r#"
-        SELECT project_id, civic_address_normalized, municipality_name, project_type, normalized_status
+        SELECT project_id, civic_address_normalized, municipality_name, project_type, normalized_status, source_language
         FROM public_search_documents
-        WHERE (civic_address_normalized ILIKE $1 OR municipality_name ILIKE $1)
+        WHERE (
+            civic_address_normalized ILIKE $1
+            OR municipality_name ILIKE $1
+            OR search_vector_fr @@ plainto_tsquery('french', $4)
+            OR search_vector_en @@ plainto_tsquery('english', $4)
+        )
           AND ($3::text IS NULL OR municipality_slug = $3)
         ORDER BY civic_address_normalized ASC
         LIMIT $2
         "#,
         keyword,
         per_page,
-        municipality_slug
+        municipality_slug,
+        normalized_query,
     )
     .fetch_all(pool)
     .await
@@ -812,10 +841,7 @@ async fn run_search(
         municipality_name: row.municipality_name,
         project_type: row.project_type,
         normalized_status: row.normalized_status,
-        // Loop A stub: `public_search_documents.source_language` doesn't
-        // exist yet; IMP-REQ-003-02 (migration) + IMP-REQ-003-04 (route
-        // wiring) must select and set the real value here.
-        source_language: None,
+        source_language: row.source_language,
         // Loop A stub: see `SearchResult::display_name` doc comment.
         display_name: None,
         // Loop A stub: see `SearchResult::first_detected_at`/`source_count`
@@ -917,7 +943,16 @@ pub async fn get_search_page(
     Query(params): Query<SearchParams>,
     headers: HeaderMap,
 ) -> Result<Html<String>, StatusCode> {
-    let lang = detect_lang(&headers);
+    // IMP-REQ-003-04: explicit `?lang=` param > `lang` cookie >
+    // `Accept-Language` header > `"en"` default, per `resolve_ui_locale`'s
+    // verified precedence (IMP-REQ-003-03). Supersedes the plain
+    // `detect_lang(&headers)` call REQ-001 originally used, which only
+    // consulted `Accept-Language`.
+    let accept_language = headers
+        .get(axum::http::header::ACCEPT_LANGUAGE)
+        .and_then(|v| v.to_str().ok());
+    let cookie_lang = extract_cookie_value(&headers, "lang");
+    let lang = core::resolve_ui_locale(params.lang.as_deref(), cookie_lang, accept_language);
     let labels = search_labels(lang);
 
     let tmpl = state

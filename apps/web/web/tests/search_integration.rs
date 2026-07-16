@@ -83,6 +83,70 @@ async fn seed_searchable_project(
     project_id
 }
 
+/// Like `seed_searchable_project`, but sets `document_chunks.language`
+/// explicitly (TC-003-5). `seed_searchable_project` leaves it `NULL` (no
+/// default on that column), so `public_search_documents.source_language`
+/// stays `NULL` after any refresh — which is fine for tests that don't care
+/// about it, but TC-003-5 specifically needs a document with a KNOWN,
+/// asserted language (independent of the municipality's own name/locale) to
+/// verify the per-result badge.
+async fn seed_searchable_project_with_language(
+    pool: &PgPool,
+    civic_address_normalized: &str,
+    municipality_name: &str,
+    language: &str,
+) -> Uuid {
+    let project_id = sqlx::query_scalar!(
+        "INSERT INTO projects (civic_address_normalized, project_type) VALUES ($1, 'residential') RETURNING id",
+        civic_address_normalized,
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+
+    let suffix = Uuid::new_v4();
+    let municipality_id = sqlx::query_scalar!(
+        "INSERT INTO municipalities (name, slug, domain_allowlist) VALUES ($1, $2, ARRAY[$3]) RETURNING id",
+        municipality_name,
+        format!("slug-{suffix}"),
+        format!("{suffix}.example"),
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let doc_id = sqlx::query_scalar!(
+        "INSERT INTO source_documents (municipality_id, source_url, checksum, content, content_type) \
+         VALUES ($1, $2, 'chk', ''::bytea, 'text/html') RETURNING id",
+        municipality_id,
+        format!("https://{suffix}.example/doc"),
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let chunk_id = sqlx::query_scalar!(
+        "INSERT INTO document_chunks (source_document_id, chunk_index, content, language) \
+         VALUES ($1, 0, 'chunk text', $2) RETURNING id",
+        doc_id,
+        language,
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query!(
+        "INSERT INTO project_mentions \
+         (document_chunk_id, project_id, physical_work, civic_address, project_type, scale_units, normalized_status) \
+         VALUES ($1, $2, true, $3, 'residential', 1, 'approved')",
+        chunk_id,
+        project_id,
+        civic_address_normalized,
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+
+    project_id
+}
+
 /// Like `seed_searchable_project`, but attaches the project to one of the
 /// REAL, pre-seeded launch municipalities (migration 002: slugs
 /// `montreal`/`toronto`/`vancouver`) instead of creating a fresh
@@ -930,7 +994,8 @@ async fn tc_003_4_no_param_or_cookie_falls_back_to_accept_language(pool: PgPool)
 /// result's markup regardless of the French page-level rendering.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_003_5_per_result_source_language_badge_independent_of_ui_lang(pool: PgPool) {
-    seed_searchable_project(&pool, "5 avenue du parc", "Ville de Montréal").await;
+    seed_searchable_project_with_language(&pool, "5 avenue du parc", "Ville de Montréal", "en")
+        .await;
     refresh_public_search_index(&pool).await.unwrap();
 
     let app = app(test_state(pool).await);
