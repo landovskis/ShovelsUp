@@ -120,7 +120,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [ ] IMP-REQ-003-11 — Accessibility verification
 #### Frontend Engineer
 - [x] IMP-REQ-003-06 — Build `search_results.html` states per UI mockup (no separate file exists, confirmed; per-row badge attribution already correct via Minijinja loop scoping, locked in by new mixed-language test)
-- [ ] IMP-REQ-003-07 — Responsive breakpoints
+- [x] IMP-REQ-003-07 — Responsive breakpoints (badge/toggle stack cleanly at 640px using existing tokens, 353/301/52)
 - [x] IMP-REQ-003-08 — `?lang=` toggle + cookie persistence (HttpOnly lang cookie, toggle preserves q/municipality_slug; 352/300/52, verified tc_003_*/tc_010_* all pass; narrowed no_account_required's cookie assertion to allowlist only the legitimate lang= cookie, verified sound)
 
 ## REQ-004 — Project list / search results view

@@ -3601,6 +3601,64 @@ async fn imp_req_003_06_mixed_language_result_set_shows_correct_badges_per_row(p
     );
 }
 
+/// IMP-REQ-003-07: the search results list wraps each row in
+/// `.search-results-list` / `.search-result` and the EN/FR toggle link (added
+/// in IMP-REQ-003-08) sits inside a `.lang-toggle` wrapper, so both the
+/// per-row `.result-lang-badge` (IMP-REQ-003-06) and the toggle link can be
+/// targeted by the narrow-viewport (`max-width: 640px`) rules in
+/// `static/css/main.css` that stack the result row and drop the badge's
+/// auto-margin instead of overflowing. This is a static-HTML assertion only
+/// (no headless-browser tooling exists yet, per the IMP-REQ-002-07
+/// precedent); the wrapping behavior itself is verified by static review of
+/// the CSS.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_003_07_search_results_have_responsive_wrapper_classes(pool: PgPool) {
+    seed_searchable_project_with_language(&pool, "80 rue responsive", "Ville de Montréal", "en")
+        .await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=responsive")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"<p class="lang-toggle">"#),
+        "expected the EN/FR toggle link to be wrapped in a lang-toggle \
+         container so it can be targeted by the narrow-viewport CSS rules, \
+         got: {html}"
+    );
+    assert!(
+        html.contains(r#"<ul class="search-results-list">"#),
+        "expected the results list to carry the search-results-list \
+         wrapper class, got: {html}"
+    );
+    assert!(
+        html.contains(r#"<li class="search-result">"#),
+        "expected each result row to carry the search-result class so the \
+         narrow-viewport CSS can stack it instead of letting the badge \
+         overflow, got: {html}"
+    );
+    assert!(
+        html.contains(r#"<span class="result-lang-badge">[EN]</span>"#),
+        "expected the per-row language badge to carry the result-lang-badge \
+         class targeted by the narrow-viewport CSS, got: {html}"
+    );
+}
+
 /// IMP-REQ-003-08 (a): the search page's EN/FR toggle link renders with the
 /// correct target language and `href` on both the English and French
 /// renderings of the page, and preserves the current `q`/`municipality_slug`
