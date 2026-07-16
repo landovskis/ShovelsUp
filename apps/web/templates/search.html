@@ -6,6 +6,10 @@
 <section class="search-page" aria-labelledby="search-heading">
     <h1 id="search-heading">{{ heading | default("Search for a project", true) }}</h1>
 
+    <p class="lang-toggle">
+        <a id="lang-toggle-link" href="{{ lang_toggle_href | default('/search?lang=fr', true) }}">{{ lang_toggle_label | default("Français", true) }}</a>
+    </p>
+
     <form role="search" method="get" action="/search" class="search-filter-bar">
         <div class="search-filter-field">
             <label for="search-q">{{ search_label | default("Civic address or municipality", true) }}</label>

@@ -278,6 +278,68 @@ mod core {
         "en"
     }
 
+    /// Percent-encodes a single query-parameter value for safe inclusion in
+    /// a URL (IMP-REQ-003-08). RFC 3986 unreserved characters (`A-Za-z0-9`,
+    /// `-`, `_`, `.`, `~`) pass through unchanged; every other byte —
+    /// including space and any multi-byte UTF-8 sequence, encoded one byte
+    /// at a time — becomes a `%XX` escape. A minimal, purpose-built encoder
+    /// scoped to what `build_lang_toggle_href` needs (there is no
+    /// `url`/`percent-encoding` crate dependency in this workspace to reach
+    /// for instead), not a general-purpose URL library.
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    pub fn percent_encode_query_value(value: &str) -> String {
+        let mut out = String::with_capacity(value.len());
+        for byte in value.bytes() {
+            match byte {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    out.push(byte as char);
+                }
+                _ => out.push_str(&format!("%{byte:02X}")),
+            }
+        }
+        out
+    }
+
+    /// Builds the `href` for the search page's EN/FR language-toggle link
+    /// (IMP-REQ-003-08): always `/search` with `lang` set to the OTHER
+    /// language than `current_lang` (the toggle's target), plus whichever of
+    /// this page's two user-editable filter params — `q` and
+    /// `municipality_slug` — are actually present, so following the link
+    /// re-renders the same search in the other language instead of losing
+    /// the user's current filters.
+    ///
+    /// Deliberately does NOT preserve the other, not-yet-wired `SearchParams`
+    /// stub fields (`per_page`, `page`, `date_*`, `category`, `sort`) —
+    /// `get_search_page` does not read or render any of them today, so
+    /// there is nothing meaningful to preserve; adding them here would be
+    /// speculative.
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    pub fn build_lang_toggle_href(
+        current_lang: &str,
+        q: &str,
+        municipality_slug: Option<&str>,
+    ) -> String {
+        let target_lang = if current_lang == "fr" { "en" } else { "fr" };
+
+        let mut pairs: Vec<String> = Vec::new();
+        if !q.is_empty() {
+            pairs.push(format!("q={}", percent_encode_query_value(q)));
+        }
+        if let Some(slug) = municipality_slug.filter(|s| !s.is_empty()) {
+            pairs.push(format!(
+                "municipality_slug={}",
+                percent_encode_query_value(slug)
+            ));
+        }
+        pairs.push(format!("lang={target_lang}"));
+
+        format!("/search?{}", pairs.join("&"))
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -661,6 +723,73 @@ mod core {
                 "fr"
             );
         }
+
+        #[test]
+        fn percent_encode_query_value_leaves_unreserved_characters_unchanged() {
+            assert_eq!(
+                percent_encode_query_value("saint-denis_2024.v1~a"),
+                "saint-denis_2024.v1~a"
+            );
+        }
+
+        #[test]
+        fn percent_encode_query_value_encodes_spaces() {
+            assert_eq!(percent_encode_query_value("rue saint-denis"), "rue%20saint-denis");
+        }
+
+        #[test]
+        fn percent_encode_query_value_encodes_multi_byte_utf8_one_byte_at_a_time() {
+            // "é" is the two-byte UTF-8 sequence 0xC3 0xA9.
+            assert_eq!(percent_encode_query_value("montréal"), "montr%C3%A9al");
+        }
+
+        #[test]
+        fn percent_encode_query_value_encodes_ampersand_and_equals() {
+            assert_eq!(percent_encode_query_value("a&b=c"), "a%26b%3Dc");
+        }
+
+        #[test]
+        fn build_lang_toggle_href_targets_french_from_english_page_with_no_filters() {
+            assert_eq!(build_lang_toggle_href("en", "", None), "/search?lang=fr");
+        }
+
+        #[test]
+        fn build_lang_toggle_href_targets_english_from_french_page_with_no_filters() {
+            assert_eq!(build_lang_toggle_href("fr", "", None), "/search?lang=en");
+        }
+
+        /// Any current lang other than exactly `"fr"` is treated as English,
+        /// matching the same fallback convention as
+        /// `format_result_count_label`/`format_municipality_empty_message`.
+        #[test]
+        fn build_lang_toggle_href_treats_unrecognized_current_lang_as_english() {
+            assert_eq!(build_lang_toggle_href("xx", "", None), "/search?lang=fr");
+        }
+
+        #[test]
+        fn build_lang_toggle_href_preserves_present_query_and_municipality_slug() {
+            assert_eq!(
+                build_lang_toggle_href("en", "saint-denis", Some("montreal")),
+                "/search?q=saint-denis&municipality_slug=montreal&lang=fr"
+            );
+        }
+
+        #[test]
+        fn build_lang_toggle_href_omits_empty_query_and_absent_municipality_slug() {
+            assert_eq!(build_lang_toggle_href("en", "", None), "/search?lang=fr");
+            assert_eq!(
+                build_lang_toggle_href("en", "", Some("")),
+                "/search?lang=fr"
+            );
+        }
+
+        #[test]
+        fn build_lang_toggle_href_percent_encodes_the_preserved_query_value() {
+            assert_eq!(
+                build_lang_toggle_href("en", "rue saint-denis", None),
+                "/search?q=rue%20saint-denis&lang=fr"
+            );
+        }
     }
 }
 
@@ -901,6 +1030,12 @@ struct SearchLabels {
     nav_council: &'static str,
     municipality_select_label: &'static str,
     municipality_all_option: &'static str,
+    // IMP-REQ-003-08: the EN/FR toggle link's own text — the TARGET
+    // language's own name (e.g. "Français" shown on the English page), not a
+    // translation of "switch language". Keyed by the CURRENT page's `lang`
+    // like every other `SearchLabels` field, so `search_labels("en")` names
+    // French and `search_labels("fr")` names English.
+    lang_toggle_label: &'static str,
 }
 
 fn search_labels(lang: &str) -> SearchLabels {
@@ -916,6 +1051,7 @@ fn search_labels(lang: &str) -> SearchLabels {
             nav_council: "Conseil",
             municipality_select_label: "Municipalité",
             municipality_all_option: "Toutes les municipalités",
+            lang_toggle_label: "English",
         },
         _ => SearchLabels {
             page_title: "Search projects",
@@ -928,6 +1064,7 @@ fn search_labels(lang: &str) -> SearchLabels {
             nav_council: "Council",
             municipality_select_label: "Municipality",
             municipality_all_option: "All municipalities",
+            lang_toggle_label: "Français",
         },
     }
 }
@@ -942,7 +1079,7 @@ pub async fn get_search_page(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,
     headers: HeaderMap,
-) -> Result<Html<String>, StatusCode> {
+) -> Result<(HeaderMap, Html<String>), StatusCode> {
     // IMP-REQ-003-04: explicit `?lang=` param > `lang` cookie >
     // `Accept-Language` header > `"en"` default, per `resolve_ui_locale`'s
     // verified precedence (IMP-REQ-003-03). Supersedes the plain
@@ -1033,6 +1170,13 @@ pub async fn get_search_page(
         None
     };
 
+    // IMP-REQ-003-08: the toggle always targets the OTHER language than
+    // this page's resolved `lang`, preserving the `q`/`municipality_slug`
+    // filters actually in play so following the link re-renders the same
+    // search rather than losing the user's current filters.
+    let lang_toggle_href =
+        core::build_lang_toggle_href(lang, &params.q, params.municipality_slug.as_deref());
+
     let html = tmpl
         .render(context! {
             lang => lang,
@@ -1054,10 +1198,27 @@ pub async fn get_search_page(
             result_count_label => result_count_label,
             municipalities => municipalities,
             selected_municipality_slug => params.municipality_slug,
+            lang_toggle_href => lang_toggle_href,
+            lang_toggle_label => labels.lang_toggle_label,
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok(Html(html))
+    // IMP-REQ-003-08: persists the resolved locale as a `lang` cookie so a
+    // later request with no explicit `?lang=` param (a plain revisit, or
+    // navigating to a different page) still renders in this same language
+    // via the cookie, per `resolve_ui_locale`'s cookie precedence tier.
+    // `HttpOnly` is chosen deliberately: the toggle is a plain `<a href>`
+    // link, not JS-driven, so nothing client-side ever needs to read this
+    // cookie's value — keeping it `HttpOnly` costs nothing here and is
+    // slightly safer (not readable by any injected/third-party script).
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
+        axum::http::header::SET_COOKIE,
+        axum::http::HeaderValue::from_str(&format!("lang={lang}; Path=/; SameSite=Lax; HttpOnly"))
+            .expect("lang cookie value is always the ASCII literal \"en\" or \"fr\""),
+    );
+
+    Ok((response_headers, Html(html)))
 }
 
 #[cfg(test)]
@@ -1093,7 +1254,7 @@ mod search_labels_tests {
         // `SearchLabels` field has a genuinely distinct EN/FR wording.
         let identical_by_design: &[&str] = &[];
 
-        let pairs: [(&str, &str, &str); 10] = [
+        let pairs: [(&str, &str, &str); 11] = [
             ("page_title", en.page_title, fr.page_title),
             ("heading", en.heading, fr.heading),
             ("search_label", en.search_label, fr.search_label),
@@ -1111,6 +1272,11 @@ mod search_labels_tests {
                 "municipality_all_option",
                 en.municipality_all_option,
                 fr.municipality_all_option,
+            ),
+            (
+                "lang_toggle_label",
+                en.lang_toggle_label,
+                fr.lang_toggle_label,
             ),
         ];
 

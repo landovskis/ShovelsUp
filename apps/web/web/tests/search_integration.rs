@@ -3601,6 +3601,158 @@ async fn imp_req_003_06_mixed_language_result_set_shows_correct_badges_per_row(p
     );
 }
 
+/// IMP-REQ-003-08 (a): the search page's EN/FR toggle link renders with the
+/// correct target language and `href` on both the English and French
+/// renderings of the page, and preserves the current `q`/`municipality_slug`
+/// filters in that `href` rather than losing them when the link is
+/// followed.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_003_08_lang_toggle_link_renders_correct_target_and_href(pool: PgPool) {
+    seed_searchable_project(&pool, "60 rue toggle", "Ville de Montréal").await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+
+    // English page (default): toggle must point to French, preserving `q`
+    // and `municipality_slug`.
+    let en_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=toggle&municipality_slug=montreal")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(en_response.status(), StatusCode::OK);
+    let en_body = http_body_util::BodyExt::collect(en_response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let en_html = String::from_utf8(en_body.to_vec()).unwrap();
+
+    assert!(
+        en_html.contains(r#"id="lang-toggle-link""#),
+        "expected a lang-toggle link on the English page, got: {en_html}"
+    );
+    assert!(
+        en_html.contains(">Français<"),
+        "the English page's toggle link text must name French (\"Français\"), got: {en_html}"
+    );
+    // minijinja's default HTML auto-escaping (this template has a `.html`
+    // extension) also escapes `/` to `&#x2f;`, not just `&` to `&amp;` — so
+    // the expected attribute value below matches that actual escaping, not
+    // a literal unescaped URL.
+    assert!(
+        en_html.contains(
+            r#"href="&#x2f;search?q=toggle&amp;municipality_slug=montreal&amp;lang=fr""#
+        ),
+        "the English page's toggle link must target ?lang=fr while preserving \
+         q and municipality_slug, got: {en_html}"
+    );
+
+    // French page (`?lang=fr`): toggle must point to English, preserving
+    // the same filters.
+    let fr_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=toggle&municipality_slug=montreal&lang=fr")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(fr_response.status(), StatusCode::OK);
+    let fr_body = http_body_util::BodyExt::collect(fr_response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let fr_html = String::from_utf8(fr_body.to_vec()).unwrap();
+
+    assert!(
+        fr_html.contains(r#"id="lang-toggle-link""#),
+        "expected a lang-toggle link on the French page, got: {fr_html}"
+    );
+    assert!(
+        fr_html.contains(">English<"),
+        "the French page's toggle link text must name English, got: {fr_html}"
+    );
+    assert!(
+        fr_html.contains(
+            r#"href="&#x2f;search?q=toggle&amp;municipality_slug=montreal&amp;lang=en""#
+        ),
+        "the French page's toggle link must target ?lang=en while preserving \
+         q and municipality_slug, got: {fr_html}"
+    );
+}
+
+/// IMP-REQ-003-08 (b): a request with an explicit `?lang=fr` param must
+/// persist that resolved locale as a `lang=fr` Set-Cookie response header —
+/// this is the actual gap this task adds on top of TC-003-3's existing
+/// coverage (which already proves a `lang=fr` COOKIE sent on a request wins
+/// resolution; it does not prove the server ever WRITES that cookie in the
+/// first place). A separate follow-up request carrying that cookie but no
+/// `?lang=` param must still render French.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_003_08_lang_param_sets_cookie_and_cookie_persists_across_requests(
+    pool: PgPool,
+) {
+    seed_searchable_project(&pool, "70 rue cookie", "Ville de Montréal").await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+
+    // First request: explicit ?lang=fr must produce a Set-Cookie: lang=fr
+    // response header.
+    let first_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=cookie&lang=fr")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(first_response.status(), StatusCode::OK);
+    let set_cookie = first_response
+        .headers()
+        .get("set-cookie")
+        .unwrap_or_else(|| panic!("expected a Set-Cookie header on the ?lang=fr response"))
+        .to_str()
+        .unwrap();
+    assert!(
+        set_cookie.starts_with("lang=fr"),
+        "expected Set-Cookie: lang=fr..., got: {set_cookie}"
+    );
+
+    // Second, separate request: no ?lang= param, but the lang=fr cookie
+    // from the first response is attached — must still render French via
+    // cookie-precedence resolution.
+    let second_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=cookie")
+                .header("cookie", "lang=fr")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(second_response.status(), StatusCode::OK);
+    let second_body = http_body_util::BodyExt::collect(second_response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let second_html = String::from_utf8(second_body.to_vec()).unwrap();
+    assert!(
+        second_html.contains("Rechercher un projet"),
+        "a follow-up request with no ?lang= param but a lang=fr cookie must \
+         still render French, got: {second_html}"
+    );
+}
+
 fn rand_octet() -> u8 {
     use std::time::{SystemTime, UNIX_EPOCH};
     (SystemTime::now()
