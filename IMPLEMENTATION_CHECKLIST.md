@@ -84,7 +84,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-002-03 — Pure `validate_municipality_slug` core function (syntactic-only; live-table check deferred to IMP-REQ-002-04 per plan's own notes; 10 unit tests, 306/253/53, zero regressions)
 - [x] IMP-REQ-002-04 — Wire municipality filter + validation into handlers (all 6 tc_002_* tests pass, 314/266/48; also fixed a test-fixture bug where seed_searchable_project always created a random-slugged municipality instead of using the real pre-seeded montreal/toronto/vancouver rows tc_002_1/3/6 query by slug)
 - [x] IMP-REQ-002-05 — `municipality_display_name` EN/FR helper (8 unit tests, 314/261/53, zero regressions)
-- [ ] IMP-REQ-002-09 — Automate all 6 system test cases
+- [x] IMP-REQ-002-09 — Automate all 6 system test cases (already satisfied by IMP-REQ-002-04's fix — all 6 tc_002_* tests automated and passing)
 - [ ] IMP-REQ-002-10 — Accessibility verification (keyboard, screen reader, contrast)
 - [ ] IMP-REQ-002-11 — Regression check: REQ-008 keyword-only search unaffected
 #### Frontend Engineer
