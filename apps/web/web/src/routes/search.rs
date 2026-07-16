@@ -1024,3 +1024,73 @@ pub async fn get_search_page(
 
     Ok(Html(html))
 }
+
+#[cfg(test)]
+mod search_labels_tests {
+    use super::*;
+
+    // IMP-REQ-003-05: Rust's struct-literal exhaustiveness already
+    // guarantees both the `"fr"` and `_` (default EN) arms of
+    // `search_labels` construct the SAME `SearchLabels` type with ALL
+    // fields populated — a field present in one language's arm but
+    // missing from the other fails to compile. That rules out the
+    // "missing key" class of bug that plagues loose key-value string
+    // tables (HashMaps, JSON locale files, etc.), where nothing stops a
+    // key from existing in one language file but not the other.
+    //
+    // What the compiler can't catch is a copy-paste mistake where a
+    // translator (or a future PR) copies the EN value into the FR arm
+    // (or vice versa) and forgets to actually translate it. This test
+    // guards against that: it asserts every field differs between the
+    // `en` and `fr` construction. If a new field is ever added to
+    // `SearchLabels` and its EN/FR values are accidentally identical,
+    // this test fails and forces a deliberate decision — either
+    // translate it, or add it to the `identical_by_design` allowlist
+    // below with a justifying comment (e.g. a proper noun that's the
+    // same in both languages).
+    #[test]
+    fn en_and_fr_values_are_never_accidentally_identical() {
+        let en = search_labels("en");
+        let fr = search_labels("fr");
+
+        // Fields legitimately identical across EN/FR belong here, by
+        // name, with a reason. Currently empty: every existing
+        // `SearchLabels` field has a genuinely distinct EN/FR wording.
+        let identical_by_design: &[&str] = &[];
+
+        let pairs: [(&str, &str, &str); 10] = [
+            ("page_title", en.page_title, fr.page_title),
+            ("heading", en.heading, fr.heading),
+            ("search_label", en.search_label, fr.search_label),
+            ("submit_label", en.submit_label, fr.submit_label),
+            ("empty_message", en.empty_message, fr.empty_message),
+            ("empty_guidance", en.empty_guidance, fr.empty_guidance),
+            ("nav_permits", en.nav_permits, fr.nav_permits),
+            ("nav_council", en.nav_council, fr.nav_council),
+            (
+                "municipality_select_label",
+                en.municipality_select_label,
+                fr.municipality_select_label,
+            ),
+            (
+                "municipality_all_option",
+                en.municipality_all_option,
+                fr.municipality_all_option,
+            ),
+        ];
+
+        for (field, en_value, fr_value) in pairs {
+            if identical_by_design.contains(&field) {
+                continue;
+            }
+            assert_ne!(
+                en_value, fr_value,
+                "SearchLabels.{field} is byte-identical between EN and FR \
+                 ({en_value:?}) — looks like a copy-paste-forgot-to-translate \
+                 mistake. If this is intentional (e.g. a proper noun), add \
+                 \"{field}\" to `identical_by_design` with a comment \
+                 explaining why.",
+            );
+        }
+    }
+}

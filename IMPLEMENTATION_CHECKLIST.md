@@ -112,7 +112,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [ ] IMP-REQ-003-02 — Migration: `source_language`, `search_vector_fr/en`, GIN indexes, backfill (verify `french` Postgres FTS config availability first)
 - [x] IMP-REQ-003-03 — Pure `normalize_query`/`resolve_ui_locale` core functions (15 unit tests; precedence verified against tc_003_2/3/4; not yet wired, that's IMP-REQ-003-04)
 - [ ] IMP-REQ-003-04 — Wire locale resolver + normalized query into `GET /search`
-- [ ] IMP-REQ-003-05 — FR/EN string-table entries + key-parity check
+- [x] IMP-REQ-003-05 — FR/EN string-table entries + key-parity check (Rust struct exhaustiveness makes literal missing-key bugs impossible; new test catches copy-paste-forgot-to-translate instead; 339/288/51)
 - [ ] IMP-REQ-003-09 — Test fixtures (FR/EN seed rows, fault-injecting DB wrapper)
 - [ ] IMP-REQ-003-10 — Implement all 5 test cases
 - [ ] IMP-REQ-003-11 — Accessibility verification
