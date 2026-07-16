@@ -26,10 +26,17 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
     // only covered rows that existed at migration time, not new/updated
     // ones. Sourced from the same latest-mention's chunk already joined here
     // for `normalized_status`.
+    //
+    // IMP-REQ-004-02: `first_surfaced_at` (migration 019) is set to `now()`
+    // only on first INSERT and is deliberately absent from the `ON CONFLICT
+    // DO UPDATE SET` list below — Postgres never touches a column an
+    // `ON CONFLICT ... DO UPDATE` doesn't name, so an existing row's value
+    // is preserved forever across every subsequent refresh, regardless of
+    // how many times other columns change.
     let result = sqlx::query!(
         r#"
         INSERT INTO public_search_documents
-            (project_id, civic_address_normalized, municipality_name, municipality_slug, project_type, normalized_status, source_language, updated_at)
+            (project_id, civic_address_normalized, municipality_name, municipality_slug, project_type, normalized_status, source_language, first_surfaced_at, updated_at)
         SELECT
             p.id,
             p.civic_address_normalized,
@@ -38,6 +45,7 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
             p.project_type,
             latest.normalized_status,
             latest.language,
+            now(),
             now()
         FROM projects p
         LEFT JOIN LATERAL (
@@ -219,6 +227,51 @@ mod tests {
             row.municipality_slug.as_deref(),
             Some("other-city"),
             "municipality_slug must be set correctly on the upsert (update) path too"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn first_surfaced_at_is_unchanged_across_repeated_refreshes(pool: PgPool) {
+        let project_id = seed_project_with_mention(
+            &pool,
+            "789 pine boulevard",
+            "residential",
+            "Third City",
+            Some("proposed"),
+        )
+        .await;
+
+        refresh_public_search_index(&pool).await.unwrap();
+
+        let first_surfaced_at_initial: chrono::DateTime<chrono::Utc> = sqlx::query_scalar!(
+            "SELECT first_surfaced_at AS \"first_surfaced_at!\" FROM public_search_documents WHERE project_id = $1",
+            project_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query!(
+            "UPDATE project_mentions SET normalized_status = 'approved' WHERE project_id = $1",
+            project_id
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        refresh_public_search_index(&pool).await.unwrap();
+
+        let first_surfaced_at_after_second_refresh: chrono::DateTime<chrono::Utc> = sqlx::query_scalar!(
+            "SELECT first_surfaced_at AS \"first_surfaced_at!\" FROM public_search_documents WHERE project_id = $1",
+            project_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            first_surfaced_at_initial, first_surfaced_at_after_second_refresh,
+            "first_surfaced_at must not change across a second refresh-job upsert of the same project"
         );
     }
 }

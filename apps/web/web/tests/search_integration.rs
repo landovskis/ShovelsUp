@@ -1157,15 +1157,11 @@ async fn tc_004_3_display_name_is_absent_pending_synthesis(pool: PgPool) {
 
 /// TC-004-4: `first_surfaced_at` must be set once on first insert into
 /// `public_search_documents` and never change on subsequent refresh-job
-/// upserts of the same project. Blocked on IMP-REQ-004-01 (the migration
-/// adding the column) — `refresh_public_search_index`'s `INSERT ...
+/// upserts of the same project. IMP-REQ-004-01 added the column and
+/// IMP-REQ-004-02 made `refresh_public_search_index`'s `INSERT ...
 /// ON CONFLICT DO UPDATE` (apps/web/web/src/jobs/public_search_refresh.rs)
-/// has no `first_surfaced_at` clause at all today, so this can't compile
-/// against a real column. Left `#[ignore]`d (not `xfail`) with the full
-/// intended assertion body so Loop B need only remove the attribute once
-/// the column exists and the refresh job's `ON CONFLICT DO UPDATE` is
-/// updated to leave it untouched.
-#[ignore = "blocked on IMP-REQ-004-01 migration adding first_surfaced_at"]
+/// set `first_surfaced_at` on insert while omitting it from the update
+/// clause entirely, so it is never touched again once set.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_004_4_first_surfaced_at_is_immutable_across_refreshes(pool: PgPool) {
     let project_id =
