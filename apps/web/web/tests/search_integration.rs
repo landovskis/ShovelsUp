@@ -3104,6 +3104,57 @@ fn imp_req_001_10_search_page_meets_basic_accessibility_requirements() {
     );
 }
 
+/// IMP-REQ-002-10: the municipality `<select>` control added by
+/// IMP-REQ-002-06/07/08 must follow the same accessible-labeling pattern as
+/// the search `<input>` verified in `imp_req_001_10` above — a `<label for>`
+/// whose target matches the select's `id`, not a placeholder or bare text.
+/// Renders the template directly (no DB round-trip needed for a markup-only
+/// assertion).
+#[test]
+fn imp_req_002_10_municipality_select_meets_basic_accessibility_requirements() {
+    let mut env = Environment::new();
+    env.set_loader(path_loader("../templates"));
+    let tmpl = env.get_template("search.html").unwrap();
+
+    let html = tmpl
+        .render(context! {
+            lang => "en",
+            nav_permits => "Permits",
+            nav_council => "Council",
+            page_title => "Search projects",
+            heading => "Search for a project",
+            search_label => "Civic address or municipality",
+            municipality_select_label => "Municipality",
+            municipality_all_option => "All municipalities",
+            submit_label => "Search",
+            empty_message => "No projects match your search.",
+            empty_guidance => "Try broadening your search: use a more general keyword, or double-check the spelling of the address or municipality.",
+            query => "",
+            has_searched => false,
+            search_results => Vec::<minijinja::value::Value>::new(),
+            search_error => false,
+            municipalities => vec![minijinja::value::Value::from_serialize(
+                serde_json::json!({"slug": "montreal", "display_name": "Montreal"}),
+            )],
+        })
+        .unwrap();
+
+    assert!(
+        html.contains(r#"<label for="search-municipality-slug">"#)
+            && html.contains(r#"id="search-municipality-slug""#),
+        "municipality select must have a <label for> matching its id, got: {html}"
+    );
+    assert!(
+        !html.contains("tabindex=\"-1\""),
+        "municipality select must remain keyboard-operable (no tabindex=-1), got: {html}"
+    );
+    assert!(
+        !html.contains("aria-hidden") && !html.contains("disabled"),
+        "municipality select and its label must not be hidden from assistive tech \
+         or disabled, got: {html}"
+    );
+}
+
 /// IMP-REQ-002-06: the search form's `<select name="municipality_slug">`
 /// must be populated from the live `municipalities` table (migration 002:
 /// `montreal`/`toronto`/`vancouver`), not a hardcoded list, and must
