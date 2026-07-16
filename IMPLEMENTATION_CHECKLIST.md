@@ -134,7 +134,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-004-01 — Migration: `first_surfaced_at` + index
+- [x] IMP-REQ-004-01 — Migration: `first_surfaced_at` + index (019_public_search_first_surfaced_at.sql; nullable, additive only; tc_004_4 correctly left `#[ignore]`d pending IMP-REQ-004-02's refresh-job wiring)
 - [ ] IMP-REQ-004-02 — Refresh job: set `first_surfaced_at` only on INSERT
 - [ ] IMP-REQ-004-03 — Pagination-math + status-label core functions, filter params (assumes no `project_name` free-text field; spot-check synthesized display name against sample data)
 - [ ] IMP-REQ-004-04 — JSON API paginated envelope
