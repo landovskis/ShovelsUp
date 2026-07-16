@@ -3104,6 +3104,102 @@ fn imp_req_001_10_search_page_meets_basic_accessibility_requirements() {
     );
 }
 
+/// IMP-REQ-002-06: the search form's `<select name="municipality_slug">`
+/// must be populated from the live `municipalities` table (migration 002:
+/// `montreal`/`toronto`/`vancouver`), not a hardcoded list, and must
+/// preserve the currently-selected municipality across a form re-submission
+/// rather than resetting to blank.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_002_06_search_form_has_municipality_select_with_preserved_selection(
+    pool: PgPool,
+) {
+    let app = app(test_state(pool).await);
+
+    // No municipality_slug in the query string: the select must still render
+    // with options for all three launch municipalities, localized EN display
+    // names by default, and none of them marked selected.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/search")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"<select id="search-municipality-slug" name="municipality_slug">"#),
+        "expected the municipality select control to render, got: {html}"
+    );
+    assert!(
+        html.contains(r#"<option value="montreal">Montreal</option>"#),
+        "expected an unselected Montreal option (EN display name), got: {html}"
+    );
+    assert!(
+        html.contains(r#"<option value="toronto">Toronto</option>"#),
+        "expected an unselected Toronto option, got: {html}"
+    );
+    assert!(
+        html.contains(r#"<option value="vancouver">Vancouver</option>"#),
+        "expected an unselected Vancouver option, got: {html}"
+    );
+    assert!(
+        !html.contains(r#"value="montreal" selected"#)
+            && !html.contains(r#"value="toronto" selected"#)
+            && !html.contains(r#"value="vancouver" selected"#),
+        "with no municipality_slug in the query string, no municipality option \
+         should be marked selected, got: {html}"
+    );
+
+    // With municipality_slug=montreal in the query string, the Montreal
+    // option must come back marked selected, and the others must not.
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?municipality_slug=montreal")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"<option value="montreal" selected>Montreal</option>"#),
+        "expected the montreal option to be preserved as selected after \
+         re-submitting with municipality_slug=montreal, got: {html}"
+    );
+    assert!(
+        html.contains(r#"<option value="toronto">Toronto</option>"#),
+        "toronto option must render without selected, got: {html}"
+    );
+    assert!(
+        html.contains(r#"<option value="vancouver">Vancouver</option>"#),
+        "vancouver option must render without selected, got: {html}"
+    );
+    assert!(
+        !html.contains(r#"value="toronto" selected"#),
+        "toronto must not be marked selected, got: {html}"
+    );
+    assert!(
+        !html.contains(r#"value="vancouver" selected"#),
+        "vancouver must not be marked selected, got: {html}"
+    );
+}
+
 fn rand_octet() -> u8 {
     use std::time::{SystemTime, UNIX_EPOCH};
     (SystemTime::now()

@@ -125,7 +125,6 @@ mod core {
     ///
     /// Pure data-in/data-out: no database access, no HTTP, no clock, no
     /// environment reads.
-    #[allow(dead_code)]
     pub fn municipality_display_name(slug: &str, lang: &str) -> Option<&'static str> {
         match (slug, lang) {
             ("montreal", "fr") => Some("Montréal"),
@@ -435,6 +434,19 @@ pub struct SearchParams {
     pub sort: Option<String>,
 }
 
+/// A single `<option>` in the search form's municipality `<select>`
+/// (IMP-REQ-002-06). `slug` is the value submitted as `municipality_slug`;
+/// `display_name` is the localized label shown to the user, resolved via
+/// `core::municipality_display_name` (falling back to the raw DB `name` for
+/// any municipality outside today's launch set, so an unrecognized future
+/// municipality still renders something sensible instead of an empty
+/// option).
+#[derive(Debug, Serialize)]
+pub struct MunicipalityOption {
+    pub slug: String,
+    pub display_name: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SearchResult {
     pub project_id: uuid::Uuid,
@@ -598,6 +610,8 @@ struct SearchLabels {
     empty_guidance: &'static str,
     nav_permits: &'static str,
     nav_council: &'static str,
+    municipality_select_label: &'static str,
+    municipality_all_option: &'static str,
 }
 
 fn search_labels(lang: &str) -> SearchLabels {
@@ -611,6 +625,8 @@ fn search_labels(lang: &str) -> SearchLabels {
             empty_guidance: "Essayez une recherche plus large : utilisez un mot-clé plus général ou vérifiez l'orthographe de l'adresse ou de la municipalité.",
             nav_permits: "Permis",
             nav_council: "Conseil",
+            municipality_select_label: "Municipalité",
+            municipality_all_option: "Toutes les municipalités",
         },
         _ => SearchLabels {
             page_title: "Search projects",
@@ -621,6 +637,8 @@ fn search_labels(lang: &str) -> SearchLabels {
             empty_guidance: "Try broadening your search: use a more general keyword, or double-check the spelling of the address or municipality.",
             nav_permits: "Permits",
             nav_council: "Council",
+            municipality_select_label: "Municipality",
+            municipality_all_option: "All municipalities",
         },
     }
 }
@@ -665,6 +683,27 @@ pub async fn get_search_page(
         None => (Vec::new(), false),
     };
 
+    // IMP-REQ-002-06: populates the search form's municipality `<select>`
+    // from the live `municipalities` table (not a hardcoded list, same
+    // principle as the `municipality_slug` backend validation in
+    // `run_search`). A query failure here degrades to an empty options list
+    // (select still renders, just with only the blank "no filter" option)
+    // rather than failing the whole page render.
+    let municipalities: Vec<MunicipalityOption> = sqlx::query!(
+        "SELECT slug, name FROM municipalities ORDER BY slug ASC"
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| MunicipalityOption {
+        display_name: core::municipality_display_name(&row.slug, lang)
+            .map(str::to_string)
+            .unwrap_or(row.name),
+        slug: row.slug,
+    })
+    .collect();
+
     // IMP-REQ-001-08: only shown alongside a non-empty result list — the
     // zero-results case stays exclusively owned by
     // `empty_message`/`empty_guidance` (IMP-REQ-001-06) so the two never
@@ -686,11 +725,15 @@ pub async fn get_search_page(
             submit_label => labels.submit_label,
             empty_message => labels.empty_message,
             empty_guidance => labels.empty_guidance,
+            municipality_select_label => labels.municipality_select_label,
+            municipality_all_option => labels.municipality_all_option,
             query => params.q,
             has_searched => has_searched,
             search_results => search_results,
             search_error => search_error,
             result_count_label => result_count_label,
+            municipalities => municipalities,
+            selected_municipality_slug => params.municipality_slug,
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

@@ -9,6 +9,15 @@
     <form role="search" method="get" action="/search">
         <label for="search-q">{{ search_label | default("Civic address or municipality", true) }}</label>
         <input type="text" id="search-q" name="q" autocomplete="off" value="{{ query | default('', true) }}">
+
+        <label for="search-municipality-slug">{{ municipality_select_label | default("Municipality", true) }}</label>
+        <select id="search-municipality-slug" name="municipality_slug">
+            <option value=""{% if not selected_municipality_slug %} selected{% endif %}>{{ municipality_all_option | default("All municipalities", true) }}</option>
+            {% for municipality in municipalities | default([]) %}
+            <option value="{{ municipality.slug }}"{% if selected_municipality_slug == municipality.slug %} selected{% endif %}>{{ municipality.display_name }}</option>
+            {% endfor %}
+        </select>
+
         <button type="submit">{{ submit_label | default("Search", true) }}</button>
     </form>
 

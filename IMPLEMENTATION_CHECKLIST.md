@@ -88,7 +88,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [ ] IMP-REQ-002-10 — Accessibility verification (keyboard, screen reader, contrast)
 - [ ] IMP-REQ-002-11 — Regression check: REQ-008 keyword-only search unaffected
 #### Frontend Engineer
-- [ ] IMP-REQ-002-06 — Add select control to search form
+- [x] IMP-REQ-002-06 — Add select control to search form (populated from live municipalities table, selection preserved across resubmission, 315/267/48)
 - [ ] IMP-REQ-002-07 — Responsive/CSS for the filter bar
 - [ ] IMP-REQ-002-08 — Municipality-aware empty-state + invalid-filter copy
 
