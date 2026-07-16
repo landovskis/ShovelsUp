@@ -365,7 +365,6 @@ mod core {
     /// clause that naturally returns zero rows, and `has_more` correctly
     /// comes back `false` since `offset` alone already exceeds `total`.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    #[allow(dead_code)] // Not yet wired into a handler; consumed by IMP-REQ-004-04/05.
     pub struct PaginationInfo {
         pub page: i64,
         pub per_page: i64,
@@ -374,7 +373,6 @@ mod core {
         pub has_more: bool,
     }
 
-    #[allow(dead_code)] // Not yet wired into a handler; consumed by IMP-REQ-004-04/05.
     pub fn paginate(total: i64, page: i64, per_page: i64) -> PaginationInfo {
         let page = page.max(1);
         let per_page = per_page.max(1);
@@ -409,7 +407,6 @@ mod core {
     ///
     /// Pure data-in/data-out: no database access, no HTTP, no clock, no
     /// environment reads.
-    #[allow(dead_code)] // Not yet wired into a handler; consumed by IMP-REQ-004-09.
     pub fn synthesize_display_name(civic_address: &str, project_type: Option<&str>) -> String {
         match project_type.map(str::trim).filter(|s| !s.is_empty()) {
             Some(project_type) => format!(
@@ -1037,8 +1034,8 @@ pub struct SearchParams {
     // then checked against the live `municipalities` table, then applied as
     // an `AND municipality_slug = $N` filter in `run_search`.
     pub municipality_slug: Option<String>,
-    // Loop A stub: pagination wired by IMP-REQ-004-03/04. `run_search` does
-    // not read this yet; TC-004-5 documents today's unpaginated-boundary gap.
+    // IMP-REQ-004-04: 1-indexed page number, wired into `run_search`'s
+    // `LIMIT`/`OFFSET` window via `core::paginate`. Absent defaults to page 1.
     pub page: Option<i64>,
     // Loop A stub: DateFilter parsing/validation wired by IMP-REQ-007-03/05
     // against public_search_documents.first_surfaced_at once
@@ -1097,10 +1094,9 @@ pub struct SearchResult {
     pub normalized_status: Option<String>,
     // Loop A stub: populated by IMP-REQ-003-02/03/04 migration+backfill.
     pub source_language: Option<String>,
-    // Loop A stub: synthesized display name (civic address + project type,
-    // e.g. "Demolition — 123 Main St") added by IMP-REQ-004-09. There is no
-    // `project_name` field to derive from yet, and `run_search` does not
-    // populate this; TC-004-3 documents today's gap of it being absent.
+    // IMP-REQ-004-09: synthesized display name (civic address + project
+    // type, e.g. "Demolition — 123 Main St") via
+    // `core::synthesize_display_name`, populated by `run_search`.
     pub display_name: Option<String>,
     // Loop A stub: populated by IMP-REQ-015-02/03/04 migration+materializer.
     // `public_search_documents` has neither `first_detected_at` nor
@@ -1113,12 +1109,10 @@ pub struct SearchResult {
     pub source_count: Option<i64>,
 }
 
-/// Loop A stub: target-state paginated envelope for `GET
-/// /api/v1/projects/search` (TC-004-1). `search_projects` still returns a
-/// bare `Json<Vec<SearchResult>>` today — IMP-REQ-004-04 must change the
-/// handler's return type to this envelope and populate `total`/`page`/
-/// `per_page`/`has_more` from `run_search`'s (future) paginated query.
-#[allow(dead_code)]
+/// Paginated envelope returned by `GET /api/v1/projects/search`
+/// (IMP-REQ-004-04, TC-004-1): `results` is this page's slice, `total` the
+/// full unpaginated match count, and `has_more` whether a further page
+/// exists — all derived from `core::paginate`.
 #[derive(Debug, Serialize)]
 pub struct SearchResultsEnvelope {
     pub results: Vec<SearchResult>,
@@ -1133,12 +1127,21 @@ pub struct SearchResultsEnvelope {
 /// server-rendered page. `q` matches against either the civic address or
 /// the municipality name (TC-REQ-008-2: a query that only matches the
 /// municipality, with no address-keyword overlap, still returns results).
+///
+/// IMP-REQ-004-04: also computes `total` — a `COUNT(*)` over the SAME
+/// `WHERE` clause as the main `SELECT` (kept textually side-by-side with it
+/// below so the two can't silently drift apart) — and applies `page`'s
+/// `LIMIT`/`OFFSET` window (via `core::paginate`) to the main query, so the
+/// returned `Vec<SearchResult>` is only this page's slice while the returned
+/// `core::PaginationInfo` reflects the full unpaginated match count and
+/// whether a further page remains.
 async fn run_search(
     pool: &sqlx::PgPool,
     q: &str,
     per_page: Option<i64>,
     municipality_slug: Option<String>,
-) -> Result<Vec<SearchResult>, StatusCode> {
+    page: Option<i64>,
+) -> Result<(Vec<SearchResult>, core::PaginationInfo), StatusCode> {
     let core::ValidatedSearchParams { per_page } =
         core::validate_search_params(per_page).map_err(|_| StatusCode::BAD_REQUEST)?;
 
@@ -1176,6 +1179,33 @@ async fn run_search(
     // still find an English-sourced document and vice versa; `q`'s
     // language, not the page's rendering language, decides the match.
     let normalized_query = core::normalize_query(q);
+
+    // IMP-REQ-004-04: total match count over the exact same filter
+    // predicate as the paginated SELECT below, so `total` can never drift
+    // from what `page`/`per_page` are actually windowing over.
+    let total = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)
+        FROM public_search_documents
+        WHERE (
+            civic_address_normalized ILIKE $1
+            OR municipality_name ILIKE $1
+            OR search_vector_fr @@ plainto_tsquery('french', $2)
+            OR search_vector_en @@ plainto_tsquery('english', $2)
+        )
+          AND ($3::text IS NULL OR municipality_slug = $3)
+        "#,
+        keyword,
+        normalized_query,
+        municipality_slug,
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+    .unwrap_or(0);
+
+    let pagination = core::paginate(total, page.unwrap_or(1), per_page);
+
     let rows = sqlx::query!(
         r#"
         SELECT project_id, civic_address_normalized, municipality_name, project_type, normalized_status, source_language
@@ -1188,12 +1218,13 @@ async fn run_search(
         )
           AND ($3::text IS NULL OR municipality_slug = $3)
         ORDER BY civic_address_normalized ASC
-        LIMIT $2
+        LIMIT $2 OFFSET $5
         "#,
         keyword,
-        per_page,
+        pagination.per_page,
         municipality_slug,
         normalized_query,
+        pagination.offset,
     )
     .fetch_all(pool)
     .await
@@ -1201,13 +1232,18 @@ async fn run_search(
     .into_iter()
     .map(|row| SearchResult {
         project_id: row.project_id,
-        civic_address_normalized: row.civic_address_normalized,
+        civic_address_normalized: row.civic_address_normalized.clone(),
         municipality_name: row.municipality_name,
+        // IMP-REQ-004-09: synthesized from the civic address + project type
+        // (e.g. "Demolition — 123 Main St") rather than left as the prior
+        // `None` stub.
+        display_name: Some(core::synthesize_display_name(
+            &row.civic_address_normalized,
+            row.project_type.as_deref(),
+        )),
         project_type: row.project_type,
         normalized_status: row.normalized_status,
         source_language: row.source_language,
-        // Loop A stub: see `SearchResult::display_name` doc comment.
-        display_name: None,
         // Loop A stub: see `SearchResult::first_detected_at`/`source_count`
         // doc comment — IMP-REQ-015-02/03/04 migration+materializer.
         first_detected_at: None,
@@ -1215,23 +1251,32 @@ async fn run_search(
     })
     .collect();
 
-    Ok(rows)
+    Ok((rows, pagination))
 }
 
 /// GET /api/v1/projects/search — public, unauthenticated keyword search
-/// (TC-REQ-008-1..4).
+/// (TC-REQ-008-1..4). Returns the paginated `SearchResultsEnvelope`
+/// (IMP-REQ-004-04, TC-004-1), not a bare array.
 pub async fn search_projects(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,
-) -> Result<Json<Vec<SearchResult>>, StatusCode> {
-    let results = run_search(
+) -> Result<Json<SearchResultsEnvelope>, StatusCode> {
+    let (results, pagination) = run_search(
         &state.db,
         &params.q,
         params.per_page,
         params.municipality_slug,
+        params.page,
     )
     .await?;
-    Ok(Json(results))
+
+    Ok(Json(SearchResultsEnvelope {
+        results,
+        total: pagination.total,
+        page: pagination.page,
+        per_page: pagination.per_page,
+        has_more: pagination.has_more,
+    }))
 }
 
 /// Loop A stub: target-state category facet endpoint (`GET /categories`,
@@ -1340,6 +1385,7 @@ pub async fn get_search_page(
                 &params.q,
                 params.per_page,
                 params.municipality_slug.clone(),
+                params.page,
             )
             .await,
         )
@@ -1347,8 +1393,13 @@ pub async fn get_search_page(
         None
     };
 
+    // IMP-REQ-004-04: `run_search` now also returns pagination info
+    // alongside the page's results, but `get_search_page`'s own HTML
+    // pagination behavior is IMP-REQ-004-05's job — this handler only takes
+    // the `Vec<SearchResult>` slice (`.0`) and discards the pagination info
+    // for now.
     let (search_results, search_error) = match search_outcome {
-        Some(Ok(results)) => (results, false),
+        Some(Ok((results, _pagination))) => (results, false),
         Some(Err(_)) => (Vec::new(), true),
         None => (Vec::new(), false),
     };

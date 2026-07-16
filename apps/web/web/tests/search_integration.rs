@@ -303,7 +303,10 @@ async fn tc_req_008_1_search_by_civic_address_returns_matching_project(pool: PgP
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert_eq!(results.len(), 1);
     assert_eq!(
         results[0]["project_id"].as_str().unwrap(),
@@ -335,7 +338,10 @@ async fn tc_req_008_2_search_by_municipality_name_matches_via_or_boundary(pool: 
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert_eq!(
         results.len(),
         1,
@@ -606,7 +612,10 @@ async fn tc_002_1_valid_municipality_slug_returns_only_that_municipality(pool: P
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert_eq!(
         results.len(),
         1,
@@ -683,7 +692,10 @@ async fn tc_002_3_keyword_and_municipality_slug_combine_with_and(pool: PgPool) {
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert_eq!(
         results.len(),
         1,
@@ -721,7 +733,10 @@ async fn tc_002_4_omitted_municipality_slug_is_backward_compatible(pool: PgPool)
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert_eq!(
         results.len(),
         1,
@@ -764,7 +779,10 @@ async fn tc_002_5_valid_slug_with_no_matches_returns_empty_list(pool: PgPool) {
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert!(
         results.is_empty(),
         "montreal filter must exclude the Toronto-only project, got: {results:?}"
@@ -816,7 +834,10 @@ async fn tc_002_6_municipality_slug_is_case_normalized(pool: PgPool) {
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert_eq!(
         results.len(),
         1,
@@ -864,7 +885,10 @@ async fn tc_003_1_french_stemmed_query_matches_document_ilike_cannot(pool: PgPoo
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert!(
         results.is_empty(),
         "documents today's gap: plain ILIKE cannot match 'démolition' against \
@@ -1025,16 +1049,14 @@ async fn tc_003_5_per_result_source_language_badge_independent_of_ui_lang(pool: 
     );
 }
 
-/// TC-004-1: the JSON API is documented to eventually return a paginated
-/// envelope (`{results, total, page, per_page, has_more}`), but
-/// `search_projects` still returns a bare array today. Seeds 3 matching
-/// projects with `per_page=2` (fewer than total matches) and asserts
-/// today's actual response is a bare JSON array of length 2 — NOT an
-/// envelope object — documenting the gap IMP-REQ-004-04 must close by
-/// wiring `SearchResultsEnvelope` (added as a dead-code stub in
-/// `search.rs`) into the handler's real return type.
+/// TC-004-1: the JSON API returns a paginated envelope
+/// (`{results, total, page, per_page, has_more}`), not a bare array
+/// (IMP-REQ-004-04). Seeds 3 matching projects and requests `per_page=2`
+/// (fewer than the total match count) to verify `results` is capped to the
+/// page window while `total` still reflects the full, unpaginated match
+/// count, and `has_more` is `true` since a further page remains.
 #[sqlx::test(migrations = "./migrations")]
-async fn tc_004_1_json_api_returns_bare_array_not_paginated_envelope(pool: PgPool) {
+async fn tc_004_1_json_api_returns_paginated_envelope(pool: PgPool) {
     seed_searchable_project(&pool, "1 rue paginate alpha", "Ville de Pagination Alpha").await;
     seed_searchable_project(&pool, "2 rue paginate beta", "Ville de Pagination Beta").await;
     seed_searchable_project(&pool, "3 rue paginate gamma", "Ville de Pagination Gamma").await;
@@ -1059,19 +1081,27 @@ async fn tc_004_1_json_api_returns_bare_array_not_paginated_envelope(pool: PgPoo
     let value: Value = serde_json::from_slice(&body).unwrap();
 
     assert!(
-        value.is_array(),
-        "documents today's gap: the handler still returns a bare JSON array, \
-         not a {{results, total, page, per_page, has_more}} envelope, got: {value:?}"
+        value.is_object(),
+        "expected a {{results, total, page, per_page, has_more}} envelope \
+         object, not a bare array, got: {value:?}"
     );
-    let results = value.as_array().unwrap();
+    let results = value["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {value:?}"));
     assert_eq!(
         results.len(),
         2,
-        "per_page=2 should still cap today's bare-array response, got: {results:?}"
+        "per_page=2 should cap this page's results, got: {results:?}"
     );
-    assert!(
-        value.get("total").is_none() && value.get("has_more").is_none(),
-        "no envelope fields exist yet on the bare-array response today, got: {value:?}"
+    assert_eq!(
+        value["total"], 3,
+        "total must reflect the full unpaginated match count, got: {value:?}"
+    );
+    assert_eq!(value["page"], 1, "page defaults to 1 when absent, got: {value:?}");
+    assert_eq!(value["per_page"], 2, "got: {value:?}");
+    assert_eq!(
+        value["has_more"], true,
+        "3 total matches with per_page=2 means a second page remains, got: {value:?}"
     );
 }
 
@@ -1119,7 +1149,10 @@ async fn tc_004_2_htmx_request_still_returns_full_page_not_fragment(pool: PgPool
 /// is a Loop A stub hard-coded to `None`. This asserts the field is present
 /// in the JSON body but currently null, documenting the gap.
 #[sqlx::test(migrations = "./migrations")]
-async fn tc_004_3_display_name_is_absent_pending_synthesis(pool: PgPool) {
+async fn tc_004_3_display_name_is_synthesized_from_civic_address_and_project_type(pool: PgPool) {
+    // `seed_searchable_project` always inserts `project_type = 'residential'`
+    // (see its body above), so the synthesized name is expected to be
+    // "Residential — 123 main street".
     seed_searchable_project(&pool, "123 main street", "Ville de Synthese").await;
     refresh_public_search_index(&pool).await.unwrap();
 
@@ -1139,18 +1172,15 @@ async fn tc_004_3_display_name_is_absent_pending_synthesis(pool: PgPool) {
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert_eq!(results.len(), 1);
-    assert!(
-        results[0].get("display_name").is_some(),
-        "the display_name key must be present in the JSON body, got: {:?}",
-        results[0]
-    );
-    assert!(
-        results[0]["display_name"].is_null(),
-        "documents today's gap: no synthesis logic exists yet, so \
-         display_name is still null (fixed by IMP-REQ-004-09, e.g. \
-         'Demolition — 123 Main St'), got: {:?}",
+    assert_eq!(
+        results[0]["display_name"], "Residential — 123 main street",
+        "display_name must be synthesized from civic_address_normalized + \
+         project_type via core::synthesize_display_name, got: {:?}",
         results[0]
     );
 }

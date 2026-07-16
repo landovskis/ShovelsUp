@@ -137,7 +137,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-004-01 — Migration: `first_surfaced_at` + index (019_public_search_first_surfaced_at.sql; nullable, additive only; tc_004_4 correctly left `#[ignore]`d pending IMP-REQ-004-02's refresh-job wiring)
 - [x] IMP-REQ-004-02 — Refresh job: set `first_surfaced_at` only on INSERT (omitted from ON CONFLICT SET, verified never touched on update; tc_004_4 un-ignored and passes, 355/304/51)
 - [x] IMP-REQ-004-03 — Pagination-math + status-label core functions, filter params (paginate + synthesize_display_name, 25 unit tests, not yet wired; tc_004_1/2/3/5 unchanged as intended) (assumes no `project_name` free-text field; spot-check synthesized display name against sample data)
-- [ ] IMP-REQ-004-04 — JSON API paginated envelope
+- [x] IMP-REQ-004-04 — JSON API paginated envelope (tc_004_1/3 pass; updated 8 pre-existing tests that parsed the JSON API as a bare array to parse envelope.results instead; verified single-threaded — tc_002_*/tc_003_*/tc_004_1-4/tc_req_008_* all pass, zero regressions; tc_004_5 correctly still fails, out of this task's scope)
 - [ ] IMP-REQ-004-05 — HTML route HTMX branching (full page vs. fragment)
 - [ ] IMP-REQ-004-09 — Unit tests (pagination math, status labels)
 - [ ] IMP-REQ-004-10 — Integration tests TC-004-1..5
