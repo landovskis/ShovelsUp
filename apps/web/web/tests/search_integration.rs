@@ -4106,6 +4106,80 @@ async fn imp_req_004_06_pagination_controls_reflect_has_more_and_page(pool: PgPo
     );
 }
 
+/// IMP-REQ-004-07: the results fragment's "Next" link must be progressively
+/// enhanced with htmx infinite-scroll attributes on top of — not instead of —
+/// its plain `href` fallback. `hx-get` must target the exact same URL as
+/// `href` (the already-computed `next_page_href`), `hx-trigger="revealed"`
+/// fires the fetch when the link scrolls into view (htmx's built-in
+/// "revealed" trigger, no custom JS), and `hx-swap="outerHTML"` lets the
+/// fetched next page's own fragment (its own results + its own new "Next"
+/// link) replace this link in place, continuing the chain. Absent htmx/JS,
+/// the plain `href` still navigates normally — this test pins that both
+/// coexist on the same element.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_004_07_next_link_carries_htmx_infinite_scroll_attributes_alongside_href(
+    pool: PgPool,
+) {
+    seed_searchable_project(&pool, "1 rue infinite alpha", "Ville de Infinite Alpha").await;
+    seed_searchable_project(&pool, "2 rue infinite beta", "Ville de Infinite Beta").await;
+    seed_searchable_project(&pool, "3 rue infinite gamma", "Ville de Infinite Gamma").await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=infinite&per_page=2")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    let next_link_start = html
+        .find(r#"class="search-pagination-next""#)
+        .expect("expected a Next link on page 1 of a 2-page result set");
+    // The class attribute is one attribute among several on the same `<a>`
+    // tag; grab the whole opening tag (from the preceding `<a` to the
+    // closing `>`) so all its attributes can be inspected together.
+    let tag_start = html[..next_link_start].rfind("<a").unwrap();
+    let tag_end = tag_start + html[tag_start..].find('>').unwrap() + 1;
+    let next_link_tag = &html[tag_start..tag_end];
+
+    // Minijinja HTML-escapes attribute values by default (`/` -> `&#x2f;`,
+    // `&` -> `&amp;`), so the expected href/hx-get value is the escaped form,
+    // not the raw URL.
+    let expected_href_escaped = "&#x2f;search?q=infinite&amp;page=2&amp;lang=en";
+    assert!(
+        next_link_tag.contains(&format!("href=\"{expected_href_escaped}\"")),
+        "the plain href fallback must still be present on the Next link \
+         (progressive enhancement, not a JS-required control), got tag: \
+         {next_link_tag}"
+    );
+    assert!(
+        next_link_tag.contains(&format!("hx-get=\"{expected_href_escaped}\"")),
+        "hx-get must target the exact same URL as the plain href, got tag: \
+         {next_link_tag}"
+    );
+    assert!(
+        next_link_tag.contains(r#"hx-trigger="revealed""#),
+        "the Next link must auto-load via htmx's \"revealed\" trigger \
+         (scrolled into view), got tag: {next_link_tag}"
+    );
+    assert!(
+        next_link_tag.contains(r#"hx-swap="outerHTML""#),
+        "the Next link must swap its own outerHTML with the next page's \
+         fragment so the chain continues, got tag: {next_link_tag}"
+    );
+}
+
 fn rand_octet() -> u8 {
     use std::time::{SystemTime, UNIX_EPOCH};
     (SystemTime::now()

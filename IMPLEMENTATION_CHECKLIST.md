@@ -144,7 +144,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [ ] IMP-REQ-004-11 — Accessibility verification
 #### Frontend Engineer
 - [x] IMP-REQ-004-06 — `search.html` results/pagination markup (real Next/Previous controls from PaginationInfo, display_name rendered per row; also fixed a stale imp_req_001_10 test assertion that hardcoded exact button markup, broken by IMP-REQ-002-07's earlier CSS-class addition, not a real accessibility regression; 23/23 verified single-threaded)
-- [ ] IMP-REQ-004-07 — `results_fragment.html` + infinite-scroll wiring
+- [x] IMP-REQ-004-07 — `results_fragment.html` + infinite-scroll wiring (hx-get/hx-trigger=revealed/hx-swap=outerHTML layered on the existing plain href, self-replacing chain; 24/24 verified single-threaded)
 - [ ] IMP-REQ-004-08 — CSS for status indicator/pagination/responsive
 
 ## REQ-005 — Project detail view

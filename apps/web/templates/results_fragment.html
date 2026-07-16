@@ -25,7 +25,11 @@
     <span class="search-pagination-current">{{ current_page }}</span>
     {% endif %}
     {% if has_more | default(false) %}
-    <a href="{{ next_page_href }}" class="search-pagination-next">{{ pagination_next_label | default("Next", true) }}</a>
+    <a href="{{ next_page_href }}"
+       class="search-pagination-next"
+       hx-get="{{ next_page_href }}"
+       hx-trigger="revealed"
+       hx-swap="outerHTML">{{ pagination_next_label | default("Next", true) }}</a>
     {% endif %}
 </nav>
 {% elif has_searched | default(false) %}
