@@ -30,33 +30,7 @@
     </form>
 
     <div id="search-results" aria-live="polite">
-        {% if search_error | default(false) %}
-        <div class="search-error" role="alert">
-            <p>{{ search_error_message | default("We couldn’t complete that search.", true) }}</p>
-        </div>
-        {% elif has_searched | default(false) and search_results | default([]) | length > 0 %}
-        {% if result_count_label %}
-        <p class="search-result-count">{{ result_count_label }}</p>
-        {% endif %}
-        <ul class="search-results-list">
-            {% for result in search_results %}
-            <li class="search-result">
-                <a href="/projects/{{ result.project_id }}">{{ result.civic_address_normalized }}</a>
-                <span>{{ result.municipality_name | default("", true) }}</span>
-                <span>{{ result.normalized_status | default("", true) }}</span>
-                {% if result.source_language == "en" %}<span class="result-lang-badge">[EN]</span>
-                {%- elif result.source_language == "fr" %}<span class="result-lang-badge">[FR]</span>{% endif %}
-            </li>
-            {% endfor %}
-        </ul>
-        {% elif has_searched | default(false) %}
-        {% if municipality_empty_message %}
-        <p class="search-empty">{{ municipality_empty_message }}</p>
-        {% else %}
-        <p class="search-empty">{{ empty_message | default("No projects match your search.", true) }}</p>
-        {% endif %}
-        <p class="search-empty-guidance">{{ empty_guidance | default("Try broadening your search: use a more general keyword, or double-check the spelling of the address or municipality.", true) }}</p>
-        {% endif %}
+        {% include "results_fragment.html" %}
     </div>
 </section>
 {% endblock %}

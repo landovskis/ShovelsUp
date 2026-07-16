@@ -1105,19 +1105,26 @@ async fn tc_004_1_json_api_returns_paginated_envelope(pool: PgPool) {
     );
 }
 
-/// TC-004-2: an HTMX request (`HX-Request: true`) to `GET /search` should
-/// eventually receive only the results fragment, while a plain browser
-/// request receives the full page. This branching doesn't exist yet in
-/// `get_search_page`, so both requests currently return identical full-page
-/// HTML (with `<html>`/`<head>` chrome) — this test documents that gap by
-/// asserting the HTMX-header response STILL contains full page chrome today.
+/// TC-004-2: an HTMX request (`HX-Request: true`) to `GET /search` receives
+/// only the results fragment (no `<html>`/`<head>` page chrome), while a
+/// plain browser request (no `HX-Request` header) still receives the full
+/// page. This is IMP-REQ-004-05's real behavior, wired in `get_search_page`
+/// via an `HX-Request` header check that swaps which template
+/// (`results_fragment.html` vs `search.html`) gets rendered.
+///
+/// This assertion was FLIPPED from the previous "gap" version (which
+/// asserted the HTMX-header response STILL got full page chrome, i.e. the
+/// bug) now that IMP-REQ-004-05 has closed that gap — the fragment response
+/// should contain the results markup but NOT the `<html>`/`<head>` chrome,
+/// and a plain request should still get the full page.
 #[sqlx::test(migrations = "./migrations")]
-async fn tc_004_2_htmx_request_still_returns_full_page_not_fragment(pool: PgPool) {
+async fn tc_004_2_htmx_request_returns_fragment_not_full_page(pool: PgPool) {
     seed_searchable_project(&pool, "8 rue htmx fragment", "Ville de Fragments").await;
     refresh_public_search_index(&pool).await.unwrap();
 
     let app = app(test_state(pool).await);
     let response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri("/search?q=fragment")
@@ -1136,10 +1143,38 @@ async fn tc_004_2_htmx_request_still_returns_full_page_not_fragment(pool: PgPool
     let html = String::from_utf8(body.to_vec()).unwrap();
 
     assert!(
-        html.contains("<html") && html.contains("<head"),
-        "documents today's gap: an HX-Request: true request still gets full \
-         page chrome instead of a results-only fragment (fixed by \
-         IMP-REQ-004-05), got: {html}"
+        !html.contains("<html") && !html.contains("<head"),
+        "an HX-Request: true request must receive only the results \
+         fragment, without full page chrome, got: {html}"
+    );
+    assert!(
+        html.contains("rue htmx fragment"),
+        "the fragment must still contain the actual result content, got: {html}"
+    );
+
+    // A plain browser request (no HX-Request header) still gets the full
+    // page, unaffected by the branching above.
+    let full_page_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=fragment")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(full_page_response.status(), StatusCode::OK);
+    let full_page_body = http_body_util::BodyExt::collect(full_page_response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let full_page_html = String::from_utf8(full_page_body.to_vec()).unwrap();
+
+    assert!(
+        full_page_html.contains("<html") && full_page_html.contains("<head"),
+        "a plain request without HX-Request must still get the full page \
+         chrome, got: {full_page_html}"
     );
 }
 
@@ -1238,14 +1273,23 @@ async fn tc_004_4_first_surfaced_at_is_immutable_across_refreshes(pool: PgPool) 
     );
 }
 
-/// TC-004-5: requesting a `page` beyond the last page should eventually
-/// return an empty `results` array with `has_more: false`, not an error.
-/// No `page` param is wired into `run_search` yet (`SearchParams::page` is
-/// a Loop A stub), so today the handler ignores it entirely and returns the
-/// same (non-empty, first-"page") bare array regardless of the `page`
-/// value — this documents that gap.
+/// TC-004-5: requesting a `page` beyond the last page returns an empty
+/// `results` array with `has_more: false`, not an error.
+///
+/// Note on scope: this test previously deserialized the response as a bare
+/// `Vec<Value>` and documented `page` as silently ignored — that was written
+/// against the pre-IMP-REQ-004-04 API shape. IMP-REQ-004-04 already wired
+/// `page` into `run_search` (via `core::paginate`) and changed
+/// `search_projects` to return the `SearchResultsEnvelope` object
+/// (`{results, total, page, per_page, has_more}`) rather than a bare array,
+/// so the OLD assertions here would panic on `serde_json::from_slice` before
+/// ever reaching the pagination assertion. IMP-REQ-004-05 (this task) is
+/// scoped to `get_search_page`'s HTMX branching, not the JSON API's
+/// pagination wiring, which was already real by the time this task started
+/// — so this update only brings the test's assertions in line with the
+/// envelope shape/behavior that already exists; it is not new route logic.
 #[sqlx::test(migrations = "./migrations")]
-async fn tc_004_5_out_of_range_page_is_ignored_not_empty_today(pool: PgPool) {
+async fn tc_004_5_out_of_range_page_returns_empty_results_not_an_error(pool: PgPool) {
     seed_searchable_project(&pool, "1 rue boundary", "Ville de Frontiere").await;
     refresh_public_search_index(&pool).await.unwrap();
 
@@ -1263,19 +1307,30 @@ async fn tc_004_5_out_of_range_page_is_ignored_not_empty_today(pool: PgPool) {
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "an out-of-range page must not be an error, even before pagination is wired"
+        "an out-of-range page must not be an error"
     );
     let body = http_body_util::BodyExt::collect(response.into_body())
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let value: Value = serde_json::from_slice(&body).unwrap();
+    let results = value["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {value:?}"));
     assert_eq!(
         results.len(),
-        1,
-        "documents today's gap: page=999 is silently ignored (not read by \
-         run_search yet), so the single match still comes back instead of an \
-         empty page (fixed by IMP-REQ-004-03/04), got: {results:?}"
+        0,
+        "page=999 is far beyond the single match's page, so this page's \
+         results window must be empty, got: {value:?}"
+    );
+    assert_eq!(
+        value["total"], 1,
+        "total must still reflect the full unpaginated match count \
+         regardless of which page was requested, got: {value:?}"
+    );
+    assert_eq!(
+        value["has_more"], false,
+        "there is no further page beyond an already-out-of-range page, got: {value:?}"
     );
 }
 

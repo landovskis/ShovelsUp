@@ -1372,9 +1372,30 @@ pub async fn get_search_page(
     let lang = core::resolve_ui_locale(params.lang.as_deref(), cookie_lang, accept_language);
     let labels = search_labels(lang);
 
+    // IMP-REQ-004-05: htmx marks EVERY request it issues with
+    // `HX-Request: true` (see https://htmx.org/docs/#request-headers). When
+    // present, the request originated from an in-page htmx interaction (e.g.
+    // the eventual infinite-scroll "load more" trigger wired by
+    // IMP-REQ-004-07) that only needs to swap the results region, so this
+    // handler renders `results_fragment.html` alone rather than the full
+    // `search.html` page with its `<html>`/`<head>`/nav chrome — swapping a
+    // full document into a fragment-sized target would duplicate that chrome
+    // into the page on every subsequent request. A plain browser navigation
+    // (no `HX-Request` header) always gets the full page, exactly as before.
+    let is_htmx_request = headers
+        .get("HX-Request")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    let template_name = if is_htmx_request {
+        "results_fragment.html"
+    } else {
+        "search.html"
+    };
     let tmpl = state
         .env
-        .get_template("search.html")
+        .get_template(template_name)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let has_searched = !params.q.is_empty();
@@ -1393,11 +1414,13 @@ pub async fn get_search_page(
         None
     };
 
-    // IMP-REQ-004-04: `run_search` now also returns pagination info
-    // alongside the page's results, but `get_search_page`'s own HTML
-    // pagination behavior is IMP-REQ-004-05's job — this handler only takes
-    // the `Vec<SearchResult>` slice (`.0`) and discards the pagination info
-    // for now.
+    // IMP-REQ-004-05: `run_search`'s `PaginationInfo` is applied above (via
+    // `params.page` flowing into the `run_search` call) to window the SQL
+    // `LIMIT`/`OFFSET`, so `search_results` is already just this page's
+    // slice. The struct itself isn't yet threaded into the template context
+    // — no next/prev control renders today — since this task's scope is the
+    // HTMX full-page/fragment branch and applying `page` to the query, not
+    // the infinite-scroll pagination UI (that's IMP-REQ-004-07's job).
     let (search_results, search_error) = match search_outcome {
         Some(Ok((results, _pagination))) => (results, false),
         Some(Err(_)) => (Vec::new(), true),
