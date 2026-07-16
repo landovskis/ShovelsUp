@@ -9,7 +9,7 @@
 <ul class="search-results-list">
     {% for result in search_results %}
     <li class="search-result">
-        <a href="/projects/{{ result.project_id }}">{{ result.civic_address_normalized }}</a>
+        <a href="/projects/{{ result.project_id }}">{{ result.display_name | default(result.civic_address_normalized, true) }}</a>
         <span>{{ result.municipality_name | default("", true) }}</span>
         <span>{{ result.normalized_status | default("", true) }}</span>
         {% if result.source_language == "en" %}<span class="result-lang-badge">[EN]</span>
@@ -17,6 +17,17 @@
     </li>
     {% endfor %}
 </ul>
+<nav class="search-pagination" aria-label="Search results pages">
+    {% if current_page | default(0) > 1 %}
+    <a href="{{ prev_page_href }}" class="search-pagination-prev">{{ pagination_previous_label | default("Previous", true) }}</a>
+    {% endif %}
+    {% if current_page %}
+    <span class="search-pagination-current">{{ current_page }}</span>
+    {% endif %}
+    {% if has_more | default(false) %}
+    <a href="{{ next_page_href }}" class="search-pagination-next">{{ pagination_next_label | default("Next", true) }}</a>
+    {% endif %}
+</nav>
 {% elif has_searched | default(false) %}
 {% if municipality_empty_message %}
 <p class="search-empty">{{ municipality_empty_message }}</p>

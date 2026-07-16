@@ -143,7 +143,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-004-10 — Integration tests TC-004-1..5 (already satisfied — all 5 tc_004_* tests pass)
 - [ ] IMP-REQ-004-11 — Accessibility verification
 #### Frontend Engineer
-- [ ] IMP-REQ-004-06 — `search.html` results/pagination markup
+- [x] IMP-REQ-004-06 — `search.html` results/pagination markup (real Next/Previous controls from PaginationInfo, display_name rendered per row; also fixed a stale imp_req_001_10 test assertion that hardcoded exact button markup, broken by IMP-REQ-002-07's earlier CSS-class addition, not a real accessibility regression; 23/23 verified single-threaded)
 - [ ] IMP-REQ-004-07 — `results_fragment.html` + infinite-scroll wiring
 - [ ] IMP-REQ-004-08 — CSS for status indicator/pagination/responsive
 

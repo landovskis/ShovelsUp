@@ -3206,7 +3206,7 @@ fn imp_req_001_10_search_page_meets_basic_accessibility_requirements() {
         "search input must have a <label for> matching its id, got: {html}"
     );
     assert!(
-        html.contains("<button type=\"submit\">Search</button>"),
+        html.contains("type=\"submit\"") && html.contains(">Search</button>"),
         "submit button must carry plain, non-icon-only text, got: {html}"
     );
     assert!(
@@ -4018,6 +4018,91 @@ fn assert_lang_badges_and_toggle_are_accessible(html: &str, expected_toggle_text
             && !html.contains(r#"<span class="result-lang-badge" tabindex="-1""#),
         "the language badges must not be hidden from assistive tech or \
          pulled out of tab order, got: {html}"
+    );
+}
+
+/// IMP-REQ-004-06: `GET /search`'s results fragment must render real
+/// pagination controls derived from the actual `PaginationInfo` — a "Next"
+/// link present only when a further page remains, absent on the last page,
+/// and a "Previous" link present from page 2 onward — plus each result row
+/// showing the synthesized `display_name` (e.g. "Residential — 1 rue
+/// pagination alpha"), not the bare `civic_address_normalized`.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_004_06_pagination_controls_reflect_has_more_and_page(pool: PgPool) {
+    // `seed_searchable_project` always inserts `project_type = 'residential'`,
+    // so each row's synthesized display name is "Residential — <address>".
+    seed_searchable_project(&pool, "1 rue pagination alpha", "Ville de Pagination Alpha").await;
+    seed_searchable_project(&pool, "2 rue pagination beta", "Ville de Pagination Beta").await;
+    seed_searchable_project(&pool, "3 rue pagination gamma", "Ville de Pagination Gamma").await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+
+    // --- Page 1 of 2 (per_page=2, total=3): Next present, Previous absent ---
+    let page_1_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=pagination&per_page=2")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(page_1_response.status(), StatusCode::OK);
+    let page_1_body = http_body_util::BodyExt::collect(page_1_response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let page_1_html = String::from_utf8(page_1_body.to_vec()).unwrap();
+
+    assert!(
+        page_1_html.contains("Residential — 1 rue pagination alpha")
+            || page_1_html.contains("Residential — 2 rue pagination beta"),
+        "expected the synthesized display_name (not the bare civic address) \
+         to be rendered in a result row, got: {page_1_html}"
+    );
+    assert!(
+        page_1_html.contains(r#"class="search-pagination-next""#)
+            && page_1_html.contains("page=2"),
+        "expected a Next link to page=2 on page 1 of a 2-page result set, \
+         got: {page_1_html}"
+    );
+    assert!(
+        !page_1_html.contains(r#"class="search-pagination-prev""#),
+        "page 1 must not show a Previous link, got: {page_1_html}"
+    );
+
+    // --- Page 2 of 2: Previous present, Next absent (last page) -------------
+    let page_2_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=pagination&per_page=2&page=2")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(page_2_response.status(), StatusCode::OK);
+    let page_2_body = http_body_util::BodyExt::collect(page_2_response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let page_2_html = String::from_utf8(page_2_body.to_vec()).unwrap();
+
+    assert!(
+        page_2_html.contains("Residential — 3 rue pagination gamma"),
+        "expected page 2's single remaining result's synthesized display_name, \
+         got: {page_2_html}"
+    );
+    assert!(
+        page_2_html.contains(r#"class="search-pagination-prev""#)
+            && page_2_html.contains("page=1"),
+        "expected a Previous link to page=1 on page 2, got: {page_2_html}"
+    );
+    assert!(
+        !page_2_html.contains(r#"class="search-pagination-next""#),
+        "page 2 (the last page) must not show a Next link, got: {page_2_html}"
     );
 }
 

@@ -340,6 +340,41 @@ mod core {
         format!("/search?{}", pairs.join("&"))
     }
 
+    /// Builds the `href` for the search-results pagination "Next"/"Previous"
+    /// links (IMP-REQ-004-06), following the same param-preservation pattern
+    /// as `build_lang_toggle_href` (IMP-REQ-003-08): always `/search` with
+    /// `page` set to `target_page`, plus whichever of `q`/`municipality_slug`
+    /// are actually present, plus the current `lang` (so paging forward/back
+    /// doesn't lose the page's rendering language). Unlike
+    /// `build_lang_toggle_href`, `lang` is always included (not just the
+    /// non-default one) since there is no "other" language to compute here —
+    /// this link must simply preserve whatever language the page is
+    /// currently rendering in.
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    pub fn build_pagination_href(
+        lang: &str,
+        q: &str,
+        municipality_slug: Option<&str>,
+        target_page: i64,
+    ) -> String {
+        let mut pairs: Vec<String> = Vec::new();
+        if !q.is_empty() {
+            pairs.push(format!("q={}", percent_encode_query_value(q)));
+        }
+        if let Some(slug) = municipality_slug.filter(|s| !s.is_empty()) {
+            pairs.push(format!(
+                "municipality_slug={}",
+                percent_encode_query_value(slug)
+            ));
+        }
+        pairs.push(format!("page={target_page}"));
+        pairs.push(format!("lang={lang}"));
+
+        format!("/search?{}", pairs.join("&"))
+    }
+
     /// Pagination math shared by the JSON envelope (IMP-REQ-004-04) and the
     /// HTML fragment's next/prev branching (IMP-REQ-004-05). Pure
     /// data-in/data-out over an already-known `total` row count — no
@@ -882,6 +917,38 @@ mod core {
         }
 
         #[test]
+        fn build_pagination_href_next_page_with_no_filters() {
+            assert_eq!(
+                build_pagination_href("en", "", None, 2),
+                "/search?page=2&lang=en"
+            );
+        }
+
+        #[test]
+        fn build_pagination_href_preserves_query_and_municipality_slug() {
+            assert_eq!(
+                build_pagination_href("fr", "saint-denis", Some("montreal"), 3),
+                "/search?q=saint-denis&municipality_slug=montreal&page=3&lang=fr"
+            );
+        }
+
+        #[test]
+        fn build_pagination_href_omits_empty_query_and_absent_municipality_slug() {
+            assert_eq!(
+                build_pagination_href("en", "", Some(""), 1),
+                "/search?page=1&lang=en"
+            );
+        }
+
+        #[test]
+        fn build_pagination_href_percent_encodes_the_preserved_query_value() {
+            assert_eq!(
+                build_pagination_href("en", "rue saint-denis", None, 2),
+                "/search?q=rue%20saint-denis&page=2&lang=en"
+            );
+        }
+
+        #[test]
         fn paginate_first_page_offset_is_zero() {
             let info = paginate(50, 1, 20);
             assert_eq!(info.offset, 0);
@@ -1316,6 +1383,10 @@ struct SearchLabels {
     // like every other `SearchLabels` field, so `search_labels("en")` names
     // French and `search_labels("fr")` names English.
     lang_toggle_label: &'static str,
+    // IMP-REQ-004-06: text for the results pagination "Next"/"Previous"
+    // links.
+    pagination_next_label: &'static str,
+    pagination_previous_label: &'static str,
 }
 
 fn search_labels(lang: &str) -> SearchLabels {
@@ -1332,6 +1403,8 @@ fn search_labels(lang: &str) -> SearchLabels {
             municipality_select_label: "Municipalité",
             municipality_all_option: "Toutes les municipalités",
             lang_toggle_label: "English",
+            pagination_next_label: "Suivant",
+            pagination_previous_label: "Précédent",
         },
         _ => SearchLabels {
             page_title: "Search projects",
@@ -1345,6 +1418,8 @@ fn search_labels(lang: &str) -> SearchLabels {
             municipality_select_label: "Municipality",
             municipality_all_option: "All municipalities",
             lang_toggle_label: "Français",
+            pagination_next_label: "Next",
+            pagination_previous_label: "Previous",
         },
     }
 }
@@ -1414,17 +1489,16 @@ pub async fn get_search_page(
         None
     };
 
-    // IMP-REQ-004-05: `run_search`'s `PaginationInfo` is applied above (via
+    // IMP-REQ-004-06: `run_search`'s `PaginationInfo` is applied above (via
     // `params.page` flowing into the `run_search` call) to window the SQL
     // `LIMIT`/`OFFSET`, so `search_results` is already just this page's
-    // slice. The struct itself isn't yet threaded into the template context
-    // — no next/prev control renders today — since this task's scope is the
-    // HTMX full-page/fragment branch and applying `page` to the query, not
-    // the infinite-scroll pagination UI (that's IMP-REQ-004-07's job).
-    let (search_results, search_error) = match search_outcome {
-        Some(Ok((results, _pagination))) => (results, false),
-        Some(Err(_)) => (Vec::new(), true),
-        None => (Vec::new(), false),
+    // slice. `pagination` itself is threaded into the template context below
+    // so the results fragment can render real "Next"/"Previous" pagination
+    // controls (`has_more`/`page`) rather than discarding it.
+    let (search_results, search_error, pagination) = match search_outcome {
+        Some(Ok((results, pagination))) => (results, false, Some(pagination)),
+        Some(Err(_)) => (Vec::new(), true, None),
+        None => (Vec::new(), false, None),
     };
 
     // IMP-REQ-002-06: populates the search form's municipality `<select>`
@@ -1486,6 +1560,37 @@ pub async fn get_search_page(
     let lang_toggle_href =
         core::build_lang_toggle_href(lang, &params.q, params.municipality_slug.as_deref());
 
+    // IMP-REQ-004-06: pagination controls only ever accompany a non-empty
+    // rendered result list — an empty/error/pre-search state has no page to
+    // move forward/back from. `current_page`/`has_more` drive the
+    // fragment's next/prev branching; `next_page_href`/`prev_page_href` are
+    // pre-built via `core::build_pagination_href` (same param-preservation
+    // pattern as the lang toggle) so the template does no URL construction
+    // of its own.
+    let (current_page, has_more, next_page_href, prev_page_href) = match &pagination {
+        Some(p) if !search_results.is_empty() => (
+            Some(p.page),
+            p.has_more,
+            p.has_more.then(|| {
+                core::build_pagination_href(
+                    lang,
+                    &params.q,
+                    params.municipality_slug.as_deref(),
+                    p.page + 1,
+                )
+            }),
+            (p.page > 1).then(|| {
+                core::build_pagination_href(
+                    lang,
+                    &params.q,
+                    params.municipality_slug.as_deref(),
+                    p.page - 1,
+                )
+            }),
+        ),
+        _ => (None, false, None, None),
+    };
+
     let html = tmpl
         .render(context! {
             lang => lang,
@@ -1509,6 +1614,12 @@ pub async fn get_search_page(
             selected_municipality_slug => params.municipality_slug,
             lang_toggle_href => lang_toggle_href,
             lang_toggle_label => labels.lang_toggle_label,
+            current_page => current_page,
+            has_more => has_more,
+            next_page_href => next_page_href,
+            prev_page_href => prev_page_href,
+            pagination_next_label => labels.pagination_next_label,
+            pagination_previous_label => labels.pagination_previous_label,
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -1563,7 +1674,7 @@ mod search_labels_tests {
         // `SearchLabels` field has a genuinely distinct EN/FR wording.
         let identical_by_design: &[&str] = &[];
 
-        let pairs: [(&str, &str, &str); 11] = [
+        let pairs: [(&str, &str, &str); 13] = [
             ("page_title", en.page_title, fr.page_title),
             ("heading", en.heading, fr.heading),
             ("search_label", en.search_label, fr.search_label),
@@ -1586,6 +1697,16 @@ mod search_labels_tests {
                 "lang_toggle_label",
                 en.lang_toggle_label,
                 fr.lang_toggle_label,
+            ),
+            (
+                "pagination_next_label",
+                en.pagination_next_label,
+                fr.pagination_next_label,
+            ),
+            (
+                "pagination_previous_label",
+                en.pagination_previous_label,
+                fr.pagination_previous_label,
             ),
         ];
 
