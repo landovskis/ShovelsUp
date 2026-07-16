@@ -340,6 +340,99 @@ mod core {
         format!("/search?{}", pairs.join("&"))
     }
 
+    /// Pagination math shared by the JSON envelope (IMP-REQ-004-04) and the
+    /// HTML fragment's next/prev branching (IMP-REQ-004-05). Pure
+    /// data-in/data-out over an already-known `total` row count — no
+    /// database access, no HTTP, no clock, no environment reads.
+    ///
+    /// `page` is 1-indexed. Any `page < 1` is clamped to `1` rather than
+    /// rejected: an out-of-range page is defined by this task's plan as "not
+    /// an error" (TC-004-5 pins this for a too-high page; a too-low/negative
+    /// page is treated the same way for consistency, simply clamped to the
+    /// first page instead of the last).
+    ///
+    /// `per_page` is expected to have already passed
+    /// `validate_search_params` (so it is `>= 1`); a non-positive `per_page`
+    /// is defensively clamped to `1` here too so `offset`/`has_more` stay
+    /// well-defined even if a caller skips validation, rather than this
+    /// function dividing-by-zero or returning a nonsensical negative
+    /// `offset`.
+    ///
+    /// `offset = (page - 1) * per_page`. `has_more` is `true` when at least
+    /// one further row exists past this page's window
+    /// (`offset + per_page < total`); a `page` far beyond the last page
+    /// yields a large `offset`, which callers use as a `LIMIT`/`OFFSET` SQL
+    /// clause that naturally returns zero rows, and `has_more` correctly
+    /// comes back `false` since `offset` alone already exceeds `total`.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[allow(dead_code)] // Not yet wired into a handler; consumed by IMP-REQ-004-04/05.
+    pub struct PaginationInfo {
+        pub page: i64,
+        pub per_page: i64,
+        pub total: i64,
+        pub offset: i64,
+        pub has_more: bool,
+    }
+
+    #[allow(dead_code)] // Not yet wired into a handler; consumed by IMP-REQ-004-04/05.
+    pub fn paginate(total: i64, page: i64, per_page: i64) -> PaginationInfo {
+        let page = page.max(1);
+        let per_page = per_page.max(1);
+        let offset = (page - 1) * per_page;
+        let has_more = offset + per_page < total;
+        PaginationInfo {
+            page,
+            per_page,
+            total,
+            offset,
+            has_more,
+        }
+    }
+
+    /// Synthesizes a `SearchResult`'s display name from its civic address
+    /// and (optional) project type (IMP-REQ-004-09), e.g. `project_type =
+    /// Some("demolition")`, `civic_address = "123 main st"` yields
+    /// `"Demolition — 123 main st"`. See `SearchResult::display_name`'s doc
+    /// comment for the target-state shape this feeds.
+    ///
+    /// `project_type` is free text from the extraction pipeline (no fixed
+    /// enum backs it — see `projects.project_type TEXT`), so this only
+    /// capitalizes its first character for a presentable label; it does not
+    /// otherwise reformat or translate the value. `civic_address` is passed
+    /// through unchanged — it is not this function's job to re-normalize an
+    /// address that `civic_address_normalized` has already normalized
+    /// upstream.
+    ///
+    /// A `None` or blank/whitespace-only `project_type` is treated as "no
+    /// category to prefix" and the civic address is returned alone, without
+    /// a dangling separator.
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    #[allow(dead_code)] // Not yet wired into a handler; consumed by IMP-REQ-004-09.
+    pub fn synthesize_display_name(civic_address: &str, project_type: Option<&str>) -> String {
+        match project_type.map(str::trim).filter(|s| !s.is_empty()) {
+            Some(project_type) => format!(
+                "{} — {}",
+                capitalize_first_char(project_type),
+                civic_address
+            ),
+            None => civic_address.to_string(),
+        }
+    }
+
+    /// Capitalizes only the first character of `s`, leaving the rest
+    /// untouched (so e.g. an already-mixed-case or accented value isn't
+    /// mangled beyond its leading character). Empty input returns empty
+    /// output.
+    fn capitalize_first_char(s: &str) -> String {
+        let mut chars = s.chars();
+        match chars.next() {
+            Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            None => String::new(),
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -788,6 +881,148 @@ mod core {
             assert_eq!(
                 build_lang_toggle_href("en", "rue saint-denis", None),
                 "/search?q=rue%20saint-denis&lang=fr"
+            );
+        }
+
+        #[test]
+        fn paginate_first_page_offset_is_zero() {
+            let info = paginate(50, 1, 20);
+            assert_eq!(info.offset, 0);
+            assert_eq!(info.page, 1);
+            assert_eq!(info.per_page, 20);
+            assert_eq!(info.total, 50);
+            assert!(info.has_more);
+        }
+
+        #[test]
+        fn paginate_middle_page_offset_and_has_more() {
+            let info = paginate(50, 2, 20);
+            assert_eq!(info.offset, 20);
+            assert!(info.has_more);
+        }
+
+        #[test]
+        fn paginate_last_full_page_has_no_more() {
+            // total=50, per_page=20: page 3 covers rows 40..50 exactly.
+            let info = paginate(50, 3, 20);
+            assert_eq!(info.offset, 40);
+            assert!(!info.has_more);
+        }
+
+        #[test]
+        fn paginate_exact_multiple_boundary_has_no_more() {
+            // total is an exact multiple of per_page: the last page's window
+            // ends precisely at `total`, so there is nothing further.
+            let info = paginate(40, 2, 20);
+            assert_eq!(info.offset, 20);
+            assert!(!info.has_more);
+        }
+
+        #[test]
+        fn paginate_page_beyond_the_last_page_yields_empty_window_and_no_more() {
+            // TC-004-5: an out-of-range page must not be an error; the
+            // resulting offset simply lands past `total`, which a
+            // LIMIT/OFFSET query turns into zero rows, and has_more is false.
+            let info = paginate(1, 999, 20);
+            assert_eq!(info.offset, 999 * 20 - 20);
+            assert!(!info.has_more);
+        }
+
+        #[test]
+        fn paginate_zero_total_never_has_more() {
+            let info = paginate(0, 1, 20);
+            assert_eq!(info.offset, 0);
+            assert!(!info.has_more);
+        }
+
+        #[test]
+        fn paginate_page_zero_is_clamped_to_first_page() {
+            let info = paginate(50, 0, 20);
+            assert_eq!(info.page, 1);
+            assert_eq!(info.offset, 0);
+        }
+
+        #[test]
+        fn paginate_negative_page_is_clamped_to_first_page() {
+            let info = paginate(50, -5, 20);
+            assert_eq!(info.page, 1);
+            assert_eq!(info.offset, 0);
+        }
+
+        #[test]
+        fn paginate_non_positive_per_page_is_defensively_clamped_to_one() {
+            let info = paginate(50, 1, 0);
+            assert_eq!(info.per_page, 1);
+            assert_eq!(info.offset, 0);
+
+            let info = paginate(50, 3, -10);
+            assert_eq!(info.per_page, 1);
+            assert_eq!(info.offset, 2);
+        }
+
+        #[test]
+        fn paginate_single_result_single_page_has_no_more() {
+            let info = paginate(1, 1, 20);
+            assert_eq!(info.offset, 0);
+            assert!(!info.has_more);
+        }
+
+        #[test]
+        fn synthesize_display_name_with_project_type_capitalizes_and_joins_with_em_dash() {
+            assert_eq!(
+                synthesize_display_name("123 main st", Some("demolition")),
+                "Demolition — 123 main st"
+            );
+        }
+
+        #[test]
+        fn synthesize_display_name_preserves_already_capitalized_project_type() {
+            assert_eq!(
+                synthesize_display_name("123 main st", Some("Demolition")),
+                "Demolition — 123 main st"
+            );
+        }
+
+        #[test]
+        fn synthesize_display_name_none_project_type_returns_address_alone() {
+            assert_eq!(
+                synthesize_display_name("123 main st", None),
+                "123 main st"
+            );
+        }
+
+        #[test]
+        fn synthesize_display_name_blank_project_type_returns_address_alone() {
+            assert_eq!(synthesize_display_name("123 main st", Some("")), "123 main st");
+            assert_eq!(
+                synthesize_display_name("123 main st", Some("   ")),
+                "123 main st"
+            );
+        }
+
+        #[test]
+        fn synthesize_display_name_trims_surrounding_whitespace_on_project_type() {
+            assert_eq!(
+                synthesize_display_name("123 main st", Some("  demolition  ")),
+                "Demolition — 123 main st"
+            );
+        }
+
+        #[test]
+        fn synthesize_display_name_handles_multi_byte_utf8_first_character() {
+            // "é" is a multi-byte UTF-8 scalar; capitalization must not panic
+            // or corrupt it, and only the leading character is affected.
+            assert_eq!(
+                synthesize_display_name("123 rue principale", Some("étude")),
+                "Étude — 123 rue principale"
+            );
+        }
+
+        #[test]
+        fn synthesize_display_name_empty_civic_address_still_prefixes_project_type() {
+            assert_eq!(
+                synthesize_display_name("", Some("demolition")),
+                "Demolition — "
             );
         }
     }
