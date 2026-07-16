@@ -82,9 +82,8 @@ mod core {
     /// Pure data-in/data-out: no database access, no HTTP, no clock, no
     /// environment reads.
     ///
-    /// Loop A stub: not called from `run_search` yet — wiring it in
-    /// (including the live-table existence check) is IMP-REQ-002-04's job.
-    #[allow(dead_code)]
+    /// Wired into `run_search` (IMP-REQ-002-04), which layers the live-table
+    /// existence check on top.
     pub fn validate_municipality_slug(
         raw: Option<String>,
     ) -> Result<Option<String>, SearchValidationError> {
@@ -410,11 +409,9 @@ pub struct SearchParams {
     #[serde(default)]
     pub q: String,
     pub per_page: Option<i64>,
-    // Loop A stub: filtering logic added by IMP-REQ-002-04. Field exists so
-    // TC-002-* tests in search_integration.rs compile against the future
-    // `municipality_slug` query param; `run_search` does not read it yet,
-    // and no validation against the `municipalities` table happens yet
-    // (that's IMP-REQ-002-03/-04).
+    // IMP-REQ-002-04: syntactically validated via `core::validate_municipality_slug`,
+    // then checked against the live `municipalities` table, then applied as
+    // an `AND municipality_slug = $N` filter in `run_search`.
     pub municipality_slug: Option<String>,
     // Loop A stub: pagination wired by IMP-REQ-004-03/04. `run_search` does
     // not read this yet; TC-004-5 documents today's unpaginated-boundary gap.
@@ -487,21 +484,48 @@ async fn run_search(
     pool: &sqlx::PgPool,
     q: &str,
     per_page: Option<i64>,
+    municipality_slug: Option<String>,
 ) -> Result<Vec<SearchResult>, StatusCode> {
     let core::ValidatedSearchParams { per_page } =
         core::validate_search_params(per_page).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    // IMP-REQ-002-04: syntactic validation first (TC-002-2/-6), before any
+    // DB query runs.
+    let municipality_slug = core::validate_municipality_slug(municipality_slug)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    // If a slug was supplied and is syntactically valid, it must also exist
+    // in the live `municipalities` table (TC-002-2: a slug that is
+    // well-formed but doesn't exist is still rejected with 400, not silently
+    // treated as "no matches").
+    if let Some(slug) = &municipality_slug {
+        let exists = sqlx::query_scalar!(
+            "SELECT EXISTS(SELECT 1 FROM municipalities WHERE slug = $1)",
+            slug
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .unwrap_or(false);
+
+        if !exists {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
 
     let keyword = format!("%{q}%");
     let rows = sqlx::query!(
         r#"
         SELECT project_id, civic_address_normalized, municipality_name, project_type, normalized_status
         FROM public_search_documents
-        WHERE civic_address_normalized ILIKE $1 OR municipality_name ILIKE $1
+        WHERE (civic_address_normalized ILIKE $1 OR municipality_name ILIKE $1)
+          AND ($3::text IS NULL OR municipality_slug = $3)
         ORDER BY civic_address_normalized ASC
         LIMIT $2
         "#,
         keyword,
-        per_page
+        per_page,
+        municipality_slug
     )
     .fetch_all(pool)
     .await
@@ -535,7 +559,13 @@ pub async fn search_projects(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,
 ) -> Result<Json<Vec<SearchResult>>, StatusCode> {
-    let results = run_search(&state.db, &params.q, params.per_page).await?;
+    let results = run_search(
+        &state.db,
+        &params.q,
+        params.per_page,
+        params.municipality_slug,
+    )
+    .await?;
     Ok(Json(results))
 }
 
@@ -616,7 +646,15 @@ pub async fn get_search_page(
 
     let has_searched = !params.q.is_empty();
     let search_outcome = if has_searched {
-        Some(run_search(&state.db, &params.q, params.per_page).await)
+        Some(
+            run_search(
+                &state.db,
+                &params.q,
+                params.per_page,
+                params.municipality_slug.clone(),
+            )
+            .await,
+        )
     } else {
         None
     };

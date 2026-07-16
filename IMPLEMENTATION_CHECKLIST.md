@@ -82,7 +82,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 
 ⚠️ **Local-environment note (not a code issue):** local dev Postgres had a pre-existing checksum drift on migration 2 blocking `sqlx migrate run` (predates this session). Migration 017 was applied directly via psql to unblock compile-time query checks; the migration file itself is untouched. Flagging so a real deploy/CI environment run applies migrations normally rather than assuming this workaround is needed elsewhere.
 - [x] IMP-REQ-002-03 — Pure `validate_municipality_slug` core function (syntactic-only; live-table check deferred to IMP-REQ-002-04 per plan's own notes; 10 unit tests, 306/253/53, zero regressions)
-- [ ] IMP-REQ-002-04 — Wire municipality filter + validation into handlers
+- [x] IMP-REQ-002-04 — Wire municipality filter + validation into handlers (all 6 tc_002_* tests pass, 314/266/48; also fixed a test-fixture bug where seed_searchable_project always created a random-slugged municipality instead of using the real pre-seeded montreal/toronto/vancouver rows tc_002_1/3/6 query by slug)
 - [x] IMP-REQ-002-05 — `municipality_display_name` EN/FR helper (8 unit tests, 314/261/53, zero regressions)
 - [ ] IMP-REQ-002-09 — Automate all 6 system test cases
 - [ ] IMP-REQ-002-10 — Accessibility verification (keyboard, screen reader, contrast)

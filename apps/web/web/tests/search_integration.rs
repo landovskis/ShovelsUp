@@ -83,6 +83,78 @@ async fn seed_searchable_project(
     project_id
 }
 
+/// Like `seed_searchable_project`, but attaches the project to one of the
+/// REAL, pre-seeded launch municipalities (migration 002: slugs
+/// `montreal`/`toronto`/`vancouver`) instead of creating a fresh
+/// randomly-slugged municipality row.
+///
+/// `seed_searchable_project` can't be used for `municipality_slug`-filter
+/// tests (TC-002-1/-3/-6): it always inserts a brand-new municipality with
+/// slug `slug-{uuid}`, so a query for the real slug `montreal` would never
+/// match anything it seeds — the query and the fixture were talking about
+/// two different municipality rows entirely. This helper looks up the real
+/// municipality by its real slug (seeded by migration 002, present in every
+/// test's migrated DB) and attaches the new project's document chain to it.
+async fn seed_searchable_project_for_municipality_slug(
+    pool: &PgPool,
+    civic_address_normalized: &str,
+    municipality_slug: &str,
+) -> Uuid {
+    let project_id = sqlx::query_scalar!(
+        "INSERT INTO projects (civic_address_normalized, project_type) VALUES ($1, 'residential') RETURNING id",
+        civic_address_normalized,
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+
+    let municipality_id = sqlx::query_scalar!(
+        "SELECT id FROM municipalities WHERE slug = $1",
+        municipality_slug
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or_else(|_| panic!("expected migration 002 to have seeded municipality slug '{municipality_slug}'"));
+
+    // Real municipalities (unlike the fresh, always-unique ones
+    // `seed_searchable_project` creates) are shared across multiple calls
+    // within the same test, so `source_documents`'s
+    // `(municipality_id, checksum)` UNIQUE constraint requires a distinct
+    // checksum per call, not the literal `'chk'` constant.
+    let suffix = Uuid::new_v4();
+    let doc_id = sqlx::query_scalar!(
+        "INSERT INTO source_documents (municipality_id, source_url, checksum, content, content_type) \
+         VALUES ($1, $2, $3, ''::bytea, 'text/html') RETURNING id",
+        municipality_id,
+        format!("https://{suffix}.example/doc"),
+        suffix.to_string(),
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let chunk_id = sqlx::query_scalar!(
+        "INSERT INTO document_chunks (source_document_id, chunk_index, content) \
+         VALUES ($1, 0, 'chunk text') RETURNING id",
+        doc_id
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query!(
+        "INSERT INTO project_mentions \
+         (document_chunk_id, project_id, physical_work, civic_address, project_type, scale_units, normalized_status) \
+         VALUES ($1, $2, true, $3, 'residential', 1, 'approved')",
+        chunk_id,
+        project_id,
+        civic_address_normalized,
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+
+    project_id
+}
+
 /// Loop A helper for TC-008-1/-2: like `seed_searchable_project` but lets the
 /// caller set `project_type` (including `None`), used as a stand-in signal
 /// for the future `category_code` column (TODO(IMP-REQ-008-02): once
@@ -445,9 +517,13 @@ async fn tc_001_6_french_locale_no_modal(pool: PgPool) {
 /// projects come back).
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_002_1_valid_municipality_slug_returns_only_that_municipality(pool: PgPool) {
-    let montreal_project =
-        seed_searchable_project(&pool, "1000 rue sainte-catherine", "Montreal Borough One").await;
-    seed_searchable_project(&pool, "1000 yonge street", "Toronto Borough One").await;
+    let montreal_project = seed_searchable_project_for_municipality_slug(
+        &pool,
+        "1000 rue sainte-catherine",
+        "montreal",
+    )
+    .await;
+    seed_searchable_project_for_municipality_slug(&pool, "1000 yonge street", "toronto").await;
     refresh_public_search_index(&pool).await.unwrap();
 
     let app = app(test_state(pool).await);
@@ -521,9 +597,10 @@ async fn tc_002_2_unknown_municipality_slug_rejected_before_query(pool: PgPool) 
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_002_3_keyword_and_municipality_slug_combine_with_and(pool: PgPool) {
     let matching =
-        seed_searchable_project(&pool, "500 rue principale", "Montreal Ward Alpha").await;
-    seed_searchable_project(&pool, "600 avenue du parc", "Montreal Ward Beta").await;
-    seed_searchable_project(&pool, "700 principale road", "Toronto Ward Alpha").await;
+        seed_searchable_project_for_municipality_slug(&pool, "500 rue principale", "montreal")
+            .await;
+    seed_searchable_project_for_municipality_slug(&pool, "600 avenue du parc", "montreal").await;
+    seed_searchable_project_for_municipality_slug(&pool, "700 principale road", "toronto").await;
     refresh_public_search_index(&pool).await.unwrap();
 
     let app = app(test_state(pool).await);
@@ -646,9 +723,13 @@ async fn tc_002_5_valid_slug_with_no_matches_returns_empty_list(pool: PgPool) {
 /// filtered result count fails.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_002_6_municipality_slug_is_case_normalized(pool: PgPool) {
-    let montreal_project =
-        seed_searchable_project(&pool, "9 place jacques-cartier", "Montreal District Y").await;
-    seed_searchable_project(&pool, "9 dundas square", "Toronto District Y").await;
+    let montreal_project = seed_searchable_project_for_municipality_slug(
+        &pool,
+        "9 place jacques-cartier",
+        "montreal",
+    )
+    .await;
+    seed_searchable_project_for_municipality_slug(&pool, "9 dundas square", "toronto").await;
     refresh_public_search_index(&pool).await.unwrap();
 
     let app = app(test_state(pool).await);
