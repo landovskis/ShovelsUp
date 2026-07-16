@@ -119,7 +119,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [ ] IMP-REQ-003-10 — Implement all 5 test cases
 - [ ] IMP-REQ-003-11 — Accessibility verification
 #### Frontend Engineer
-- [ ] IMP-REQ-003-06 — Build `search_results.html` states per UI mockup
+- [x] IMP-REQ-003-06 — Build `search_results.html` states per UI mockup (no separate file exists, confirmed; per-row badge attribution already correct via Minijinja loop scoping, locked in by new mixed-language test)
 - [ ] IMP-REQ-003-07 — Responsive breakpoints
 - [ ] IMP-REQ-003-08 — `?lang=` toggle + cookie persistence
 

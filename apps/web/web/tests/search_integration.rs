@@ -3516,6 +3516,91 @@ async fn imp_req_002_08_invalid_municipality_slug_renders_friendly_error_not_bar
     );
 }
 
+/// IMP-REQ-003-06: with TWO documents of different `source_language` values
+/// both matching the same query in a single result set, each row's
+/// `[EN]`/`[FR]` badge must be attributed to that row's own result, not
+/// (e.g.) both showing the first result's language. TC-003-5 only ever
+/// seeded a single English-language result, so it could not catch a bug
+/// where the badge failed to vary per-row within a shared `{% for %}` loop
+/// (e.g. a template accidentally closing over the first iteration's
+/// variable, or asserting only "the string [FR] appears somewhere in the
+/// page" without checking which row it's attached to).
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_003_06_mixed_language_result_set_shows_correct_badges_per_row(pool: PgPool) {
+    seed_searchable_project_with_language(
+        &pool,
+        "15 avenue bilingue english",
+        "Ville de Mixed Alpha",
+        "en",
+    )
+    .await;
+    seed_searchable_project_with_language(
+        &pool,
+        "25 avenue bilingue french",
+        "Ville de Mixed Beta",
+        "fr",
+    )
+    .await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=bilingue")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    // Split the results list into individual `<li class="search-result">`
+    // rows so each badge can be checked against ITS OWN row's civic address,
+    // rather than just confirming "[EN]" and "[FR]" both appear somewhere in
+    // the page (which would also pass if both badges were wrongly attached
+    // to the same row).
+    let rows: Vec<&str> = html.split(r#"<li class="search-result">"#).collect();
+    assert_eq!(
+        rows.len(),
+        3, // rows[0] is everything before the first <li>, then 2 result rows
+        "expected exactly 2 search-result rows in the mixed-language result \
+         set, got HTML: {html}"
+    );
+
+    let english_row = rows
+        .iter()
+        .find(|row| row.contains("15 avenue bilingue english"))
+        .unwrap_or_else(|| panic!("expected a row for the English result, got: {html}"));
+    let french_row = rows
+        .iter()
+        .find(|row| row.contains("25 avenue bilingue french"))
+        .unwrap_or_else(|| panic!("expected a row for the French result, got: {html}"));
+
+    assert!(
+        english_row.contains("[EN]"),
+        "the English-sourced row must carry the [EN] badge, got row: {english_row}"
+    );
+    assert!(
+        !english_row.contains("[FR]"),
+        "the English-sourced row must NOT carry the [FR] badge, got row: {english_row}"
+    );
+    assert!(
+        french_row.contains("[FR]"),
+        "the French-sourced row must carry the [FR] badge, got row: {french_row}"
+    );
+    assert!(
+        !french_row.contains("[EN]"),
+        "the French-sourced row must NOT carry the [EN] badge, got row: {french_row}"
+    );
+}
+
 fn rand_octet() -> u8 {
     use std::time::{SystemTime, UNIX_EPOCH};
     (SystemTime::now()
