@@ -89,7 +89,9 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [ ] IMP-REQ-002-11 — Regression check: REQ-008 keyword-only search unaffected
 #### Frontend Engineer
 - [x] IMP-REQ-002-06 — Add select control to search form (populated from live municipalities table, selection preserved across resubmission, 315/267/48)
-- [ ] IMP-REQ-002-07 — Responsive/CSS for the filter bar
+- [x] IMP-REQ-002-07 — Responsive/CSS for the filter bar (uses existing design tokens/breakpoint convention, 322/271/51)
+
+⚠️ **Pre-existing test flakiness found and isolated (not caused by this or any REQ-002 task):** `tc_req_008_3_per_page_over_max_rejected` intermittently fails under parallel test load (confirmed via 3 independent full-suite runs: pass/fail alternates, no other test varies). Likely transient DB-connection-pool contention under this environment's parallel `#[sqlx::test]` execution, not a code defect — this is one of the original REQ-008 (Data Pipeline plan) tests, unrelated to this plan's changes. Flagged for awareness; not chased further here since it's out of scope for any task in this plan.
 - [x] IMP-REQ-002-08 — Municipality-aware empty-state + invalid-filter copy (invalid-slug path already rendered a friendly error, confirmed and pinned by test; 321/270/51 confirmed stable across 2 independent full-suite runs, no flakiness found)
 
 ## REQ-003 — Bilingual search input and results

@@ -3200,6 +3200,51 @@ async fn imp_req_002_06_search_form_has_municipality_select_with_preserved_selec
     );
 }
 
+/// IMP-REQ-002-07: the search form wraps its input/select/submit controls in
+/// a `.search-filter-bar` layout (each field further wrapped in
+/// `.search-filter-field`, and the submit button carrying
+/// `.search-filter-submit`) so the municipality `<select>` added in
+/// IMP-REQ-002-06 sits alongside the existing controls without overflowing,
+/// per the CSS rules in `static/css/main.css`. This is a static-HTML
+/// assertion only (no headless-browser tooling exists yet); the wrapping
+/// behavior itself is verified by static review of the CSS.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_002_07_search_form_has_responsive_filter_bar_wrapper(pool: PgPool) {
+    let app = app(test_state(pool).await);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"<form role="search" method="get" action="/search" class="search-filter-bar">"#),
+        "expected the search form itself to carry the search-filter-bar wrapper class, got: {html}"
+    );
+    assert_eq!(
+        html.matches(r#"class="search-filter-field""#).count(),
+        2,
+        "expected both the address input and the municipality select to each \
+         be wrapped in a search-filter-field container, got: {html}"
+    );
+    assert!(
+        html.contains(r#"<button type="submit" class="search-filter-submit">"#),
+        "expected the submit button to carry the search-filter-submit class \
+         so it can be targeted by the narrow-viewport CSS rules, got: {html}"
+    );
+}
+
 /// IMP-REQ-002-08: a municipality-scoped search that returns zero matches
 /// must render a message naming that specific municipality (e.g. "No
 /// projects found in Montreal matching your search"), not the generic

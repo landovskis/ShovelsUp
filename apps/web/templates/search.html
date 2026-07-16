@@ -6,19 +6,23 @@
 <section class="search-page" aria-labelledby="search-heading">
     <h1 id="search-heading">{{ heading | default("Search for a project", true) }}</h1>
 
-    <form role="search" method="get" action="/search">
-        <label for="search-q">{{ search_label | default("Civic address or municipality", true) }}</label>
-        <input type="text" id="search-q" name="q" autocomplete="off" value="{{ query | default('', true) }}">
+    <form role="search" method="get" action="/search" class="search-filter-bar">
+        <div class="search-filter-field">
+            <label for="search-q">{{ search_label | default("Civic address or municipality", true) }}</label>
+            <input type="text" id="search-q" name="q" autocomplete="off" value="{{ query | default('', true) }}">
+        </div>
 
-        <label for="search-municipality-slug">{{ municipality_select_label | default("Municipality", true) }}</label>
-        <select id="search-municipality-slug" name="municipality_slug">
-            <option value=""{% if not selected_municipality_slug %} selected{% endif %}>{{ municipality_all_option | default("All municipalities", true) }}</option>
-            {% for municipality in municipalities | default([]) %}
-            <option value="{{ municipality.slug }}"{% if selected_municipality_slug == municipality.slug %} selected{% endif %}>{{ municipality.display_name }}</option>
-            {% endfor %}
-        </select>
+        <div class="search-filter-field">
+            <label for="search-municipality-slug">{{ municipality_select_label | default("Municipality", true) }}</label>
+            <select id="search-municipality-slug" name="municipality_slug">
+                <option value=""{% if not selected_municipality_slug %} selected{% endif %}>{{ municipality_all_option | default("All municipalities", true) }}</option>
+                {% for municipality in municipalities | default([]) %}
+                <option value="{{ municipality.slug }}"{% if selected_municipality_slug == municipality.slug %} selected{% endif %}>{{ municipality.display_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
 
-        <button type="submit">{{ submit_label | default("Search", true) }}</button>
+        <button type="submit" class="search-filter-submit">{{ submit_label | default("Search", true) }}</button>
     </form>
 
     <div id="search-results" aria-live="polite">
