@@ -174,6 +174,112 @@ mod core {
         }
     }
 
+    /// Normalizes a raw `q` search query string for FTS matching
+    /// (IMP-REQ-003-03). Trims outer whitespace and collapses any run of
+    /// internal whitespace (spaces, tabs, newlines) down to a single space.
+    ///
+    /// Deliberately does NOT escape or wrap the text in `to_tsquery`
+    /// operator syntax (`&`, `|`, `!`, `:*`, parentheses): this is intended
+    /// to feed Postgres's `plainto_tsquery`, which already treats its input
+    /// as plain free-text — it tokenizes on whitespace/punctuation itself
+    /// and has no operator syntax for a caller to accidentally trigger or
+    /// need escaped, unlike `to_tsquery`. Wrapping raw user text for
+    /// `to_tsquery` instead would require actual escaping of its operator
+    /// characters, which is a materially bigger job than this task's "plain
+    /// keyword search" scope calls for; if the plan later needs
+    /// `to_tsquery`'s richer operators, that's a separate follow-up, not a
+    /// speculative addition here.
+    ///
+    /// Not yet wired into `run_search` (IMP-REQ-003-04's job).
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    #[allow(dead_code)]
+    pub fn normalize_query(q: &str) -> String {
+        q.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
+    /// Parses a single lang value (an explicit `?lang=` param or a `lang`
+    /// cookie value, already extracted from the `Cookie` header by the
+    /// caller) into a recognized `"fr"`/`"en"` tag. Case-insensitive on the
+    /// exact two-letter code; anything else (garbage like `"xx"`, empty
+    /// string, a full BCP-47 tag) is treated as unrecognized rather than
+    /// guessed at, so the caller falls through to the next precedence
+    /// level instead of misinterpreting it.
+    fn parse_lang_tag(raw: &str) -> Option<&'static str> {
+        let trimmed = raw.trim();
+        if trimmed.eq_ignore_ascii_case("fr") {
+            Some("fr")
+        } else if trimmed.eq_ignore_ascii_case("en") {
+            Some("en")
+        } else {
+            None
+        }
+    }
+
+    /// Parses a raw `Accept-Language` header value the same way
+    /// `routes::detect_lang` does (first comma-separated tag, ignoring
+    /// `;q=` weights, prefix-matched against `fr`/`en`), but as a pure
+    /// function over an already-extracted `&str` rather than a `HeaderMap`,
+    /// so it can be unit-tested and reused from `resolve_ui_locale` without
+    /// an HTTP request in hand. Defaults to `"en"` when nothing recognized
+    /// is found, matching `detect_lang`'s existing behavior.
+    fn parse_accept_language(raw: &str) -> &'static str {
+        for part in raw.split(',') {
+            let tag = part.split(';').next().unwrap_or("").trim();
+            if tag.starts_with("fr") {
+                return "fr";
+            }
+            if tag.starts_with("en") {
+                return "en";
+            }
+        }
+        "en"
+    }
+
+    /// Resolves the page's UI rendering locale (IMP-REQ-003-03) from the
+    /// three sources REQ-003 commits to, in precedence order: an explicit
+    /// `?lang=` query param, then a `lang` cookie, then the
+    /// `Accept-Language` header, then `"en"` as the final default.
+    ///
+    /// Each source is tried in turn via `parse_lang_tag`
+    /// (`explicit_param`/`cookie`) or `parse_accept_language`
+    /// (`accept_language_header`); a source that is absent (`None`) or
+    /// present but unrecognized (e.g. an `xx` cookie) does not short-circuit
+    /// to the default — it simply falls through to the next source in the
+    /// precedence chain, so a garbage explicit param still lets a valid
+    /// cookie or header win, and only exhausting all three falls back to
+    /// `"en"`.
+    ///
+    /// Callers pass already-extracted values: `cookie` is the `lang` cookie's
+    /// value (not the raw `Cookie` header), and `accept_language_header` is
+    /// the raw `Accept-Language` header value (not a parsed tag) since it
+    /// needs `parse_accept_language`'s comma-list handling internally.
+    ///
+    /// Not yet wired into `get_search_page` (IMP-REQ-003-04's job, which
+    /// must also add the `?lang=` param and `Cookie` header extraction this
+    /// function depends on).
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    #[allow(dead_code)]
+    pub fn resolve_ui_locale(
+        explicit_param: Option<&str>,
+        cookie: Option<&str>,
+        accept_language_header: Option<&str>,
+    ) -> &'static str {
+        if let Some(lang) = explicit_param.and_then(parse_lang_tag) {
+            return lang;
+        }
+        if let Some(lang) = cookie.and_then(parse_lang_tag) {
+            return lang;
+        }
+        if let Some(header) = accept_language_header {
+            return parse_accept_language(header);
+        }
+        "en"
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -447,6 +553,114 @@ mod core {
             assert_eq!(
                 format_municipality_empty_message("de", "Vancouver"),
                 "No projects found in Vancouver matching your search."
+            );
+        }
+
+        #[test]
+        fn normalize_query_empty_string_stays_empty() {
+            assert_eq!(normalize_query(""), "");
+        }
+
+        #[test]
+        fn normalize_query_whitespace_only_becomes_empty() {
+            assert_eq!(normalize_query("   \t\n  "), "");
+        }
+
+        #[test]
+        fn normalize_query_trims_surrounding_whitespace() {
+            assert_eq!(normalize_query("  saint-denis  "), "saint-denis");
+        }
+
+        #[test]
+        fn normalize_query_collapses_internal_whitespace_runs() {
+            assert_eq!(normalize_query("rue   saint-denis"), "rue saint-denis");
+            assert_eq!(
+                normalize_query("rue\tsaint-denis\n\nmontreal"),
+                "rue saint-denis montreal"
+            );
+        }
+
+        #[test]
+        fn normalize_query_leaves_ordinary_text_unchanged() {
+            assert_eq!(normalize_query("demolition permit"), "demolition permit");
+        }
+
+        /// `normalize_query` intentionally does not escape or strip
+        /// characters that are operator syntax for `to_tsquery` (`&`, `|`,
+        /// `!`, `:`, parentheses) — it feeds `plainto_tsquery`, which has no
+        /// such operator syntax to escape. This pins that the characters
+        /// pass through untouched (beyond whitespace collapsing).
+        #[test]
+        fn normalize_query_leaves_special_characters_untouched() {
+            assert_eq!(
+                normalize_query("rock & roll (demolition!)"),
+                "rock & roll (demolition!)"
+            );
+            assert_eq!(normalize_query("permit:2024"), "permit:2024");
+        }
+
+        #[test]
+        fn resolve_ui_locale_explicit_param_wins_over_cookie_and_header() {
+            assert_eq!(
+                resolve_ui_locale(Some("fr"), Some("en"), Some("en")),
+                "fr"
+            );
+        }
+
+        #[test]
+        fn resolve_ui_locale_cookie_wins_over_header_when_no_explicit_param() {
+            assert_eq!(resolve_ui_locale(None, Some("fr"), Some("en")), "fr");
+        }
+
+        #[test]
+        fn resolve_ui_locale_falls_back_to_accept_language_header_alone() {
+            assert_eq!(resolve_ui_locale(None, None, Some("fr")), "fr");
+            assert_eq!(resolve_ui_locale(None, None, Some("en")), "en");
+        }
+
+        #[test]
+        fn resolve_ui_locale_defaults_to_english_when_nothing_present() {
+            assert_eq!(resolve_ui_locale(None, None, None), "en");
+        }
+
+        /// An invalid/garbage explicit param (e.g. `xx`) does not win by
+        /// virtue of being present — it's unrecognized, so resolution falls
+        /// through to the cookie.
+        #[test]
+        fn resolve_ui_locale_invalid_explicit_param_falls_through_to_cookie() {
+            assert_eq!(
+                resolve_ui_locale(Some("xx"), Some("fr"), Some("en")),
+                "fr"
+            );
+        }
+
+        /// An invalid/garbage cookie value falls through to the
+        /// `Accept-Language` header rather than being treated as a match or
+        /// panicking.
+        #[test]
+        fn resolve_ui_locale_invalid_cookie_falls_through_to_header() {
+            assert_eq!(resolve_ui_locale(None, Some("xx"), Some("fr")), "fr");
+        }
+
+        /// When every source is either absent or unrecognized, resolution
+        /// still falls back to the `"en"` default rather than panicking.
+        #[test]
+        fn resolve_ui_locale_all_invalid_or_absent_defaults_to_english() {
+            assert_eq!(resolve_ui_locale(Some("xx"), Some("zz"), None), "en");
+            assert_eq!(resolve_ui_locale(Some(""), Some(""), Some("")), "en");
+        }
+
+        #[test]
+        fn resolve_ui_locale_explicit_param_is_case_insensitive() {
+            assert_eq!(resolve_ui_locale(Some("FR"), None, None), "fr");
+            assert_eq!(resolve_ui_locale(Some("En"), None, None), "en");
+        }
+
+        #[test]
+        fn resolve_ui_locale_accept_language_header_uses_first_recognized_tag_with_quality_weights() {
+            assert_eq!(
+                resolve_ui_locale(None, None, Some("fr;q=0.8,en;q=0.5")),
+                "fr"
             );
         }
     }

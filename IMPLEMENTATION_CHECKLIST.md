@@ -110,7 +110,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-003-01 — Discover existing search table/locale mechanism (confirmed schema/detect_lang; feeds into 003-02)
 - [x] IMP-REQ-003-02 — Migration: source_language, search_vector_fr/en, GIN indexes, backfill (018_public_search_bilingual.sql; french+english FTS configs confirmed available live, no environment gap; generated tsvector columns from address+municipality text; source_language backfilled via latest-mention pattern matching the refresh job's own convention)
 - [ ] IMP-REQ-003-02 — Migration: `source_language`, `search_vector_fr/en`, GIN indexes, backfill (verify `french` Postgres FTS config availability first)
-- [ ] IMP-REQ-003-03 — Pure `normalize_query`/`resolve_ui_locale` core functions
+- [x] IMP-REQ-003-03 — Pure `normalize_query`/`resolve_ui_locale` core functions (15 unit tests; precedence verified against tc_003_2/3/4; not yet wired, that's IMP-REQ-003-04)
 - [ ] IMP-REQ-003-04 — Wire locale resolver + normalized query into `GET /search`
 - [ ] IMP-REQ-003-05 — FR/EN string-table entries + key-parity check
 - [ ] IMP-REQ-003-09 — Test fixtures (FR/EN seed rows, fault-injecting DB wrapper)
