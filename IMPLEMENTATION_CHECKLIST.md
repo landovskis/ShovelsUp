@@ -162,11 +162,11 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-005-01 — Migration: `description_lang`, `confidence_level`, `source_document_url` (020_project_detail_fields.sql on `projects`, nullable/additive/unconstrained, no existing source signal to backfill from; applied and build-verified)
 - [x] IMP-REQ-005-03 — `project_detail` handler: UUID parse, join query, 200/404/503 branch (description synthesized from mention data, confidence-notice always renders with fallback, source-document-link/description omitted when absent, description-language divergence derived from document_chunks.language at read time; fixed a test-fixture gap adding seed_document_chunk_with_language; all 6 tc_005_* + 26 regression tests pass single-threaded)
 - [x] IMP-REQ-005-04 — Reuse/extract shared locale-resolution utility (new routes::locale module shared by search.rs and projects.rs, zero duplication; get_project_detail_page now supports ?lang=/cookie/header precedence; 32/32 verified single-threaded)
-- [ ] IMP-REQ-005-05 — Template context struct
-- [ ] IMP-REQ-005-10 — Unit tests
-- [ ] IMP-REQ-005-11 — Integration: happy path + boundary
-- [ ] IMP-REQ-005-12 — Integration: negative + error path
-- [ ] IMP-REQ-005-13 — Integration: locale/source-language divergence
+- [x] IMP-REQ-005-05 — Template context struct (already satisfied by IMP-REQ-005-03 — `ProjectDetailContext` is a real, populated struct, no longer dead-code for the REQ-005 fields)
+- [x] IMP-REQ-005-10 — Unit tests (already satisfied — 5 synthesize_description unit tests + 3 description_language_diverges tests from IMP-REQ-005-03)
+- [x] IMP-REQ-005-11 — Integration: happy path + boundary (already satisfied — tc_005_1 passes)
+- [x] IMP-REQ-005-12 — Integration: negative + error path (already satisfied — tc_005_2/3/4 pass)
+- [x] IMP-REQ-005-13 — Integration: locale/source-language divergence (already satisfied — tc_005_5 passes)
 - [ ] IMP-REQ-005-14 — Accessibility/responsive manual pass
 #### Frontend Engineer
 - [ ] IMP-REQ-005-06 — `project_detail.html.jinja` (all states)
