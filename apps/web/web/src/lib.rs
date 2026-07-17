@@ -20,6 +20,16 @@ pub struct AppState {
     /// already provisioned in docker-compose/.env but unused by any prior
     /// requirement — this is its first real caller.
     pub redis: ConnectionManager,
+    /// Test-only fault-injection hook (IMP-REQ-006-06). When `Some`, the
+    /// project-detail page's citation lookup (`fetch_primary_citation`)
+    /// uses this pool instead of `db`, allowing a test to simulate a DB
+    /// outage isolated to *just* the citation query (e.g. by calling
+    /// `.close()` on a second, independently-connected pool to the same
+    /// database) without closing `db` itself and taking the whole page
+    /// down. Production (`main.rs`) always leaves this `None`, so the
+    /// citation query uses the same `db` pool as every other query there —
+    /// this field changes no production behavior.
+    pub citation_db_override: Option<PgPool>,
 }
 
 /// Builds the full application router (routes + middleware), shared by

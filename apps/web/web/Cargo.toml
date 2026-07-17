@@ -29,6 +29,12 @@ thiserror = "1"
 base64 = "0.22"
 shovelsup-domain = { path = "../domain" }
 shovelsup-pipeline = { path = "../pipeline" }
+# IMP-REQ-006-04: used by resolve_citation_view's URL-shape reliability
+# heuristic (routes/projects.rs) to robustly detect a query string via
+# Url::query() and inspect path segments for a "session" component, rather
+# than naive substring matching (which would mis-parse edge cases like a
+# fragment containing "?" or a literal "session" appearing in a filename).
+url = "2"
 
 [dev-dependencies]
 wiremock = "0.6"

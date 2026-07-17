@@ -46,6 +46,7 @@ async fn test_state(pool: PgPool) -> AppState {
         env: std::sync::Arc::new(env),
         db: pool,
         redis,
+        citation_db_override: None,
     }
 }
 

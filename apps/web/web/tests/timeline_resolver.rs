@@ -27,6 +27,7 @@ use minijinja::{path_loader, Environment};
 use serde_json::Value;
 use shovelsup_pipeline::resolver::resolve_mention;
 use shovelsup_web::{app, AppState};
+use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -42,6 +43,7 @@ async fn test_state(pool: PgPool) -> AppState {
         env: std::sync::Arc::new(env),
         db: pool,
         redis,
+        citation_db_override: None,
     }
 }
 
@@ -925,28 +927,23 @@ async fn imp_req_005_14_detail_fields_are_accessible(pool: PgPool) {
 }
 
 // ---------------------------------------------------------------------
-// REQ-006 Loop A: source transparency notice (citation section).
+// REQ-006: source transparency notice (citation section).
 //
-// `source_documents` has no `meeting_date`/`citation_url_reliable` columns
-// yet — that migration is IMP-REQ-006-05's job, not this pass's. Today
-// `project_detail.html` renders no citation section at all (see
-// `ProjectDetailContext` in `web/src/routes/projects.rs` for the stub Loop
-// B must wire up). TC-006-1/-2/-3/-5 below are therefore EXPECTED TO FAIL
-// right now, each for the documented reason given in its doc comment.
-// TC-006-4 (no source document at all) is the one case where "the
-// citation section is omitted" already holds trivially today, so it is
-// EXPECTED TO PASS, and is written to assert something meaningful (200 OK
-// plus absence of citation markup/error text) rather than a vacuous
-// no-op.
+// IMP-REQ-006-02/-03/-04/-05/-06 (done): migration 021 added
+// `source_documents.meeting_date`; `routes/projects.rs`'s `core` module has
+// a pure `resolve_citation_view` decision (URL-shape reliability heuristic,
+// "Document retrieved" fallback, "no source document" omission);
+// `fetch_primary_citation` joins through to the primary source document;
+// and `get_project_detail_page` wires all of it into `project_detail.html`,
+// rendering a `#project-source` section. TC-006-1/-2/-3/-4 all pass.
+// TC-006-5 required a test-design fix — see its own doc comment for why
+// `pool.close()` (this suite's usual full-outage technique) can't express
+// an isolated single-query failure, and what was used instead.
 // ---------------------------------------------------------------------
 
 /// TC-006-1: a project whose source document has a reliable, real
-/// `source_url` must, once IMP-REQ-006-05/-06/-08 land, render a
-/// clickable hyperlink citation (including the `meeting_date`, once that
-/// column exists) inside a `#project-source` element. Currently FAILS:
-/// `project_detail.html` has no `#project-source` element yet, and
-/// `citation_url_reliable`/`meeting_date` don't exist in the schema for
-/// the handler to query.
+/// `source_url` renders a clickable hyperlink citation (including the
+/// `meeting_date`, once present) inside a `#project-source` element.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_006_1_reliable_source_renders_hyperlink_citation(pool: PgPool) {
     let project_id = seed_project(&pool, "600 reliable source ave", "residential").await;
@@ -992,15 +989,13 @@ async fn tc_006_1_reliable_source_renders_hyperlink_citation(pool: PgPool) {
     );
 }
 
-/// TC-006-2: a project whose source document has `citation_url_reliable =
-/// false` (e.g. Montreal's session-scoped portal URL pattern, where the
-/// URL is only valid for the duration of the browsing session and would
-/// mislead readers if hyperlinked) must render citation-only text
-/// (municipality + meeting date) and NOT a hyperlink, even though a
-/// `source_url` value exists in the row. Independent seed data from
-/// TC-006-1 (distinct address, distinct session-scoped URL shape).
-/// Currently FAILS: no `#project-source` element exists yet, and there is
-/// no `citation_url_reliable` column to drive the link/no-link decision.
+/// TC-006-2: a project whose source document's URL is unreliable by shape
+/// (e.g. Montreal's session-scoped portal URL pattern, where the URL is
+/// only valid for the duration of the browsing session and would mislead
+/// readers if hyperlinked) renders citation-only text (municipality +
+/// meeting date) and NOT a hyperlink, even though a `source_url` value
+/// exists in the row. Independent seed data from TC-006-1 (distinct
+/// address, distinct session-scoped URL shape).
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_006_2_unreliable_source_renders_citation_text_only(pool: PgPool) {
     let project_id = seed_project(&pool, "601 session scoped blvd", "commercial").await;
@@ -1053,12 +1048,10 @@ async fn tc_006_2_unreliable_source_renders_citation_text_only(pool: PgPool) {
     );
 }
 
-/// TC-006-3: a project whose source document has no `meeting_date` (which
-/// is every source document today, since the column doesn't exist yet)
-/// must fall back to a "Document retrieved" message instead of a date,
-/// without breaking the rest of the page. Independent seed data from
-/// TC-006-1/-2. Currently FAILS: no `#project-source` element (or its
-/// "Document retrieved" fallback text) exists yet.
+/// TC-006-3: a project whose source document has no `meeting_date` (the
+/// column is nullable with no backfill, per migration 021) falls back to a
+/// "Document retrieved" message instead of a date, without breaking the
+/// rest of the page. Independent seed data from TC-006-1/-2.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_006_3_missing_meeting_date_falls_back_to_document_retrieved(pool: PgPool) {
     let project_id = seed_project(&pool, "602 no meeting date way", "institutional").await;
@@ -1106,11 +1099,9 @@ async fn tc_006_3_missing_meeting_date_falls_back_to_document_retrieved(pool: Pg
 /// TC-006-4: a project with NO associated source document at all (no
 /// document chunk, no mention — the edge case) must omit the citation
 /// section entirely rather than erroring; the page must still render 200.
-/// This is the one REQ-006 test that legitimately PASSES today: since no
-/// citation section exists anywhere yet, "the section is omitted" holds
-/// trivially, but the assertions below are written to be meaningful (a
-/// real 200 response, and an explicit absence of citation-related error
-/// text) rather than a no-op that would pass regardless of behavior.
+/// The assertions below are written to be meaningful (a real 200 response,
+/// and an explicit absence of citation-related error text) rather than a
+/// no-op that would pass regardless of behavior.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_006_4_no_source_document_omits_citation_section(pool: PgPool) {
     let project_id = seed_project(&pool, "603 no source document cres", "residential").await;
@@ -1145,21 +1136,35 @@ async fn tc_006_4_no_source_document_omits_citation_section(pool: PgPool) {
 
 /// TC-006-5: a DB failure specifically on the citation lookup query must
 /// be isolated from the rest of the project detail page — the citation
-/// query failing must NOT take down the whole page with a 503. This test
-/// uses the same `pool.close()` technique as `tc_req_006_6_...` and
-/// `tc_005_4_...` to simulate a DB outage, since Loop A cannot yet target
-/// only the (not-yet-written) citation query. Currently FAILS, for a
-/// documented reason distinct from "not implemented": today the handler
-/// has no query isolation at all — `project_exists` runs first and any
-/// DB outage fails that query too, so the whole page 503s (matching
-/// `tc_req_006_6_db_unavailability_renders_retry_ui`'s existing, correct
-/// behavior for a *full* outage). IMP-REQ-006-05/-06 must specifically
-/// wrap the new citation query in its own error handling so it degrades
-/// independently of the page-critical queries; this test's `assert_eq!`
-/// against `StatusCode::OK` will keep failing until the citation query is
-/// written to fail without a live DB while the rest of the page can still
-/// serve from an unaffected connection — the test remains valid as a
-/// pre-registration of that requirement.
+/// query failing must NOT take down the whole page with a 503.
+///
+/// ⚠️ Test-design conflict, found and fixed (IMP-REQ-006-06): the plan's
+/// original version of this test used the same `pool.close()` technique as
+/// `tc_req_006_6_db_unavailability_renders_retry_ui`/`tc_005_4_...` to
+/// simulate a DB outage. That technique is structurally incompatible with
+/// what this test is trying to prove: `pool.close()` closes the *entire*
+/// pool, so EVERY query issued against it fails — including
+/// `get_project_detail_page`'s project-existence check, which runs before
+/// the citation query and, correctly, already 503s the whole page on a
+/// full outage (that's exactly what TC-REQ-006-6/TC-005-4 pin down, and
+/// must keep doing). There is no way to make a single shared `PgPool`
+/// simultaneously "down for the citation query" and "up for everything
+/// else" — closing it is an all-or-nothing operation. Satisfying the
+/// original assertion (`StatusCode::OK` after `pool.close()`) would have
+/// required either not closing the pool at all (testing nothing) or making
+/// `get_project_detail_page` swallow full-outage errors on the
+/// project-existence query too (breaking the correct, already-tested
+/// TC-REQ-006-6/TC-005-4 full-outage-503 behavior). Neither is acceptable,
+/// so this test is rewritten to inject the fault differently: a *second*,
+/// independently-connected `PgPool` to the same test database is created
+/// (via `pool.connect_options()`, reusing the same connection string the
+/// `sqlx::test` fixture already established) and set as
+/// `AppState::citation_db_override` — a test-only hook
+/// (`web/src/lib.rs`/`web/src/routes/projects.rs`) that the citation query
+/// alone uses in place of `db` when present. Closing *that* second pool
+/// fails only the citation query; `pool` (and therefore every other query
+/// the handler runs) stays live, so this test now genuinely exercises
+/// "citation query down, rest of the page up" instead of "everything down".
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_006_5_citation_query_failure_isolated_from_page(pool: PgPool) {
     let project_id = seed_project(&pool, "604 isolated failure pl", "commercial").await;
@@ -1175,9 +1180,21 @@ async fn tc_006_5_citation_query_failure_isolated_from_page(pool: PgPool) {
         "approved",
     )
     .await;
-    pool.close().await;
 
-    let app = app(test_state(pool).await);
+    // Second, independent pool to the same database — closing it fails only
+    // the citation query, unlike `pool.close()` which would fail every
+    // query (see the doc comment above for why that's the wrong tool here).
+    let citation_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect_with((*pool.connect_options()).clone())
+        .await
+        .unwrap();
+    citation_pool.close().await;
+
+    let mut state = test_state(pool).await;
+    state.citation_db_override = Some(citation_pool);
+
+    let app = app(state);
     let response = app
         .oneshot(
             Request::builder()
@@ -1191,8 +1208,7 @@ async fn tc_006_5_citation_query_failure_isolated_from_page(pool: PgPool) {
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "a citation-query-only DB failure must not 503 the whole page; today it does, \
-         because the handler has no query isolation yet"
+        "a citation-query-only DB failure must not 503 the whole page"
     );
     let body = http_body_util::BodyExt::collect(response.into_body())
         .await
@@ -1202,7 +1218,12 @@ async fn tc_006_5_citation_query_failure_isolated_from_page(pool: PgPool) {
     assert!(
         html.contains("timeline-event") || html.contains("citation-error"),
         "expected the rest of the page to render normally with a graceful citation \
-         fallback/error state, once query isolation is implemented"
+         fallback/error state, got: {html}"
+    );
+    assert!(
+        !html.contains(r#"id="project-source""#),
+        "the citation section must be omitted (not rendered with stale/error data) \
+         when the isolated citation query fails, got: {html}"
     );
 }
 

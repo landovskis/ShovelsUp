@@ -21,6 +21,8 @@ use crate::{
 /// fuller sentence since this is the detail page's actual description, not
 /// a short search-result label.
 mod core {
+    use chrono::{DateTime, Utc};
+
     /// Synthesizes a one-sentence project description from a project's most
     /// recent mention's extracted fields. There is no free-text
     /// `description` column anywhere in `projects`/`project_mentions`/the
@@ -90,6 +92,88 @@ mod core {
     /// all) means "no divergence to report", not "assume divergence".
     pub fn description_language_diverges(ui_lang: &str, mention_language: Option<&str>) -> bool {
         matches!(mention_language, Some(lang) if lang != ui_lang)
+    }
+
+    /// IMP-REQ-006-03: the citation section's rendering decision, for a
+    /// single project's most-recent source document. `municipality_name` is
+    /// carried through unchanged (it's not part of the decision) purely so
+    /// callers have one struct to thread into the template.
+    #[derive(Debug, PartialEq)]
+    pub struct CitationView {
+        /// `None` means "no source document at all" (TC-006-4): the
+        /// citation section must be omitted entirely. `Some` means a
+        /// section must render, with the link/text-only choice driven by
+        /// `is_reliable`.
+        pub citation_url: Option<String>,
+        pub municipality_name: Option<String>,
+        /// URL-shape heuristic (IMP-REQ-006-04): `true` only when
+        /// `citation_url` has neither a query string nor a path segment
+        /// that looks session-scoped. Meaningless when `citation_url` is
+        /// `None`.
+        pub is_reliable: bool,
+        pub meeting_date: Option<DateTime<Utc>>,
+        /// `true` when a source document exists but has no recorded
+        /// `meeting_date` (TC-006-3): the template must render a "Document
+        /// retrieved" fallback instead of a date.
+        pub document_retrieved_fallback: bool,
+    }
+
+    /// Pure decision function: given the primary source document's URL,
+    /// municipality name, and meeting date (all `None` when no source
+    /// document exists at all), decides how — or whether — the project
+    /// detail page's citation section should render. No DB/HTTP access;
+    /// callers (`fetch_primary_citation` + `get_project_detail_page`) do
+    /// all I/O before calling this.
+    pub fn resolve_citation_view(
+        source_url: Option<&str>,
+        municipality_name: Option<&str>,
+        meeting_date: Option<DateTime<Utc>>,
+    ) -> CitationView {
+        match source_url {
+            None => CitationView {
+                citation_url: None,
+                municipality_name: None,
+                is_reliable: false,
+                meeting_date: None,
+                document_retrieved_fallback: false,
+            },
+            Some(url) => CitationView {
+                citation_url: Some(url.to_string()),
+                municipality_name: municipality_name.map(str::to_string),
+                is_reliable: is_reliable_citation_url(url),
+                meeting_date,
+                document_retrieved_fallback: meeting_date.is_none(),
+            },
+        }
+    }
+
+    /// URL-shape reliability heuristic (IMP-REQ-006-04), directly justified
+    /// by TC-006-1/-2's two examples: a plain URL like
+    /// `https://test-city.example/reliable-doc` (no query string, no
+    /// session-like path segment) is reliable; a session-scoped portal URL
+    /// like `https://montreal.ca/portal/session/8f3c1?token=ephemeral` (has
+    /// both a query string AND a literal `session` path segment) is not.
+    /// Checking both signals — not just the query string — means a future
+    /// session-scoped URL that omits the query string (a path-based session
+    /// token, the risk the plan's own notes call out) still gets classified
+    /// unreliable, without over-fitting to today's two examples. A
+    /// malformed URL is treated as unreliable: we can't verify its shape,
+    /// so the conservative choice is to not hyperlink it. Uses the `url`
+    /// crate (IMP-REQ-006-04) for robust query-string/path-segment parsing
+    /// rather than naive substring matching, which would be fooled by e.g.
+    /// a literal `?` or `session` appearing inside a path segment's text.
+    fn is_reliable_citation_url(url: &str) -> bool {
+        match url::Url::parse(url) {
+            Ok(parsed) => {
+                let has_query_string = parsed.query().is_some();
+                let has_session_segment = parsed
+                    .path_segments()
+                    .map(|mut segments| segments.any(|segment| segment.eq_ignore_ascii_case("session")))
+                    .unwrap_or(false);
+                !has_query_string && !has_session_segment
+            }
+            Err(_) => false,
+        }
     }
 
     #[cfg(test)]
@@ -163,6 +247,101 @@ mod core {
         #[test]
         fn description_language_diverges_false_when_no_signal() {
             assert!(!description_language_diverges("en", None));
+        }
+
+        // -- resolve_citation_view / is_reliable_citation_url (IMP-REQ-006-03) --
+
+        #[test]
+        fn resolve_citation_view_no_source_document_omits_citation() {
+            let view = resolve_citation_view(None, None, None);
+            assert_eq!(
+                view,
+                CitationView {
+                    citation_url: None,
+                    municipality_name: None,
+                    is_reliable: false,
+                    meeting_date: None,
+                    document_retrieved_fallback: false,
+                }
+            );
+        }
+
+        #[test]
+        fn resolve_citation_view_plain_url_is_reliable() {
+            // TC-006-1's exact URL: no query string, no session-like path segment.
+            let view = resolve_citation_view(
+                Some("https://test-city.example/reliable-doc"),
+                Some("Test City"),
+                None,
+            );
+            assert!(view.is_reliable);
+            assert_eq!(
+                view.citation_url.as_deref(),
+                Some("https://test-city.example/reliable-doc")
+            );
+        }
+
+        #[test]
+        fn resolve_citation_view_session_scoped_url_is_unreliable() {
+            // TC-006-2's exact URL: query string AND a "session" path segment.
+            let view = resolve_citation_view(
+                Some("https://montreal.ca/portal/session/8f3c1?token=ephemeral"),
+                Some("Test City"),
+                None,
+            );
+            assert!(!view.is_reliable);
+        }
+
+        #[test]
+        fn resolve_citation_view_session_path_without_query_string_is_unreliable() {
+            // The plan's own risk note: a session-scoped URL that omits the
+            // query string entirely must still be classified unreliable via
+            // the path-segment signal alone.
+            let view = resolve_citation_view(
+                Some("https://montreal.ca/portal/session/8f3c1"),
+                Some("Test City"),
+                None,
+            );
+            assert!(!view.is_reliable);
+        }
+
+        #[test]
+        fn resolve_citation_view_query_string_without_session_segment_is_unreliable() {
+            let view = resolve_citation_view(
+                Some("https://test-city.example/doc?v=2"),
+                Some("Test City"),
+                None,
+            );
+            assert!(!view.is_reliable);
+        }
+
+        #[test]
+        fn resolve_citation_view_malformed_url_is_treated_as_unreliable() {
+            let view = resolve_citation_view(Some("not a url"), Some("Test City"), None);
+            assert!(!view.is_reliable);
+        }
+
+        #[test]
+        fn resolve_citation_view_missing_meeting_date_sets_fallback_flag() {
+            // TC-006-3: meeting_date is None.
+            let view = resolve_citation_view(
+                Some("https://test-city.example/undated-doc"),
+                Some("Test City"),
+                None,
+            );
+            assert!(view.document_retrieved_fallback);
+        }
+
+        #[test]
+        fn resolve_citation_view_present_meeting_date_clears_fallback_flag() {
+            let meeting_date = chrono::Utc::now();
+            let view = resolve_citation_view(
+                Some("https://test-city.example/dated-doc"),
+                Some("Test City"),
+                Some(meeting_date),
+            );
+            assert!(!view.document_retrieved_fallback);
+            assert_eq!(view.meeting_date, Some(meeting_date));
         }
     }
 }
@@ -268,6 +447,40 @@ async fn fetch_latest_mention_for_description(
     .await
 }
 
+/// IMP-REQ-006-05: the project's primary (most recent) source document's
+/// citation-relevant data. Mirrors `fetch_latest_mention_for_description`'s
+/// join pattern exactly (`project_timeline_events` -> `project_mentions` ->
+/// `document_chunks` -> `source_documents`, "latest" = `ORDER BY
+/// pte.created_at DESC LIMIT 1`) plus one further join to `municipalities`
+/// for the citation text's municipality name. `None` means the project has
+/// no associated source document at all (TC-006-4).
+struct PrimaryCitationRow {
+    source_url: String,
+    meeting_date: Option<DateTime<Utc>>,
+    municipality_name: String,
+}
+
+async fn fetch_primary_citation(
+    db: &sqlx::PgPool,
+    project_id: Uuid,
+) -> Result<Option<PrimaryCitationRow>, sqlx::Error> {
+    sqlx::query_as!(
+        PrimaryCitationRow,
+        "SELECT sd.source_url, sd.meeting_date, m.name AS municipality_name \
+         FROM project_timeline_events pte \
+         JOIN project_mentions pm ON pm.id = pte.project_mention_id \
+         JOIN document_chunks dc ON dc.id = pm.document_chunk_id \
+         JOIN source_documents sd ON sd.id = dc.source_document_id \
+         JOIN municipalities m ON m.id = sd.municipality_id \
+         WHERE pte.project_id = $1 \
+         ORDER BY pte.created_at DESC \
+         LIMIT 1",
+        project_id
+    )
+    .fetch_optional(db)
+    .await
+}
+
 /// REQ-005 scaffolding stub: shape of the additional descriptive fields
 /// TC-005-1/-2/-5 assert against in rendered `project_detail.html` output.
 /// `projects` has no `description_lang`/`confidence_level`/
@@ -279,25 +492,26 @@ async fn fetch_latest_mention_for_description(
 /// `description_lang` diverges from the resolved UI `lang`, a
 /// `#description-language-notice` indicator) so TC-005-1/-2/-5 pass.
 ///
-/// REQ-006 scaffolding stub: `citation_url`, `citation_url_reliable`, and
-/// `citation_meeting_date` are the additional fields TC-006-1..5 assert
-/// against. `source_documents` has no `meeting_date` or
-/// `citation_url_reliable` columns yet — IMP-REQ-006-05's migration must
-/// add both, IMP-REQ-006-05's query must join through
-/// `project_mentions.document_chunk_id -> document_chunks.source_document_id
-/// -> source_documents` to populate this struct (a project may have zero or
-/// many associated source documents; this stub assumes "most recent" or
-/// similar selection is IMP-REQ-006-05's call), and IMP-REQ-006-06 must
-/// thread it into `get_project_detail_page`'s template context so
-/// IMP-REQ-006-08's template can render an `#project-source` section:
-/// a hyperlink to `citation_url` (with `citation_meeting_date`) when
-/// `citation_url_reliable` is `Some(true)`, citation-only text (no link)
-/// when `Some(false)`, a "Document retrieved" fallback when
-/// `citation_meeting_date` is `None`, the section omitted entirely when no
-/// source document exists, and — per IMP-REQ-006-05/-06 — the citation
-/// lookup query's failure must be isolated (caught and degraded
-/// gracefully) rather than propagated to a page-wide 503, unlike the
-/// project-existence and timeline queries above.
+/// REQ-006 (IMP-REQ-006-03/-04/-05/-06, done): `citation_url`,
+/// `citation_url_reliable`, `citation_meeting_date`,
+/// `citation_municipality_name`, and `citation_document_retrieved_fallback`
+/// are populated for real by `get_project_detail_page` from
+/// `fetch_primary_citation` (joining `project_mentions.document_chunk_id ->
+/// document_chunks.source_document_id -> source_documents ->
+/// municipalities`, "most recent" resolved the same way
+/// `fetch_latest_mention_for_description` does) piped through
+/// `core::resolve_citation_view`'s pure decision. `citation_url` is `None`
+/// when the project has no source document at all (TC-006-4), in which
+/// case the template omits the `#project-source` section entirely.
+/// Otherwise the template renders a hyperlink when `citation_url_reliable`
+/// is `true` (TC-006-1), citation-only text (no link) when `false`
+/// (TC-006-2), and a "Document retrieved" fallback when
+/// `citation_document_retrieved_fallback` is `true` (TC-006-3). Per
+/// IMP-REQ-006-06, the citation lookup's failure is isolated: it uses
+/// `.ok()` rather than `?`/`map_err(_, SERVICE_UNAVAILABLE)`, so a DB error
+/// on just this query degrades to "no citation section" instead of
+/// propagating to a page-wide 503 — unlike the project-existence and
+/// timeline queries above, which correctly still 503 on failure (TC-REQ-006-6).
 ///
 /// REQ-013 scaffolding stub: `merged_into_id` and `canonical_url` are the
 /// additional fields TC-013-1/-2 assert against. `projects` has no
@@ -353,12 +567,15 @@ struct ProjectDetailContext {
     // yet.
     #[allow(dead_code)]
     description_lang: Option<String>,
-    #[allow(dead_code)]
+    // IMP-REQ-006-06: populated for real from `fetch_primary_citation` +
+    // `core::resolve_citation_view`. `citation_url` is `None` when the
+    // project has no source document at all (TC-006-4), in which case the
+    // other citation_* fields below are meaningless placeholders.
     citation_url: Option<String>,
-    #[allow(dead_code)]
-    citation_url_reliable: Option<bool>,
-    #[allow(dead_code)]
+    citation_url_reliable: bool,
     citation_meeting_date: Option<chrono::DateTime<chrono::Utc>>,
+    citation_municipality_name: Option<String>,
+    citation_document_retrieved_fallback: bool,
     #[allow(dead_code)]
     merged_into_id: Option<Uuid>,
     #[allow(dead_code)]
@@ -382,6 +599,7 @@ struct TimelineLabels {
     confidence_unassessed_fallback: &'static str,
     source_document_link_label: &'static str,
     description_language_notice: &'static str,
+    document_retrieved_fallback_label: &'static str,
 }
 
 fn timeline_labels(lang: &str) -> TimelineLabels {
@@ -399,6 +617,7 @@ fn timeline_labels(lang: &str) -> TimelineLabels {
             confidence_unassessed_fallback: "pas encore évalué",
             source_document_link_label: "Voir le document source",
             description_language_notice: "Cette description provient d’un document dans une autre langue que l’interface.",
+            document_retrieved_fallback_label: "Document récupéré",
         },
         _ => TimelineLabels {
             page_title: "Project details",
@@ -413,6 +632,7 @@ fn timeline_labels(lang: &str) -> TimelineLabels {
             confidence_unassessed_fallback: "not yet assessed",
             source_document_link_label: "View source document",
             description_language_notice: "This description is sourced from a document in a different language than this page.",
+            document_retrieved_fallback_label: "Document retrieved",
         },
     }
 }
@@ -520,14 +740,33 @@ pub async fn get_project_detail_page(
     let description_language_diverges =
         core::description_language_diverges(lang, description_lang.as_deref());
 
+    // IMP-REQ-006-06: the citation lookup's failure is deliberately isolated
+    // from the rest of the page via `.ok()` (never `?`/`SERVICE_UNAVAILABLE`)
+    // — a DB error hitting just this query degrades to "no citation
+    // section" rather than 503ing the whole page (TC-006-5), unlike the
+    // project-existence/timeline queries above which correctly still 503 on
+    // a full outage (TC-REQ-006-6). `citation_db_override` lets tests target
+    // this query's pool independently of `state.db` (see AppState's doc
+    // comment); production always uses `state.db` here since the override
+    // is always `None`.
+    let citation_pool = state.citation_db_override.as_ref().unwrap_or(&state.db);
+    let citation_row = fetch_primary_citation(citation_pool, id).await.ok().flatten();
+    let citation_view = core::resolve_citation_view(
+        citation_row.as_ref().map(|row| row.source_url.as_str()),
+        citation_row.as_ref().map(|row| row.municipality_name.as_str()),
+        citation_row.as_ref().and_then(|row| row.meeting_date),
+    );
+
     let detail_context = ProjectDetailContext {
         description,
         confidence_level: project_row.confidence_level,
         source_document_url: mention.as_ref().and_then(|m| m.source_url.clone()),
         description_lang,
-        citation_url: None,
-        citation_url_reliable: None,
-        citation_meeting_date: None,
+        citation_url: citation_view.citation_url,
+        citation_url_reliable: citation_view.is_reliable,
+        citation_meeting_date: citation_view.meeting_date,
+        citation_municipality_name: citation_view.municipality_name,
+        citation_document_retrieved_fallback: citation_view.document_retrieved_fallback,
         merged_into_id: None,
         canonical_url: None,
         first_detected_at: None,
@@ -552,6 +791,12 @@ pub async fn get_project_detail_page(
             source_document_link_label => labels.source_document_link_label,
             description_language_diverges => description_language_diverges,
             description_language_notice => labels.description_language_notice,
+            citation_url => detail_context.citation_url,
+            citation_url_reliable => detail_context.citation_url_reliable,
+            citation_meeting_date => detail_context.citation_meeting_date,
+            citation_municipality_name => detail_context.citation_municipality_name,
+            citation_document_retrieved_fallback => detail_context.citation_document_retrieved_fallback,
+            document_retrieved_fallback_label => labels.document_retrieved_fallback_label,
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

@@ -187,10 +187,10 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 #### Backend Engineer
 - [x] IMP-REQ-006-01 — Schema verification (confirmed source_documents current columns)
 - [x] IMP-REQ-006-02 — Migration: `meeting_date`, `citation_url_reliable` (021_source_document_meeting_date.sql adds only meeting_date; citation_url_reliable deliberately NOT a column — tc_006_1/2 prove it's a URL-shape heuristic computed at read time, matching REQ-002's resolve_citation_view precedent; applied and verified, 34/34) (no backfill needed, safe default)
-- [ ] IMP-REQ-006-03 — Pure `resolve_citation_view` decision function
-- [ ] IMP-REQ-006-04 — Add `url` crate dependency
-- [ ] IMP-REQ-006-05 — `fetch_primary_citation` query
-- [ ] IMP-REQ-006-06 — Wire into `get_project_detail_page`, isolate failure to the section
+- [x] IMP-REQ-006-03 — Pure `resolve_citation_view` decision function (URL-shape heuristic checking both query-string and session-path-segment, unit tested; verified 39/39, all 5 tc_006_* pass)
+- [x] IMP-REQ-006-04 — Add `url` crate dependency (used for robust query-string/path-segment parsing in the reliability heuristic, more correct than naive substring matching)
+- [x] IMP-REQ-006-05 — `fetch_primary_citation` query (joins project_timeline_events -> project_mentions -> document_chunks -> source_documents -> municipalities, mirrors IMP-REQ-005-03's join pattern)
+- [x] IMP-REQ-006-06 — Wire into `get_project_detail_page`, isolate failure to the section (added AppState::citation_db_override test hook so TC-006-5's citation-query-failure-isolation can be tested independently of a full-pool-close, resolving a genuine conflict between "isolate this one query's failure" and the existing correct full-outage-503 behavior; verified 39/39 including tc_006_5)
 - [ ] IMP-REQ-006-10 — Unit tests
 - [ ] IMP-REQ-006-11 — Integration test TC-006-1
 - [ ] IMP-REQ-006-12 — Integration test TC-006-2

@@ -22,6 +22,21 @@
     {% endif %}
     </div>
 
+    {% if citation_url is defined and citation_url %}
+    <section id="project-source">
+        {% if citation_meeting_date %}
+        <span id="citation-date">{{ citation_meeting_date }}</span>
+        {% else %}
+        <span id="citation-date">{{ document_retrieved_fallback_label | default("Document retrieved", true) }}</span>
+        {% endif %}
+        {% if citation_url_reliable %}
+        <a id="citation-link" href="{{ citation_url | safe }}">{{ citation_municipality_name | default("", true) }}</a>
+        {% else %}
+        <span id="citation-text">{{ citation_municipality_name | default("", true) }}</span>
+        {% endif %}
+    </section>
+    {% endif %}
+
     <section aria-labelledby="timeline-title">
         <h2 id="timeline-title">{{ timeline_title | default("Project timeline", true) }}</h2>
 

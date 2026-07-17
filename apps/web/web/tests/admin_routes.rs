@@ -38,6 +38,7 @@ async fn test_state(pool: PgPool) -> AppState {
         env: Arc::new(Environment::new()),
         db: pool,
         redis,
+        citation_db_override: None,
     }
 }
 

@@ -47,6 +47,7 @@ async fn main() {
         env: Arc::new(env),
         db,
         redis,
+        citation_db_override: None,
     };
 
     let ocr = TesseractOcrProvider;
