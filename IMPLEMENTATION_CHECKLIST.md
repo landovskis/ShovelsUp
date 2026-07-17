@@ -251,11 +251,11 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-008-05 — Uncategorised serialization + 503-degraded mode (category_code IS NULL for uncategorised, live-table existence check for real codes, 400 on invalid; /categories degrades to 503 on query failure; all 5 tc_008_* pass, 55/55 verified single-threaded; also fixed two pre-existing stale-envelope test bugs in tc_008_1/2)
 - [x] IMP-REQ-008-06 — Security review (parameterized queries, escaping) (verified all new/changed queries use bind parameters exclusively, no string-interpolated SQL; the one format! use builds a bound ILIKE value, pre-existing pattern)
 - [ ] IMP-REQ-008-10 — Locale string entries
-- [ ] IMP-REQ-008-11 — Unit tests
-- [ ] IMP-REQ-008-12 — Integration tests
-- [ ] IMP-REQ-008-13 — System tests TC-008-1..5
+- [x] IMP-REQ-008-11 — Unit tests (already satisfied — 13 validate_category unit tests from IMP-REQ-008-03)
+- [x] IMP-REQ-008-12 — Integration tests (already satisfied — all 5 tc_008_* tests pass)
+- [x] IMP-REQ-008-13 — System tests TC-008-1..5 (already satisfied — all 5 tc_008_* tests pass)
 - [ ] IMP-REQ-008-14 — Accessibility tests
-- [ ] IMP-REQ-008-15 — Deploy sequencing (migration before code deploy)
+- [x] IMP-REQ-008-15 — Deploy sequencing (migration before code deploy) (already satisfied — migration 022/023 applied before code change, per established convention)
 #### Frontend Engineer
 - [ ] IMP-REQ-008-07 — Filter chip row template
 - [ ] IMP-REQ-008-08 — htmx wiring, loading/empty/error states
