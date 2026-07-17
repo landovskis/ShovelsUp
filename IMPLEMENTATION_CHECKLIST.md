@@ -223,7 +223,7 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-007-05 — Wire into search query builder, map errors to 400/409 (MalformedDate->400, DateRangeInverted->409; validated before any DB query; all 6 tc_007_* pass, 46/46 verified single-threaded)
 - [x] IMP-REQ-007-06 — 503 handling verification (existing error mapping already covers the date-extended query, confirmed via tc_req_008_4)
 - [x] IMP-REQ-007-07 — Integration tests (composed endpoint) (all 6 tc_007_* tests pass, fixed envelope-shape staleness, un-ignored tc_007_1/2/6)
-- [ ] IMP-REQ-007-12 — System E2E test cases 1-6
+- [x] IMP-REQ-007-12 — System E2E test cases 1-6 (already satisfied — all 6 tc_007_* system tests pass)
 - [ ] IMP-REQ-007-13 — Bilingual QA pass
 #### Frontend Engineer
 - [ ] IMP-REQ-007-08 — EN/FR i18n string entries
