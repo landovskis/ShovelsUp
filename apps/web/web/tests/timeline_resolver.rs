@@ -746,6 +746,184 @@ async fn tc_005_5_description_language_divergence_indicator(pool: PgPool) {
     );
 }
 
+/// IMP-REQ-005-09: the four REQ-005 detail fields
+/// (`#project-description`, `#confidence-notice`,
+/// `#description-language-notice`, `#source-document-link`) must be
+/// wrapped in the `.project-detail-fields` container so the responsive
+/// CSS in `static/css/main.css` (640px breakpoint, same convention as
+/// IMP-REQ-002-07/003-07/004-08) can target and style them as a group
+/// instead of leaving them as bare, unstyled paragraphs directly under
+/// `.project-detail`.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_005_09_detail_fields_have_responsive_wrapper_class(pool: PgPool) {
+    let project_id = seed_project(&pool, "700 wrapper class blvd", "residential").await;
+    let chunk_id = seed_document_chunk_with_language(&pool, "fr").await;
+    let mention_id = insert_mention(&pool, chunk_id, "700 wrapper class blvd", "residential").await;
+    seed_timeline_event(
+        &pool,
+        project_id,
+        mention_id,
+        chrono::Utc::now(),
+        "approved",
+    )
+    .await;
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    let wrapper_start = html
+        .find(r#"<div class="project-detail-fields">"#)
+        .expect("expected a .project-detail-fields wrapper div around the REQ-005 detail fields");
+    let wrapper_end = html[wrapper_start..]
+        .find("</div>")
+        .map(|offset| wrapper_start + offset)
+        .expect("expected the .project-detail-fields wrapper div to be closed");
+    let wrapper_html = &html[wrapper_start..wrapper_end];
+
+    for id in [
+        "project-description",
+        "confidence-notice",
+        "description-language-notice",
+        "source-document-link",
+    ] {
+        assert!(
+            wrapper_html.contains(&format!(r#"id="{id}""#)),
+            "expected #{id} to be nested inside the .project-detail-fields \
+             wrapper (so the responsive CSS rules apply to it), got wrapper: {wrapper_html}"
+        );
+    }
+}
+
+/// IMP-REQ-005-14: manual accessibility/responsive pass, encoded as an
+/// assertion. Confirms: (1) `#source-document-link`'s visible text is
+/// descriptive ("View source document"), not a non-descriptive phrase
+/// like "click here"; (2) `#confidence-notice` and
+/// `#description-language-notice` convey their meaning through visible
+/// text content, not color alone (no `style="color"` on those elements
+/// and no reliance on a bare icon/symbol); (3) the new REQ-005 fields do
+/// not introduce a competing `<h1>`/`<h2>`, so `#project-title` remains
+/// the page's only `<h1>` and `#timeline-title` remains the only `<h2>`.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_005_14_detail_fields_are_accessible(pool: PgPool) {
+    let project_id = seed_project(&pool, "800 accessible way", "residential").await;
+    let chunk_id = seed_document_chunk_with_language(&pool, "fr").await;
+    let mention_id = insert_mention(&pool, chunk_id, "800 accessible way", "residential").await;
+    seed_timeline_event(
+        &pool,
+        project_id,
+        mention_id,
+        chrono::Utc::now(),
+        "approved",
+    )
+    .await;
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    // (1) descriptive link text, not "click here".
+    let link_start = html
+        .find(r#"id="source-document-link""#)
+        .expect("expected a #source-document-link element");
+    let tag_close = html[link_start..]
+        .find('>')
+        .map(|offset| link_start + offset + 1)
+        .expect("expected the source-document-link opening tag to close");
+    let text_end = html[tag_close..]
+        .find("</a>")
+        .map(|offset| tag_close + offset)
+        .expect("expected a closing </a> for source-document-link");
+    let link_text = html[tag_close..text_end].trim();
+    assert!(
+        !link_text.is_empty(),
+        "source-document-link must have non-empty visible link text"
+    );
+    assert!(
+        !link_text.to_lowercase().contains("click here"),
+        "source-document-link text must be descriptive, not 'click here', got: {link_text}"
+    );
+
+    // (2) confidence-notice / description-language-notice convey meaning
+    // via text, not color alone: no inline color styling on either
+    // element, and each renders non-empty text content.
+    for id in ["confidence-notice", "description-language-notice"] {
+        let start = html
+            .find(&format!(r#"id="{id}""#))
+            .unwrap_or_else(|| panic!("expected a #{id} element"));
+        let tag_close = html[start..]
+            .find('>')
+            .map(|offset| start + offset + 1)
+            .unwrap_or_else(|| panic!("expected the #{id} opening tag to close"));
+        let text_end = html[tag_close..]
+            .find("</p>")
+            .map(|offset| tag_close + offset)
+            .unwrap_or_else(|| panic!("expected a closing </p> for #{id}"));
+        let element_text = html[tag_close..text_end].trim();
+        assert!(
+            !element_text.is_empty(),
+            "#{id} must convey its meaning through visible text content"
+        );
+
+        let tag_start = html[..start].rfind('<').unwrap();
+        let opening_tag = &html[tag_start..tag_close];
+        assert!(
+            !opening_tag.contains("style=") || !opening_tag.contains("color"),
+            "#{id} must not rely on inline color styling as the sole cue, got tag: {opening_tag}"
+        );
+    }
+
+    // (3) heading hierarchy: exactly one <h1> (#project-title) and one
+    // <h2> (#timeline-title); the new paragraph-level REQ-005 fields must
+    // not introduce a competing heading.
+    let h1_count = html.matches("<h1").count();
+    let h2_count = html.matches("<h2").count();
+    assert_eq!(
+        h1_count, 1,
+        "expected exactly one <h1> (#project-title); REQ-005 fields must not add another, got html: {html}"
+    );
+    assert_eq!(
+        h2_count, 1,
+        "expected exactly one <h2> (#timeline-title); REQ-005 fields must not add another, got html: {html}"
+    );
+    assert!(
+        html.contains(r#"<h1 id="project-title""#),
+        "expected the sole <h1> to remain #project-title"
+    );
+    assert!(
+        html.contains(r#"<h2 id="timeline-title""#),
+        "expected the sole <h2> to remain #timeline-title"
+    );
+}
+
 // ---------------------------------------------------------------------
 // REQ-006 Loop A: source transparency notice (citation section).
 //

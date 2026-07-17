@@ -6,6 +6,7 @@
 <section class="project-detail" aria-labelledby="project-title">
     <h1 id="project-title">{% if project is defined and project.title is defined %}{{ project.title }}{% else %}{{ page_title | default("Project details", true) }}{% endif %}</h1>
 
+    <div class="project-detail-fields">
     {% if description is defined and description %}
     <p id="project-description">{{ description }}</p>
     {% endif %}
@@ -19,6 +20,7 @@
     {% if source_document_url is defined and source_document_url %}
     <p><a id="source-document-link" href="{{ source_document_url }}">{{ source_document_link_label | default("View source document", true) }}</a></p>
     {% endif %}
+    </div>
 
     <section aria-labelledby="timeline-title">
         <h2 id="timeline-title">{{ timeline_title | default("Project timeline", true) }}</h2>

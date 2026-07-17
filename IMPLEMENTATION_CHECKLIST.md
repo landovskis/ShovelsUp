@@ -167,12 +167,12 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-005-11 — Integration: happy path + boundary (already satisfied — tc_005_1 passes)
 - [x] IMP-REQ-005-12 — Integration: negative + error path (already satisfied — tc_005_2/3/4 pass)
 - [x] IMP-REQ-005-13 — Integration: locale/source-language divergence (already satisfied — tc_005_5 passes)
-- [ ] IMP-REQ-005-14 — Accessibility/responsive manual pass
+- [x] IMP-REQ-005-14 — Accessibility/responsive manual pass (descriptive link text, no color-only cues, heading hierarchy unchanged, locked in by test — REQ-005 complete, all 6 tc_005_* pass)
 #### Frontend Engineer
 - [x] IMP-REQ-005-06 — `project_detail.html.jinja` (all states) (already satisfied — #project-description/#confidence-notice/#description-language-notice/#source-document-link all present with correct omit-vs-always-render semantics)
 - [x] IMP-REQ-005-07 — 404/503 error templates (already satisfied — existing error page with role="alert"/retry affordance, regression-tested by tc_005_4)
 - [x] IMP-REQ-005-08 — EN/FR string catalog (already satisfied — fallback labels present for all new elements, EN/FR confidence-notice fallback verified by tc_005_2)
-- [ ] IMP-REQ-005-09 — Responsive CSS
+- [x] IMP-REQ-005-09 — Responsive CSS (project-detail-fields wrapper, existing tokens, 640px breakpoint; verified 34/34 single-threaded)
 
 ## REQ-006 — Source transparency notice
 

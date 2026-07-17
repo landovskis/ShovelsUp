@@ -827,6 +827,53 @@ shovels-header {
     font-weight: 700;
 }
 
+/* Project detail: description, confidence, source-document fields
+   (IMP-REQ-005-03/-09). Reuses the existing surface/line/text tokens —
+   no new hex literals — and stacks with generous, readable line length
+   so long synthesized descriptions never overflow the .site-main
+   column. */
+.project-detail-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    max-width: 720px;
+    margin: 1.25rem 0 2rem;
+    padding: 1.25rem 1.5rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius);
+}
+
+.project-detail-fields p {
+    max-width: 100%;
+    overflow-wrap: break-word;
+    color: var(--color-text);
+    line-height: 1.6;
+}
+
+#project-description {
+    font-size: 1.05rem;
+}
+
+#confidence-notice,
+#description-language-notice {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+}
+
+#source-document-link {
+    color: var(--color-primary);
+    font-weight: 700;
+    text-decoration: underline;
+}
+
+#source-document-link:hover,
+#source-document-link:focus-visible {
+    color: var(--color-text);
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
 @keyframes card-arrive {
     from { opacity: 0; transform: translateY(24px); }
     to { opacity: 1; transform: translateY(0); }
@@ -888,6 +935,13 @@ shovels-header {
     .lang-toggle { text-align: left; }
     .search-result { flex-direction: column; align-items: flex-start; }
     .result-lang-badge { margin-left: 0; }
+    .project-detail-fields {
+        max-width: 100%;
+        margin: 1rem 0 1.5rem;
+        padding: 1rem;
+        gap: 0.7rem;
+    }
+    #project-description { font-size: 1rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
