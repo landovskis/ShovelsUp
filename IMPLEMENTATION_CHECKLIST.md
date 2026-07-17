@@ -247,9 +247,9 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-008-01 — Audit extraction pipeline's classification contract (project_type is free-text LLM output, not a fixed enum; category_taxonomy is deliberately a new, separate, coarser controlled vocabulary for the public filter, not a mirror of project_type — documented choice) (assumed taxonomy: residential|commercial|institutional|infrastructure|other)
 - [x] IMP-REQ-008-02 — Migration: `category_taxonomy` table + `projects.category_code` (022_category_taxonomy.sql, seeded with 5 codes matching tc_008_4's exact expected list, nullable projects.category_code, no backfill; applied and verified)
 - [x] IMP-REQ-008-03 — Query parsing/validation (400/403 error mapping) (pure core::validate_category, 400 confirmed by tc_008_3's exact assertion; 13 unit tests; not yet wired to handler, tc_008_* correctly still fail; verified 50/50 regression, zero new failures — one 429 flake on first run confirmed transient via re-run)
-- [ ] IMP-REQ-008-04 — `GET /categories` facet endpoint
-- [ ] IMP-REQ-008-05 — Uncategorised serialization + 503-degraded mode
-- [ ] IMP-REQ-008-06 — Security review (parameterized queries, escaping)
+- [x] IMP-REQ-008-04 — `GET /categories` facet endpoint (real handler, publicly routed not admin-gated, returns Vec<String> of codes matching tc_008_4's exact literal expectation; added migration 023 for category_taxonomy.sort_order + public_search_documents.category_code, mirrored by the refresh job)
+- [x] IMP-REQ-008-05 — Uncategorised serialization + 503-degraded mode (category_code IS NULL for uncategorised, live-table existence check for real codes, 400 on invalid; /categories degrades to 503 on query failure; all 5 tc_008_* pass, 55/55 verified single-threaded; also fixed two pre-existing stale-envelope test bugs in tc_008_1/2)
+- [x] IMP-REQ-008-06 — Security review (parameterized queries, escaping) (verified all new/changed queries use bind parameters exclusively, no string-interpolated SQL; the one format! use builds a bound ILIKE value, pre-existing pattern)
 - [ ] IMP-REQ-008-10 — Locale string entries
 - [ ] IMP-REQ-008-11 — Unit tests
 - [ ] IMP-REQ-008-12 — Integration tests

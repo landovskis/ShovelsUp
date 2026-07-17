@@ -33,10 +33,15 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
     // `ON CONFLICT ... DO UPDATE` doesn't name, so an existing row's value
     // is preserved forever across every subsequent refresh, regardless of
     // how many times other columns change.
+    // IMP-REQ-008-05: `category_code` (migration 023) mirrors
+    // `projects.category_code` the same way every other column here mirrors
+    // its `projects`/mention source, so `run_search`'s `category` filter can
+    // read it directly off `public_search_documents` without joining back to
+    // `projects`.
     let result = sqlx::query!(
         r#"
         INSERT INTO public_search_documents
-            (project_id, civic_address_normalized, municipality_name, municipality_slug, project_type, normalized_status, source_language, first_surfaced_at, updated_at)
+            (project_id, civic_address_normalized, municipality_name, municipality_slug, project_type, normalized_status, source_language, category_code, first_surfaced_at, updated_at)
         SELECT
             p.id,
             p.civic_address_normalized,
@@ -45,6 +50,7 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
             p.project_type,
             latest.normalized_status,
             latest.language,
+            p.category_code,
             now(),
             now()
         FROM projects p
@@ -66,6 +72,7 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
             project_type = EXCLUDED.project_type,
             normalized_status = EXCLUDED.normalized_status,
             source_language = EXCLUDED.source_language,
+            category_code = EXCLUDED.category_code,
             updated_at = now()
         "#
     )

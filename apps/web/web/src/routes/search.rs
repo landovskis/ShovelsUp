@@ -1871,6 +1871,7 @@ async fn run_search(
     municipality_slug: Option<String>,
     page: Option<i64>,
     date_filter: RawDateFilterQuery<'_>,
+    category: Option<String>,
 ) -> Result<(Vec<SearchResult>, core::PaginationInfo), StatusCode> {
     let core::ValidatedSearchParams { per_page } =
         core::validate_search_params(per_page).map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -1879,6 +1880,14 @@ async fn run_search(
     // DB query runs.
     let municipality_slug = core::validate_municipality_slug(municipality_slug)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    // IMP-REQ-008-05: syntactic validation of `category` (TC-008-3), same
+    // split as `municipality_slug` above — `core::validate_category` only
+    // checks shape/recognizes the `uncategorised` pseudo-value; existence of
+    // a real code against the live `category_taxonomy` table is checked
+    // below, once it's known the value isn't the pseudo-value.
+    let category_filter =
+        core::validate_category(category).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     // IMP-REQ-007-05: `date_preset`/`date_from`/`date_to` parsing/validation
     // also runs before any DB query, matching the `municipality_slug`
@@ -1917,6 +1926,38 @@ async fn run_search(
         }
     }
 
+    // IMP-REQ-008-05: mirrors the `municipality_slug` existence check above
+    // — a syntactically valid `category` code must also exist in the live
+    // `category_taxonomy` table (TC-008-3), except for the `uncategorised`
+    // pseudo-value, which is never a real row there by design (see
+    // `core::validate_category`'s doc comment) and so skips this check
+    // entirely. `category_code_eq`/`require_uncategorised` are the two
+    // mutually-exclusive query params bound below: at most one ever narrows
+    // the result set, matching `core::CategoryFilter`'s own exclusivity.
+    let mut category_code_eq: Option<String> = None;
+    let mut require_uncategorised = false;
+    match category_filter {
+        None => {}
+        Some(core::CategoryFilter::Uncategorised) => {
+            require_uncategorised = true;
+        }
+        Some(core::CategoryFilter::Code(code)) => {
+            let exists = sqlx::query_scalar!(
+                "SELECT EXISTS(SELECT 1 FROM category_taxonomy WHERE code = $1)",
+                code
+            )
+            .fetch_one(pool)
+            .await
+            .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+            .unwrap_or(false);
+
+            if !exists {
+                return Err(StatusCode::BAD_REQUEST);
+            }
+            category_code_eq = Some(code);
+        }
+    }
+
     let keyword = format!("%{q}%");
     // IMP-REQ-003-04: `search_vector_fr`/`search_vector_en` (migration 018)
     // give FTS-stemmed matching alongside the existing ILIKE substring
@@ -1944,12 +1985,16 @@ async fn run_search(
           AND ($3::text IS NULL OR municipality_slug = $3)
           AND ($4::timestamptz IS NULL OR first_surfaced_at >= $4)
           AND ($5::timestamptz IS NULL OR first_surfaced_at <= $5)
+          AND ($6::text IS NULL OR category_code = $6)
+          AND (NOT $7::bool OR category_code IS NULL)
         "#,
         keyword,
         normalized_query,
         municipality_slug,
         date_start,
         date_end,
+        category_code_eq,
+        require_uncategorised,
     )
     .fetch_one(pool)
     .await
@@ -1971,6 +2016,8 @@ async fn run_search(
           AND ($3::text IS NULL OR municipality_slug = $3)
           AND ($6::timestamptz IS NULL OR first_surfaced_at >= $6)
           AND ($7::timestamptz IS NULL OR first_surfaced_at <= $7)
+          AND ($8::text IS NULL OR category_code = $8)
+          AND (NOT $9::bool OR category_code IS NULL)
         ORDER BY civic_address_normalized ASC
         LIMIT $2 OFFSET $5
         "#,
@@ -1981,6 +2028,8 @@ async fn run_search(
         pagination.offset,
         date_start,
         date_end,
+        category_code_eq,
+        require_uncategorised,
     )
     .fetch_all(pool)
     .await
@@ -2028,6 +2077,7 @@ pub async fn search_projects(
             date_from: params.date_from.as_deref(),
             date_to: params.date_to.as_deref(),
         },
+        params.category,
     )
     .await?;
 
@@ -2040,15 +2090,27 @@ pub async fn search_projects(
     }))
 }
 
-/// Loop A stub: target-state category facet endpoint (`GET /categories`,
-/// TC-008-4/-5). Not yet wired into the router in `web/src/lib.rs` — that's
-/// IMP-REQ-008-04's job, once the `category_taxonomy` table exists
-/// (IMP-REQ-008-02) for it to query. Today it unconditionally returns 501
-/// regardless of DB state; IMP-REQ-008-04/-13 must replace this with a real
-/// `State<AppState>`-taking handler that queries `category_taxonomy` and
-/// degrades gracefully (e.g. 503) if that query fails, per TC-008-5.
-pub async fn list_categories() -> StatusCode {
-    StatusCode::NOT_IMPLEMENTED
+/// GET /categories — public, unauthenticated category facet endpoint
+/// (IMP-REQ-008-04, TC-008-4/-5). Returns the public rows of
+/// `category_taxonomy` (`is_public = true`) as a plain list of codes, in
+/// `sort_order` (migration 023), matching TC-008-4's exact expected
+/// `["residential", "commercial", "institutional", "infrastructure",
+/// "other"]` list — not `{code, label_en, label_fr}` objects; the plan left
+/// the exact shape to whatever TC-008-4 asserts, and TC-008-4 asserts a bare
+/// array of codes.
+///
+/// Degrades to 503 (TC-008-5) if the underlying query fails (e.g. DB
+/// unavailable), mirroring `run_search`'s existing pool-unavailable mapping,
+/// rather than crashing the whole search page this facet feeds.
+pub async fn list_categories(State(state): State<AppState>) -> Result<Json<Vec<String>>, StatusCode> {
+    let codes = sqlx::query_scalar!(
+        "SELECT code FROM category_taxonomy WHERE is_public ORDER BY sort_order"
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+
+    Ok(Json(codes))
 }
 
 struct SearchLabels {
@@ -2209,6 +2271,7 @@ pub async fn get_search_page(
                     date_from: params.date_from.as_deref(),
                     date_to: params.date_to.as_deref(),
                 },
+                params.category.clone(),
             )
             .await,
         )

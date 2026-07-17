@@ -220,10 +220,19 @@ async fn seed_searchable_project_for_municipality_slug(
     project_id
 }
 
-/// Loop A helper for TC-008-1/-2: like `seed_searchable_project` but lets the
-/// caller set `project_type` (including `None`), used as a stand-in signal
-/// for the future `category_code` column (TODO(IMP-REQ-008-02): once
-/// `projects.category_code` exists, seed/query that column directly instead).
+/// Helper for TC-008-1/-2: like `seed_searchable_project` but lets the
+/// caller set the project's real `category_code` (including `None`, i.e.
+/// "uncategorised" — `category_code IS NULL`), so `category=<code>`/
+/// `category=uncategorised` filtering (IMP-REQ-008-05) can be exercised
+/// against migration 022/023's real `projects.category_code` /
+/// `public_search_documents.category_code` columns rather than a stand-in.
+/// The parameter is named `category_code` (previously `project_type`, back
+/// when `category_code` didn't exist yet) and is passed through unchanged as
+/// both `projects.project_type` (kept for realism — a project always has
+/// some free-text type) and `projects.category_code` (the actual taxonomy
+/// code under test); every caller today passes real taxonomy codes
+/// (`residential`, `commercial`, `institutional`) or `None`, so the two
+/// columns end up with the same value, which is harmless.
 async fn seed_searchable_project_with_type(
     pool: &PgPool,
     civic_address_normalized: &str,
@@ -231,7 +240,7 @@ async fn seed_searchable_project_with_type(
     project_type: Option<&str>,
 ) -> Uuid {
     let project_id = sqlx::query_scalar!(
-        "INSERT INTO projects (civic_address_normalized, project_type) VALUES ($1, $2) RETURNING id",
+        "INSERT INTO projects (civic_address_normalized, project_type, category_code) VALUES ($1, $2, $2) RETURNING id",
         civic_address_normalized,
         project_type,
     )
@@ -1624,13 +1633,16 @@ async fn tc_007_6_date_from_boundary_is_inclusive(pool: PgPool) {
 /// TC-008-1: filtering by a valid category code (`residential`) returns only
 /// projects with that category.
 ///
-/// TODO(IMP-REQ-008-02): once `projects.category_code` exists, seed/query
-/// that column directly. For now this seeds two projects sharing the same
-/// keyword but with different `project_type` values (`residential` vs
-/// `commercial`) as a stand-in for the future closed taxonomy, and expects
-/// `category=residential` to exclude the commercial project. Fails today
-/// because `SearchParams::category` is a Loop A stub `run_search` never
-/// reads — both projects come back regardless of `category`.
+/// Seeds two projects sharing the same keyword but with different real
+/// `category_code` values (`residential` vs `commercial`, via
+/// `seed_searchable_project_with_type`'s `category_code` param — migration
+/// 022/023's real taxonomy columns, not a stand-in), and expects
+/// `category=residential` to exclude the commercial project.
+///
+/// Deserializes the `{results, total, page, per_page, has_more}` envelope
+/// (IMP-REQ-004-04) via `serde_json::Value`, matching TC-004-1/-5's own
+/// idiom, rather than a bare `Vec<Value>` — this endpoint has returned that
+/// envelope object (not a bare array) since IMP-REQ-004-04 landed.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_008_1_valid_category_code_returns_only_matching_category(pool: PgPool) {
     let residential_project = seed_searchable_project_with_type(
@@ -1665,12 +1677,14 @@ async fn tc_008_1_valid_category_code_returns_only_matching_category(pool: PgPoo
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let value: Value = serde_json::from_slice(&body).unwrap();
+    let results = value["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {value:?}"));
     assert_eq!(
         results.len(),
         1,
-        "category=residential must exclude the commercial project; documents \
-         today's gap (category param ignored by run_search), got: {results:?}"
+        "category=residential must exclude the commercial project, got: {results:?}"
     );
     assert_eq!(
         results[0]["project_id"].as_str().unwrap(),
@@ -1681,13 +1695,12 @@ async fn tc_008_1_valid_category_code_returns_only_matching_category(pool: PgPoo
 /// TC-008-2: filtering by `category=uncategorised` returns only projects
 /// with `category_code IS NULL`.
 ///
-/// TODO(IMP-REQ-008-02): once `projects.category_code` exists, seed/query
-/// that column directly (a `NULL` `category_code` after the migration is the
-/// real "uncategorised" state). For now this seeds one project with a
-/// `project_type` set (stand-in for "has been assigned a category") and one
-/// with `project_type = NULL` (stand-in for "uncategorised"), and expects
-/// `category=uncategorised` to return only the latter. Fails today because
-/// `category` isn't read by `run_search` — both projects come back.
+/// Seeds one project with a real `category_code` set (`institutional`) and
+/// one with `category_code = NULL` (the real "uncategorised" state), and
+/// expects `category=uncategorised` to return only the latter.
+///
+/// Deserializes the envelope object the same way TC-008-1 does (see its own
+/// doc comment) rather than a bare `Vec<Value>`.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_008_2_uncategorised_pseudo_category_returns_only_null_category(pool: PgPool) {
     seed_searchable_project_with_type(
@@ -1722,12 +1735,14 @@ async fn tc_008_2_uncategorised_pseudo_category_returns_only_null_category(pool:
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let value: Value = serde_json::from_slice(&body).unwrap();
+    let results = value["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {value:?}"));
     assert_eq!(
         results.len(),
         1,
-        "category=uncategorised must exclude the institutional project; \
-         documents today's gap (category param ignored by run_search), \
+        "category=uncategorised must exclude the institutional project, \
          got: {results:?}"
     );
     assert_eq!(

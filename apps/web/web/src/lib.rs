@@ -95,6 +95,14 @@ pub fn app(state: AppState) -> Router {
             "/api/v1/projects/:id/timeline",
             get(routes::projects::get_project_timeline),
         )
+        // IMP-REQ-008-04: public, unauthenticated category facet endpoint.
+        // Deliberately routed here rather than under `admin_routes` — that
+        // sub-router's `.layer(require_admin)` wraps its own 404 fallback,
+        // which becomes the merged app's catch-all for any unmatched path
+        // (see this module's own doc comment/CLAUDE.md notes on that
+        // quirk); routing `/categories` on the top-level `Router` instead
+        // keeps it outside admin auth entirely.
+        .route("/categories", get(routes::search::list_categories))
         .merge(admin_routes)
         .merge(search_routes)
         .merge(review_queue_routes)
