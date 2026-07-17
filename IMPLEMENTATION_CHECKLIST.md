@@ -191,12 +191,12 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-006-04 — Add `url` crate dependency (used for robust query-string/path-segment parsing in the reliability heuristic, more correct than naive substring matching)
 - [x] IMP-REQ-006-05 — `fetch_primary_citation` query (joins project_timeline_events -> project_mentions -> document_chunks -> source_documents -> municipalities, mirrors IMP-REQ-005-03's join pattern)
 - [x] IMP-REQ-006-06 — Wire into `get_project_detail_page`, isolate failure to the section (added AppState::citation_db_override test hook so TC-006-5's citation-query-failure-isolation can be tested independently of a full-pool-close, resolving a genuine conflict between "isolate this one query's failure" and the existing correct full-outage-503 behavior; verified 39/39 including tc_006_5)
-- [ ] IMP-REQ-006-10 — Unit tests
-- [ ] IMP-REQ-006-11 — Integration test TC-006-1
-- [ ] IMP-REQ-006-12 — Integration test TC-006-2
-- [ ] IMP-REQ-006-13 — Integration test TC-006-3
-- [ ] IMP-REQ-006-14 — Integration test TC-006-4
-- [ ] IMP-REQ-006-15 — Integration test TC-006-5
+- [x] IMP-REQ-006-10 — Unit tests (already satisfied by IMP-REQ-006-03's resolve_citation_view/is_reliable_citation_url unit tests)
+- [x] IMP-REQ-006-11 — Integration test TC-006-1 (already satisfied — passes)
+- [x] IMP-REQ-006-12 — Integration test TC-006-2 (already satisfied — passes)
+- [x] IMP-REQ-006-13 — Integration test TC-006-3 (already satisfied — passes)
+- [x] IMP-REQ-006-14 — Integration test TC-006-4 (already satisfied — passes)
+- [x] IMP-REQ-006-15 — Integration test TC-006-5 (already satisfied — passes, via citation_db_override fault injection)
 #### Frontend Engineer
 - [ ] IMP-REQ-006-07 — EN/FR label struct additions
 - [ ] IMP-REQ-006-08 — `.project-source` template section (all states)
