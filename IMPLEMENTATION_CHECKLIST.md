@@ -214,7 +214,9 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-007-01 — Confirm `surfaced_at` column schema (`TIMESTAMPTZ NOT NULL` assumption; correct in place if wrong — blocks downstream tasks until reconciled)
+- [x] IMP-REQ-007-01 — Confirm `surfaced_at` column schema (re-confirmed public_search_documents.first_surfaced_at exists, indexed, genuinely populated-once/preserved-forever per REQ-004's refresh-job wiring; exact param contract confirmed: date_preset=last_7_days, date_from/date_to in YYYY-MM-DD, inclusive midnight-UTC boundary)
+
+⚠️ **Test-fixture staleness found (not yet fixed, flagged for next task):** tc_007_5 (and by extension tc_007_1/2/6 once un-ignored) still deserialize the JSON API response as a bare array, but REQ-004's IMP-REQ-004-04 changed `search_projects` to return a `SearchResultsEnvelope` object. Needs fixing when wiring the real DateFilter (same class of staleness already fixed for REQ-002/003's tests after REQ-002-04 landed). (`TIMESTAMPTZ NOT NULL` assumption; correct in place if wrong — blocks downstream tasks until reconciled)
 - [ ] IMP-REQ-007-02 — Migration: supporting index (`CONCURRENTLY`, non-locking)
 - [ ] IMP-REQ-007-03 — `DateFilter` parse/validate module
 - [ ] IMP-REQ-007-04 — Unit tests for `DateFilter`
