@@ -50,6 +50,20 @@ mod core {
         /// well-formed here — it's their combination that's invalid) so
         /// `run_search` can map it to 409 rather than 400.
         DateRangeInverted,
+        /// `category`, after trimming, was neither the explicit
+        /// `uncategorised` pseudo-value nor a syntactically plausible
+        /// taxonomy code (lowercase ASCII alphanumerics/hyphens/underscores,
+        /// within `MAX_CATEGORY_CODE_LEN`). Maps to 400 (TC-008-3):
+        /// existence against the live `category_taxonomy` table is checked
+        /// separately by the handler, same division of labor as
+        /// `InvalidMunicipalitySlugFormat`/`validate_municipality_slug`.
+        // Not yet raised by any caller — `validate_category` isn't wired
+        // into `run_search` yet (that's IMP-REQ-008-04's job), so nothing
+        // constructs this variant today. TC-008-3 (search_integration.rs)
+        // exercises the eventual 400 mapping directly against the live
+        // handler once that wiring lands.
+        #[allow(dead_code)]
+        InvalidCategoryFormat,
     }
 
     /// Generous upper bound on a syntactically valid slug's length. Real
@@ -120,6 +134,99 @@ mod core {
         }
 
         Ok(Some(normalized))
+    }
+
+    /// Generous upper bound on a syntactically valid category code's
+    /// length, mirroring `MAX_MUNICIPALITY_SLUG_LEN`'s role for
+    /// `validate_municipality_slug`: real taxonomy codes (`residential`,
+    /// `commercial`, `institutional`, `infrastructure`, `other`) are a
+    /// handful of characters; this just guards against pathological input
+    /// before it ever reaches a query.
+    #[allow(dead_code)]
+    const MAX_CATEGORY_CODE_LEN: usize = 100;
+
+    /// The explicit pseudo-value matching `category_code IS NULL`
+    /// (TC-008-2) — not a real row in `category_taxonomy`, so it must be
+    /// recognized here, upstream of any table lookup the handler does.
+    #[allow(dead_code)]
+    pub const UNCATEGORISED: &str = "uncategorised";
+
+    /// A validated `category` query param (IMP-REQ-008-03), ready for the
+    /// handler to either check for existence against the live
+    /// `category_taxonomy` table (`Code`) or apply directly as
+    /// `category_code IS NULL` (`Uncategorised`).
+    ///
+    /// Loop A stub: not yet wired into `run_search` (IMP-REQ-008-04's job),
+    /// so nothing outside this module's own unit tests constructs or
+    /// matches on this type yet — `#[allow(dead_code)]` below follows the
+    /// same precedent as `ProjectDetailContext`'s unwired fields in
+    /// `routes/projects.rs`.
+    #[allow(dead_code)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum CategoryFilter {
+        /// A syntactically valid, not-yet-existence-checked taxonomy code.
+        Code(String),
+        /// The explicit `uncategorised` pseudo-value.
+        Uncategorised,
+    }
+
+    /// Pure, syntactic-only validation of a raw `category` query param
+    /// (IMP-REQ-008-03). Deliberately does NOT check whether the resulting
+    /// code actually exists in the `category_taxonomy` table — that's a
+    /// DB-touching concern layered on top by the handler, exactly mirroring
+    /// `validate_municipality_slug`'s own split (syntax here, existence in
+    /// the handler against the live table).
+    ///
+    /// - `None` or an empty/whitespace-only string means "no filter
+    ///   applied", so it returns `Ok(None)`.
+    /// - The value is trimmed and lowercased first, same normalization as
+    ///   `validate_municipality_slug` (a case seen server-side, e.g.
+    ///   `Residential`, signals a client normalization quirk, not an
+    ///   implausible lookup).
+    /// - After normalization, the literal `uncategorised` pseudo-value
+    ///   (`UNCATEGORISED`) is recognized and returned as
+    ///   `CategoryFilter::Uncategorised`, matching `category_code IS NULL`
+    ///   (TC-008-2) — it is intentionally never checked against
+    ///   `category_taxonomy` (it is not, and will never be, a real row
+    ///   there).
+    /// - Otherwise, anything other than lowercase ASCII alphanumerics,
+    ///   hyphens, or underscores, or a length beyond
+    ///   `MAX_CATEGORY_CODE_LEN`, is rejected as `InvalidCategoryFormat`
+    ///   (TC-008-3 expects this to map to 400, before any project query
+    ///   runs).
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    ///
+    /// Not yet wired into `run_search` (IMP-REQ-008-04's job), which will
+    /// layer the live-table existence check for `CategoryFilter::Code` on
+    /// top, matching `validate_municipality_slug`'s own precedent.
+    #[allow(dead_code)]
+    pub fn validate_category(
+        raw: Option<String>,
+    ) -> Result<Option<CategoryFilter>, SearchValidationError> {
+        let Some(raw) = raw else {
+            return Ok(None);
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+
+        let normalized = trimmed.to_lowercase();
+        if normalized == UNCATEGORISED {
+            return Ok(Some(CategoryFilter::Uncategorised));
+        }
+
+        let is_valid_shape = normalized.len() <= MAX_CATEGORY_CODE_LEN
+            && normalized
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_');
+        if !is_valid_shape {
+            return Err(SearchValidationError::InvalidCategoryFormat);
+        }
+
+        Ok(Some(CategoryFilter::Code(normalized)))
     }
 
     /// Maps a normalized municipality slug (as produced by
@@ -1019,6 +1126,98 @@ mod core {
             let max_len = "a".repeat(MAX_MUNICIPALITY_SLUG_LEN);
             let result = validate_municipality_slug(Some(max_len.clone())).unwrap();
             assert_eq!(result, Some(max_len));
+        }
+
+        #[test]
+        fn category_none_input_means_no_filter() {
+            let result = validate_category(None).unwrap();
+            assert_eq!(result, None);
+        }
+
+        #[test]
+        fn category_empty_string_means_no_filter() {
+            let result = validate_category(Some(String::new())).unwrap();
+            assert_eq!(result, None);
+        }
+
+        #[test]
+        fn category_whitespace_only_is_trimmed_to_no_filter() {
+            let result = validate_category(Some("   ".to_string())).unwrap();
+            assert_eq!(result, None);
+        }
+
+        #[test]
+        fn category_valid_lowercase_code_is_accepted_unchanged() {
+            let result = validate_category(Some("residential".to_string())).unwrap();
+            assert_eq!(result, Some(CategoryFilter::Code("residential".to_string())));
+        }
+
+        #[test]
+        fn category_uppercase_is_normalized_to_lowercase() {
+            let result = validate_category(Some("RESIDENTIAL".to_string())).unwrap();
+            assert_eq!(result, Some(CategoryFilter::Code("residential".to_string())));
+        }
+
+        #[test]
+        fn category_surrounding_whitespace_is_trimmed() {
+            let result = validate_category(Some("  residential  ".to_string())).unwrap();
+            assert_eq!(result, Some(CategoryFilter::Code("residential".to_string())));
+        }
+
+        #[test]
+        fn category_uncategorised_pseudo_value_is_recognized() {
+            let result = validate_category(Some("uncategorised".to_string())).unwrap();
+            assert_eq!(result, Some(CategoryFilter::Uncategorised));
+        }
+
+        #[test]
+        fn category_uncategorised_pseudo_value_is_case_and_whitespace_insensitive() {
+            let result = validate_category(Some("  Uncategorised  ".to_string())).unwrap();
+            assert_eq!(result, Some(CategoryFilter::Uncategorised));
+        }
+
+        #[test]
+        fn category_with_hyphen_and_underscore_is_accepted() {
+            let result = validate_category(Some("mixed-use_v2".to_string())).unwrap();
+            assert_eq!(
+                result,
+                Some(CategoryFilter::Code("mixed-use_v2".to_string()))
+            );
+        }
+
+        #[test]
+        fn category_with_invalid_characters_is_rejected() {
+            let result = validate_category(Some("not a real category!".to_string()));
+            assert_eq!(
+                result,
+                Err(SearchValidationError::InvalidCategoryFormat)
+            );
+        }
+
+        #[test]
+        fn category_with_accented_characters_is_rejected() {
+            let result = validate_category(Some("résidentiel".to_string()));
+            assert_eq!(
+                result,
+                Err(SearchValidationError::InvalidCategoryFormat)
+            );
+        }
+
+        #[test]
+        fn category_too_long_is_rejected() {
+            let too_long = "a".repeat(MAX_CATEGORY_CODE_LEN + 1);
+            let result = validate_category(Some(too_long));
+            assert_eq!(
+                result,
+                Err(SearchValidationError::InvalidCategoryFormat)
+            );
+        }
+
+        #[test]
+        fn category_at_max_length_is_accepted() {
+            let max_len = "a".repeat(MAX_CATEGORY_CODE_LEN);
+            let result = validate_category(Some(max_len.clone())).unwrap();
+            assert_eq!(result, Some(CategoryFilter::Code(max_len)));
         }
 
         #[test]
