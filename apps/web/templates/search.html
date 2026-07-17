@@ -26,8 +26,34 @@
             </select>
         </div>
 
+        <div class="search-filter-field">
+            <label for="search-date-preset">{{ date_filter_label | default("Date filter", true) }}</label>
+            <select id="search-date-preset" name="date_preset">
+                <option value=""{% if date_preset_selection == "any_time" %} selected{% endif %}>{{ date_preset_any_time_option | default("Any time", true) }}</option>
+                <option value="last_7_days"{% if date_preset_selection == "last_7_days" %} selected{% endif %}>{{ date_preset_last_7_days_option | default("Last 7 days", true) }}</option>
+                <option value=""{% if date_preset_selection == "custom_range" %} selected{% endif %}>{{ date_preset_custom_range_option | default("Custom range", true) }}</option>
+            </select>
+        </div>
+
+        <div class="search-filter-field">
+            <label for="search-date-from">{{ date_from_label | default("From", true) }}</label>
+            <input type="date" id="search-date-from" name="date_from" value="{{ date_from_value | default('', true) }}">
+        </div>
+
+        <div class="search-filter-field">
+            <label for="search-date-to">{{ date_to_label | default("To", true) }}</label>
+            <input type="date" id="search-date-to" name="date_to" value="{{ date_to_value | default('', true) }}">
+        </div>
+
         <button type="submit" class="search-filter-submit">{{ submit_label | default("Search", true) }}</button>
     </form>
+
+    {% if date_filter_chip_label %}
+    <p class="search-filter-chip" id="date-filter-chip">
+        <span>{{ date_filter_chip_label }}</span>
+        <a href="{{ clear_date_filter_href }}" class="search-filter-chip-clear" aria-label="{{ date_filter_clear_label | default('Clear date filter', true) }}">&times;</a>
+    </p>
+    {% endif %}
 
     <div id="search-results" aria-live="polite">
         {% include "results_fragment.html" %}

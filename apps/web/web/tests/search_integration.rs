@@ -3438,9 +3438,11 @@ async fn imp_req_002_07_search_form_has_responsive_filter_bar_wrapper(pool: PgPo
     );
     assert_eq!(
         html.matches(r#"class="search-filter-field""#).count(),
-        2,
-        "expected both the address input and the municipality select to each \
-         be wrapped in a search-filter-field container, got: {html}"
+        5,
+        "expected the address input, municipality select, date-preset select, \
+         and date_from/date_to inputs to each be wrapped in a \
+         search-filter-field container (IMP-REQ-007-09 added the date-filter \
+         fields alongside the pre-existing address/municipality ones), got: {html}"
     );
     assert!(
         html.contains(r#"<button type="submit" class="search-filter-submit">"#),
@@ -4331,6 +4333,364 @@ async fn imp_req_004_11_pagination_and_status_preserve_accessible_semantics(pool
         "the Previous link must have non-empty, human-readable text content, \
          got tag+text: {prev_link_tag}{prev_link_text}"
     );
+}
+
+/// IMP-REQ-007-09/-10: the date-filter preset `<select>` must render and
+/// must reflect the CURRENT query-string state across a request, the same
+/// way the pre-existing municipality `<select>` already does
+/// (`imp_req_002_06`). Covers all three presets: no date params (`any_time`
+/// selected, custom fields empty), `date_preset=last_7_days` (that option
+/// selected), and a custom `date_from`/`date_to` pair (`custom_range`
+/// selected AND both date inputs retain their submitted values).
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_007_09_10_date_preset_control_reflects_query_string_state(pool: PgPool) {
+    let app = app(test_state(pool).await);
+
+    // No date params at all: "Any time" must be the selected option, and
+    // both custom-range inputs must render empty.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/search")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        html.contains(r#"<select id="search-date-preset" name="date_preset">"#),
+        "expected the date-preset select control to render, got: {html}"
+    );
+    assert!(
+        html.contains(r#"<option value="" selected>Any time</option>"#),
+        "expected 'Any time' selected with no date params present, got: {html}"
+    );
+    assert!(
+        html.contains(r#"<input type="date" id="search-date-from" name="date_from" value="">"#),
+        "expected an empty date_from input with no date params present, got: {html}"
+    );
+    assert!(
+        html.contains(r#"<input type="date" id="search-date-to" name="date_to" value="">"#),
+        "expected an empty date_to input with no date params present, got: {html}"
+    );
+    assert!(
+        !html.contains(r#"value="last_7_days" selected"#),
+        "the last_7_days option must not be selected with no date params, got: {html}"
+    );
+
+    // date_preset=last_7_days: that option must come back selected.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/search?date_preset=last_7_days")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        html.contains(r#"<option value="last_7_days" selected>Last 7 days</option>"#),
+        "expected the last_7_days option selected after re-submitting with \
+         date_preset=last_7_days, got: {html}"
+    );
+
+    // A custom date_from/date_to range: "Custom range" must be selected AND
+    // both inputs must retain their submitted values across the request.
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?date_from=2026-06-01&date_to=2026-06-30")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        html.matches("selected>Custom range</option>").count() == 1,
+        "expected the Custom range option selected when date_from/date_to \
+         are present, got: {html}"
+    );
+    assert!(
+        html.contains(
+            r#"<input type="date" id="search-date-from" name="date_from" value="2026-06-01">"#
+        ),
+        "expected date_from's submitted value to be preserved on the input, got: {html}"
+    );
+    assert!(
+        html.contains(
+            r#"<input type="date" id="search-date-to" name="date_to" value="2026-06-30">"#
+        ),
+        "expected date_to's submitted value to be preserved on the input, got: {html}"
+    );
+}
+
+/// IMP-REQ-007-10/-11: the applied date-filter chip must appear only when a
+/// date filter is active, must show clear removable-indicator text, its "x"
+/// clear-link must carry a real accessible name (not a bare "x" glyph), and
+/// that link must remove ONLY the date params from the query string while
+/// preserving `q`/`municipality_slug`/`lang`. Also confirms the chip is
+/// entirely absent when no date filter is active.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_007_10_11_applied_filter_chip_appears_and_clears_only_date_params(
+    pool: PgPool,
+) {
+    seed_searchable_project(&pool, "1 rue chip test", "Ville de Chip").await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+
+    // No date filter active: the chip must not render at all.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=chip")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        !html.contains(r#"id="date-filter-chip""#),
+        "expected no applied-filter chip when no date filter is active, got: {html}"
+    );
+
+    // A date filter (last_7_days) IS active, alongside q/municipality_slug:
+    // the chip must render, with a real accessible clear-label (not a bare
+    // "x"), and its href must preserve q/municipality_slug/lang while
+    // dropping date_preset entirely.
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=chip&municipality_slug=montreal&date_preset=last_7_days&lang=en")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"id="date-filter-chip""#),
+        "expected an applied-filter chip when a date filter is active, got: {html}"
+    );
+    assert!(
+        html.contains("Last 7 days"),
+        "expected the chip to show the active preset's label, got: {html}"
+    );
+    assert!(
+        html.contains(r#"aria-label="Clear date filter""#),
+        "expected the chip's clear link to carry a real accessible name \
+         (aria-label), not a bare '×' glyph, got: {html}"
+    );
+
+    let clear_href_start = html
+        .find(r#"class="search-filter-chip-clear""#)
+        .expect("expected the chip's clear link to carry its own class");
+    let tag_start = html[..clear_href_start].rfind("<a").unwrap();
+    let href_start = html[tag_start..].find("href=\"").unwrap() + tag_start + 6;
+    let href_end = html[href_start..].find('"').unwrap() + href_start;
+    let clear_href = &html[href_start..href_end];
+
+    assert!(
+        clear_href.contains("q=chip"),
+        "expected the clear link to preserve q, got href: {clear_href}"
+    );
+    assert!(
+        clear_href.contains("municipality_slug=montreal"),
+        "expected the clear link to preserve municipality_slug, got href: {clear_href}"
+    );
+    assert!(
+        clear_href.contains("lang=en"),
+        "expected the clear link to preserve lang, got href: {clear_href}"
+    );
+    assert!(
+        !clear_href.contains("date_preset")
+            && !clear_href.contains("date_from")
+            && !clear_href.contains("date_to"),
+        "expected the clear link to drop every date param, got href: {clear_href}"
+    );
+}
+
+/// IMP-REQ-007-11: the date-preset select must have a proper `<label for>`
+/// association (matching the same pattern already verified for the
+/// municipality select in `imp_req_002_10`), and the two custom-range date
+/// inputs must each have their own associated `<label for>` too — none of
+/// the three controls may rely on a placeholder or bare text instead of a
+/// real label. Renders the template directly (no DB round-trip needed for a
+/// markup-only assertion), matching `imp_req_002_10`'s approach.
+#[test]
+fn imp_req_007_11_date_filter_controls_meet_basic_accessibility_requirements() {
+    let mut env = Environment::new();
+    env.set_loader(path_loader("../templates"));
+    let tmpl = env.get_template("search.html").unwrap();
+
+    let html = tmpl
+        .render(context! {
+            lang => "en",
+            nav_permits => "Permits",
+            nav_council => "Council",
+            page_title => "Search projects",
+            heading => "Search for a project",
+            search_label => "Civic address or municipality",
+            municipality_select_label => "Municipality",
+            municipality_all_option => "All municipalities",
+            date_filter_label => "Date filter",
+            date_preset_any_time_option => "Any time",
+            date_preset_last_7_days_option => "Last 7 days",
+            date_preset_custom_range_option => "Custom range",
+            date_from_label => "From",
+            date_to_label => "To",
+            date_filter_clear_label => "Clear date filter",
+            submit_label => "Search",
+            empty_message => "No projects match your search.",
+            empty_guidance => "Try broadening your search: use a more general keyword, or double-check the spelling of the address or municipality.",
+            query => "",
+            has_searched => false,
+            search_results => Vec::<minijinja::value::Value>::new(),
+            search_error => false,
+            municipalities => Vec::<minijinja::value::Value>::new(),
+            date_preset_selection => "custom_range",
+            date_from_value => "2026-06-01",
+            date_to_value => "2026-06-30",
+            date_filter_chip_label => "From 2026-06-01 to 2026-06-30",
+            clear_date_filter_href => "/search?lang=en",
+        })
+        .unwrap();
+
+    assert!(
+        html.contains(r#"<label for="search-date-preset">"#)
+            && html.contains(r#"id="search-date-preset""#),
+        "date-preset select must have a <label for> matching its id, got: {html}"
+    );
+    assert!(
+        html.contains(r#"<label for="search-date-from">"#)
+            && html.contains(r#"id="search-date-from""#),
+        "date_from input must have a <label for> matching its id, got: {html}"
+    );
+    assert!(
+        html.contains(r#"<label for="search-date-to">"#)
+            && html.contains(r#"id="search-date-to""#),
+        "date_to input must have a <label for> matching its id, got: {html}"
+    );
+    assert!(
+        html.contains(r#"aria-label="Clear date filter""#),
+        "the chip's clear link must carry a real accessible name via \
+         aria-label, not rely on the bare '×' glyph alone, got: {html}"
+    );
+    assert!(
+        !html.contains("tabindex=\"-1\""),
+        "date-filter controls must remain keyboard-operable, got: {html}"
+    );
+    assert!(
+        !html.contains("aria-hidden") && !html.contains("disabled"),
+        "date-filter controls and their labels must not be hidden from \
+         assistive tech or disabled, got: {html}"
+    );
+}
+
+/// IMP-REQ-007-13: bilingual QA pass — every new date-filter UI string
+/// (preset option labels, custom-range field labels, and the applied chip's
+/// label + accessible clear-text) must render correctly in BOTH English and
+/// French, matching the wording committed in `search_labels`.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_007_13_date_filter_ui_is_fully_bilingual(pool: PgPool) {
+    seed_searchable_project(&pool, "1 rue bilingue", "Ville Bilingue").await;
+    refresh_public_search_index(&pool).await.unwrap();
+
+    let app = app(test_state(pool).await);
+
+    // English.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=bilingue&date_preset=last_7_days&lang=en")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let en_html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(en_html.contains(">Date filter<"), "got: {en_html}");
+    assert!(en_html.contains(">Any time<"), "got: {en_html}");
+    assert!(en_html.contains(">Last 7 days<"), "got: {en_html}");
+    assert!(en_html.contains(">Custom range<"), "got: {en_html}");
+    assert!(en_html.contains(">From<"), "got: {en_html}");
+    assert!(en_html.contains(">To<"), "got: {en_html}");
+    assert!(
+        en_html.contains("aria-label=\"Clear date filter\""),
+        "got: {en_html}"
+    );
+
+    // French.
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=bilingue&date_preset=last_7_days&lang=fr")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let fr_html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(fr_html.contains(">Filtre de date<"), "got: {fr_html}");
+    assert!(fr_html.contains(">Toute période<"), "got: {fr_html}");
+    assert!(fr_html.contains(">7 derniers jours<"), "got: {fr_html}");
+    assert!(fr_html.contains(">Plage personnalisée<"), "got: {fr_html}");
+    assert!(fr_html.contains(">Depuis<"), "got: {fr_html}");
+    assert!(
+        fr_html.contains(">Jusqu&#x27;au<") || fr_html.contains(">Jusqu'au<"),
+        "got: {fr_html}"
+    );
+    assert!(
+        fr_html.contains("aria-label=\"Effacer le filtre de date\""),
+        "got: {fr_html}"
+    );
+    assert!(fr_html.contains("7 derniers jours"), "got: {fr_html}");
 }
 
 fn rand_octet() -> u8 {

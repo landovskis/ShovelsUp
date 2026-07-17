@@ -388,6 +388,138 @@ mod core {
         format!("/search?{}", pairs.join("&"))
     }
 
+    /// Which of the three date-filter UI presets (IMP-REQ-007-09) is
+    /// currently active, derived from the raw `date_preset`/`date_from`/
+    /// `date_to` query params — used purely to decide which `<option>` in
+    /// the search form's date-preset `<select>` renders `selected`
+    /// (IMP-REQ-007-10), so the control reflects the current query-string
+    /// state across a request the same way the municipality `<select>`
+    /// already does.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum DatePresetSelection {
+        AnyTime,
+        Last7Days,
+        CustomRange,
+    }
+
+    impl DatePresetSelection {
+        /// The value compared against in `search.html`'s `{% if %}` guards.
+        pub fn as_str(&self) -> &'static str {
+            match self {
+                DatePresetSelection::AnyTime => "any_time",
+                DatePresetSelection::Last7Days => "last_7_days",
+                DatePresetSelection::CustomRange => "custom_range",
+            }
+        }
+    }
+
+    /// Determines which preset option should render as `selected`
+    /// (IMP-REQ-007-10). Mirrors `parse_date_filter`'s own precedence
+    /// exactly (a non-blank `date_preset` wins over `date_from`/`date_to`),
+    /// so the UI's selected preset always agrees with what the backend will
+    /// actually filter on for these same raw params.
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    pub fn selected_date_preset(
+        date_preset: Option<&str>,
+        date_from: Option<&str>,
+        date_to: Option<&str>,
+    ) -> DatePresetSelection {
+        let date_preset = date_preset.filter(|s| !s.trim().is_empty());
+        let date_from = date_from.filter(|s| !s.trim().is_empty());
+        let date_to = date_to.filter(|s| !s.trim().is_empty());
+
+        if date_preset == Some(PRESET_LAST_7_DAYS) {
+            return DatePresetSelection::Last7Days;
+        }
+        if date_from.is_some() || date_to.is_some() {
+            return DatePresetSelection::CustomRange;
+        }
+        DatePresetSelection::AnyTime
+    }
+
+    /// Builds the applied-filter chip's label text (IMP-REQ-007-10), shown
+    /// alongside a removable "x" whenever a date filter is currently active.
+    /// Returns `None` when no date filter is active (no chip renders) or
+    /// when `date_preset` is some unrecognized, non-`last_7_days` value (the
+    /// backend would already have rejected such a request with 400 before
+    /// this ever gets called with a real request's params, so this is just
+    /// a safe default rather than a case expected to occur in practice).
+    ///
+    /// Pure string formatting from already-known raw param values — no I/O.
+    pub fn format_date_filter_chip_label(
+        lang: &str,
+        date_preset: Option<&str>,
+        date_from: Option<&str>,
+        date_to: Option<&str>,
+    ) -> Option<String> {
+        let date_preset = date_preset.filter(|s| !s.trim().is_empty());
+        let date_from = date_from.filter(|s| !s.trim().is_empty());
+        let date_to = date_to.filter(|s| !s.trim().is_empty());
+
+        if let Some(preset) = date_preset {
+            return if preset == PRESET_LAST_7_DAYS {
+                Some(if lang == "fr" {
+                    "7 derniers jours".to_string()
+                } else {
+                    "Last 7 days".to_string()
+                })
+            } else {
+                None
+            };
+        }
+
+        match (date_from, date_to) {
+            (Some(from), Some(to)) => Some(if lang == "fr" {
+                format!("Du {from} au {to}")
+            } else {
+                format!("From {from} to {to}")
+            }),
+            (Some(from), None) => Some(if lang == "fr" {
+                format!("Depuis le {from}")
+            } else {
+                format!("From {from}")
+            }),
+            (None, Some(to)) => Some(if lang == "fr" {
+                format!("Jusqu'au {to}")
+            } else {
+                format!("Until {to}")
+            }),
+            (None, None) => None,
+        }
+    }
+
+    /// Builds the `href` for the applied date-filter chip's "x" clear link
+    /// (IMP-REQ-007-10): always `/search` with the current `lang` plus
+    /// whichever of `q`/`municipality_slug` are actually present — the same
+    /// param-preservation pattern as `build_lang_toggle_href`/
+    /// `build_pagination_href` — but with NO `date_preset`/`date_from`/
+    /// `date_to` params at all, so following it clears just the date filter
+    /// while leaving every other active filter untouched.
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    pub fn build_clear_date_filter_href(
+        lang: &str,
+        q: &str,
+        municipality_slug: Option<&str>,
+    ) -> String {
+        let mut pairs: Vec<String> = Vec::new();
+        if !q.is_empty() {
+            pairs.push(format!("q={}", percent_encode_query_value(q)));
+        }
+        if let Some(slug) = municipality_slug.filter(|s| !s.is_empty()) {
+            pairs.push(format!(
+                "municipality_slug={}",
+                percent_encode_query_value(slug)
+            ));
+        }
+        pairs.push(format!("lang={lang}"));
+
+        format!("/search?{}", pairs.join("&"))
+    }
+
     /// Builds the `href` for the search-results pagination "Next"/"Previous"
     /// links (IMP-REQ-004-06), following the same param-preservation pattern
     /// as `build_lang_toggle_href` (IMP-REQ-003-08): always `/search` with
@@ -1128,6 +1260,156 @@ mod core {
         }
 
         #[test]
+        fn selected_date_preset_no_params_is_any_time() {
+            assert_eq!(
+                selected_date_preset(None, None, None),
+                DatePresetSelection::AnyTime
+            );
+        }
+
+        #[test]
+        fn selected_date_preset_blank_params_is_any_time() {
+            assert_eq!(
+                selected_date_preset(Some(""), Some("  "), None),
+                DatePresetSelection::AnyTime
+            );
+        }
+
+        #[test]
+        fn selected_date_preset_last_7_days_wins() {
+            assert_eq!(
+                selected_date_preset(Some("last_7_days"), None, None),
+                DatePresetSelection::Last7Days
+            );
+        }
+
+        /// Mirrors `parse_date_filter`'s own precedence: a `last_7_days`
+        /// preset wins over any `date_from`/`date_to` also present.
+        #[test]
+        fn selected_date_preset_last_7_days_wins_over_custom_range_params() {
+            assert_eq!(
+                selected_date_preset(Some("last_7_days"), Some("2026-01-01"), Some("2026-02-01")),
+                DatePresetSelection::Last7Days
+            );
+        }
+
+        #[test]
+        fn selected_date_preset_date_from_only_is_custom_range() {
+            assert_eq!(
+                selected_date_preset(None, Some("2026-01-01"), None),
+                DatePresetSelection::CustomRange
+            );
+        }
+
+        #[test]
+        fn selected_date_preset_date_to_only_is_custom_range() {
+            assert_eq!(
+                selected_date_preset(None, None, Some("2026-02-01")),
+                DatePresetSelection::CustomRange
+            );
+        }
+
+        #[test]
+        fn selected_date_preset_both_dates_is_custom_range() {
+            assert_eq!(
+                selected_date_preset(None, Some("2026-01-01"), Some("2026-02-01")),
+                DatePresetSelection::CustomRange
+            );
+        }
+
+        #[test]
+        fn date_preset_selection_as_str_matches_template_comparison_values() {
+            assert_eq!(DatePresetSelection::AnyTime.as_str(), "any_time");
+            assert_eq!(DatePresetSelection::Last7Days.as_str(), "last_7_days");
+            assert_eq!(DatePresetSelection::CustomRange.as_str(), "custom_range");
+        }
+
+        #[test]
+        fn format_date_filter_chip_label_no_filter_is_none() {
+            assert_eq!(format_date_filter_chip_label("en", None, None, None), None);
+        }
+
+        #[test]
+        fn format_date_filter_chip_label_last_7_days_english() {
+            assert_eq!(
+                format_date_filter_chip_label("en", Some("last_7_days"), None, None),
+                Some("Last 7 days".to_string())
+            );
+        }
+
+        #[test]
+        fn format_date_filter_chip_label_last_7_days_french() {
+            assert_eq!(
+                format_date_filter_chip_label("fr", Some("last_7_days"), None, None),
+                Some("7 derniers jours".to_string())
+            );
+        }
+
+        #[test]
+        fn format_date_filter_chip_label_both_dates_english() {
+            assert_eq!(
+                format_date_filter_chip_label("en", None, Some("2026-01-01"), Some("2026-02-01")),
+                Some("From 2026-01-01 to 2026-02-01".to_string())
+            );
+        }
+
+        #[test]
+        fn format_date_filter_chip_label_both_dates_french() {
+            assert_eq!(
+                format_date_filter_chip_label("fr", None, Some("2026-01-01"), Some("2026-02-01")),
+                Some("Du 2026-01-01 au 2026-02-01".to_string())
+            );
+        }
+
+        #[test]
+        fn format_date_filter_chip_label_from_only() {
+            assert_eq!(
+                format_date_filter_chip_label("en", None, Some("2026-01-01"), None),
+                Some("From 2026-01-01".to_string())
+            );
+        }
+
+        #[test]
+        fn format_date_filter_chip_label_to_only() {
+            assert_eq!(
+                format_date_filter_chip_label("en", None, None, Some("2026-02-01")),
+                Some("Until 2026-02-01".to_string())
+            );
+        }
+
+        #[test]
+        fn format_date_filter_chip_label_unrecognized_preset_is_none() {
+            assert_eq!(
+                format_date_filter_chip_label("en", Some("last_month"), None, None),
+                None
+            );
+        }
+
+        #[test]
+        fn build_clear_date_filter_href_with_no_other_filters() {
+            assert_eq!(
+                build_clear_date_filter_href("en", "", None),
+                "/search?lang=en"
+            );
+        }
+
+        #[test]
+        fn build_clear_date_filter_href_preserves_query_and_municipality_slug() {
+            assert_eq!(
+                build_clear_date_filter_href("fr", "saint-denis", Some("montreal")),
+                "/search?q=saint-denis&municipality_slug=montreal&lang=fr"
+            );
+        }
+
+        #[test]
+        fn build_clear_date_filter_href_percent_encodes_the_preserved_query_value() {
+            assert_eq!(
+                build_clear_date_filter_href("en", "rue saint-denis", None),
+                "/search?q=rue%20saint-denis&lang=en"
+            );
+        }
+
+        #[test]
         fn paginate_first_page_offset_is_zero() {
             let info = paginate(50, 1, 20);
             assert_eq!(info.offset, 0);
@@ -1600,6 +1882,20 @@ struct SearchLabels {
     // links.
     pagination_next_label: &'static str,
     pagination_previous_label: &'static str,
+    // IMP-REQ-007-08/-09: labels for the date-filter UI. `date_filter_label`
+    // is the `<label for>` text of the preset `<select>`;
+    // `date_preset_*_option` are that select's three option labels;
+    // `date_from_label`/`date_to_label` are the custom-range date inputs'
+    // own `<label for>` text; `date_filter_clear_label` is the applied
+    // filter chip's "x" accessible clear-text (IMP-REQ-007-11: never a bare
+    // "x" glyph alone).
+    date_filter_label: &'static str,
+    date_preset_any_time_option: &'static str,
+    date_preset_last_7_days_option: &'static str,
+    date_preset_custom_range_option: &'static str,
+    date_from_label: &'static str,
+    date_to_label: &'static str,
+    date_filter_clear_label: &'static str,
 }
 
 fn search_labels(lang: &str) -> SearchLabels {
@@ -1618,6 +1914,13 @@ fn search_labels(lang: &str) -> SearchLabels {
             lang_toggle_label: "English",
             pagination_next_label: "Suivant",
             pagination_previous_label: "Précédent",
+            date_filter_label: "Filtre de date",
+            date_preset_any_time_option: "Toute période",
+            date_preset_last_7_days_option: "7 derniers jours",
+            date_preset_custom_range_option: "Plage personnalisée",
+            date_from_label: "Depuis",
+            date_to_label: "Jusqu'au",
+            date_filter_clear_label: "Effacer le filtre de date",
         },
         _ => SearchLabels {
             page_title: "Search projects",
@@ -1633,6 +1936,13 @@ fn search_labels(lang: &str) -> SearchLabels {
             lang_toggle_label: "Français",
             pagination_next_label: "Next",
             pagination_previous_label: "Previous",
+            date_filter_label: "Date filter",
+            date_preset_any_time_option: "Any time",
+            date_preset_last_7_days_option: "Last 7 days",
+            date_preset_custom_range_option: "Custom range",
+            date_from_label: "From",
+            date_to_label: "To",
+            date_filter_clear_label: "Clear date filter",
         },
     }
 }
@@ -1778,6 +2088,33 @@ pub async fn get_search_page(
     let lang_toggle_href =
         core::build_lang_toggle_href(lang, &params.q, params.municipality_slug.as_deref());
 
+    // IMP-REQ-007-10: which of the three date-filter presets currently
+    // renders `selected` in the search form, derived from the same raw
+    // `date_preset`/`date_from`/`date_to` params `run_search` above already
+    // validated (or rejected) — so the control reflects the CURRENT query
+    // string state across a request, matching the municipality `<select>`'s
+    // existing selection-preservation behavior.
+    let date_preset_selection = core::selected_date_preset(
+        params.date_preset.as_deref(),
+        params.date_from.as_deref(),
+        params.date_to.as_deref(),
+    );
+
+    // IMP-REQ-007-10: the applied-filter chip's label, shown only when a
+    // date filter is actually active; `None` renders no chip at all.
+    let date_filter_chip_label = core::format_date_filter_chip_label(
+        lang,
+        params.date_preset.as_deref(),
+        params.date_from.as_deref(),
+        params.date_to.as_deref(),
+    );
+
+    // IMP-REQ-007-10: the chip's "x" clear-link href — preserves `q`/
+    // `municipality_slug`/`lang` but omits every date param, so following it
+    // removes just the date filter.
+    let clear_date_filter_href =
+        core::build_clear_date_filter_href(lang, &params.q, params.municipality_slug.as_deref());
+
     // IMP-REQ-004-06: pagination controls only ever accompany a non-empty
     // rendered result list — an empty/error/pre-search state has no page to
     // move forward/back from. `current_page`/`has_more` drive the
@@ -1838,6 +2175,18 @@ pub async fn get_search_page(
             prev_page_href => prev_page_href,
             pagination_next_label => labels.pagination_next_label,
             pagination_previous_label => labels.pagination_previous_label,
+            date_filter_label => labels.date_filter_label,
+            date_preset_any_time_option => labels.date_preset_any_time_option,
+            date_preset_last_7_days_option => labels.date_preset_last_7_days_option,
+            date_preset_custom_range_option => labels.date_preset_custom_range_option,
+            date_from_label => labels.date_from_label,
+            date_to_label => labels.date_to_label,
+            date_filter_clear_label => labels.date_filter_clear_label,
+            date_preset_selection => date_preset_selection.as_str(),
+            date_from_value => params.date_from,
+            date_to_value => params.date_to,
+            date_filter_chip_label => date_filter_chip_label,
+            clear_date_filter_href => clear_date_filter_href,
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -1892,7 +2241,7 @@ mod search_labels_tests {
         // `SearchLabels` field has a genuinely distinct EN/FR wording.
         let identical_by_design: &[&str] = &[];
 
-        let pairs: [(&str, &str, &str); 13] = [
+        let pairs: [(&str, &str, &str); 20] = [
             ("page_title", en.page_title, fr.page_title),
             ("heading", en.heading, fr.heading),
             ("search_label", en.search_label, fr.search_label),
@@ -1925,6 +2274,33 @@ mod search_labels_tests {
                 "pagination_previous_label",
                 en.pagination_previous_label,
                 fr.pagination_previous_label,
+            ),
+            (
+                "date_filter_label",
+                en.date_filter_label,
+                fr.date_filter_label,
+            ),
+            (
+                "date_preset_any_time_option",
+                en.date_preset_any_time_option,
+                fr.date_preset_any_time_option,
+            ),
+            (
+                "date_preset_last_7_days_option",
+                en.date_preset_last_7_days_option,
+                fr.date_preset_last_7_days_option,
+            ),
+            (
+                "date_preset_custom_range_option",
+                en.date_preset_custom_range_option,
+                fr.date_preset_custom_range_option,
+            ),
+            ("date_from_label", en.date_from_label, fr.date_from_label),
+            ("date_to_label", en.date_to_label, fr.date_to_label),
+            (
+                "date_filter_clear_label",
+                en.date_filter_clear_label,
+                fr.date_filter_clear_label,
             ),
         ];
 
