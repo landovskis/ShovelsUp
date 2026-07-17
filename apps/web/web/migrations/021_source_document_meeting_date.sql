@@ -1,0 +1,30 @@
+-- IMP-REQ-006-02: additive, nullable column for the REQ-006 source
+-- transparency citation (GET /projects/{id}). Discovery (IMP-REQ-006-01)
+-- confirmed the current source_documents schema (001_ingestion_schema.sql):
+-- id, municipality_id, source_url, checksum, fetched_at, created_at, with a
+-- UNIQUE (municipality_id, checksum) constraint. No meeting-date signal
+-- exists anywhere in the pipeline yet, so meeting_date is left NULL with no
+-- backfill until a future requirement populates it (TC-006-3 exercises
+-- exactly this NULL case, expecting a "Document retrieved" fallback instead
+-- of a date).
+--
+-- citation_url_reliable is deliberately NOT added as a column here.
+-- tests/timeline_resolver.rs's tc_006_1/-2 seed source_documents rows via
+-- seed_document_chunk_with_source_url with only a source_url (no
+-- reliability flag of any kind), yet expect different reliability
+-- treatment based purely on the URL's shape: tc_006_1 uses a plain
+-- "https://test-city.example/reliable-doc" URL and expects a hyperlink
+-- citation; tc_006_2 uses a Montreal-style session-scoped URL
+-- "https://montreal.ca/portal/session/8f3c1?token=ephemeral" (query string,
+-- session-like path segment) and expects citation text only, never
+-- rendered as a hyperlink target. Since no test seeds a reliability flag
+-- and the reliability outcome is fully determined by inspecting the URL
+-- itself, "reliable" is a pure heuristic computed at read time (e.g. "does
+-- the URL contain a query string / session-like path segment / known
+-- unreliable-domain pattern"), not stored per-row state -- matching the
+-- precedent already set by REQ-002's resolve_citation_view, described in
+-- the plan as "a pure scheme-allowlist decision function". Later
+-- IMP-REQ-006 tasks will add a citation_url_reliable-equivalent core
+-- function alongside meeting_date, not a matching migration column.
+ALTER TABLE source_documents
+    ADD COLUMN meeting_date TIMESTAMPTZ;

@@ -185,8 +185,8 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-006-01 — Schema verification
-- [ ] IMP-REQ-006-02 — Migration: `meeting_date`, `citation_url_reliable` (no backfill needed, safe default)
+- [x] IMP-REQ-006-01 — Schema verification (confirmed source_documents current columns)
+- [x] IMP-REQ-006-02 — Migration: `meeting_date`, `citation_url_reliable` (021_source_document_meeting_date.sql adds only meeting_date; citation_url_reliable deliberately NOT a column — tc_006_1/2 prove it's a URL-shape heuristic computed at read time, matching REQ-002's resolve_citation_view precedent; applied and verified, 34/34) (no backfill needed, safe default)
 - [ ] IMP-REQ-006-03 — Pure `resolve_citation_view` decision function
 - [ ] IMP-REQ-006-04 — Add `url` crate dependency
 - [ ] IMP-REQ-006-05 — `fetch_primary_citation` query
