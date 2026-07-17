@@ -158,8 +158,8 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-005-02 — Schema-existence verification (all 3 municipalities share schema)
-- [ ] IMP-REQ-005-01 — Migration: `description_lang`, `confidence_level`, `source_document_url`
+- [x] IMP-REQ-005-02 — Schema-existence verification (confirmed all 3 launch municipalities share the same schema, no per-municipality variant) (all 3 municipalities share schema)
+- [x] IMP-REQ-005-01 — Migration: `description_lang`, `confidence_level`, `source_document_url` (020_project_detail_fields.sql on `projects`, nullable/additive/unconstrained, no existing source signal to backfill from; applied and build-verified)
 - [ ] IMP-REQ-005-03 — `project_detail` handler: UUID parse, join query, 200/404/503 branch
 - [ ] IMP-REQ-005-04 — Reuse/extract shared locale-resolution utility
 - [ ] IMP-REQ-005-05 — Template context struct
