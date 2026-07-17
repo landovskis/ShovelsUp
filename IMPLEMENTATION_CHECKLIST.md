@@ -169,9 +169,9 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-005-13 — Integration: locale/source-language divergence (already satisfied — tc_005_5 passes)
 - [ ] IMP-REQ-005-14 — Accessibility/responsive manual pass
 #### Frontend Engineer
-- [ ] IMP-REQ-005-06 — `project_detail.html.jinja` (all states)
-- [ ] IMP-REQ-005-07 — 404/503 error templates
-- [ ] IMP-REQ-005-08 — EN/FR string catalog
+- [x] IMP-REQ-005-06 — `project_detail.html.jinja` (all states) (already satisfied — #project-description/#confidence-notice/#description-language-notice/#source-document-link all present with correct omit-vs-always-render semantics)
+- [x] IMP-REQ-005-07 — 404/503 error templates (already satisfied — existing error page with role="alert"/retry affordance, regression-tested by tc_005_4)
+- [x] IMP-REQ-005-08 — EN/FR string catalog (already satisfied — fallback labels present for all new elements, EN/FR confidence-notice fallback verified by tc_005_2)
 - [ ] IMP-REQ-005-09 — Responsive CSS
 
 ## REQ-006 — Source transparency notice
