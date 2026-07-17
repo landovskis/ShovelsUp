@@ -1,15 +1,18 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::Html,
     Json,
 };
 use chrono::{DateTime, Utc};
 use minijinja::context;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{routes::detect_lang, AppState};
+use crate::{
+    routes::locale::{extract_cookie_value, resolve_ui_locale},
+    AppState,
+};
 
 /// IMP-REQ-005-03: pure, I/O-free synthesis of the project-detail page's
 /// description and language-divergence decision. Mirrors
@@ -414,6 +417,17 @@ fn timeline_labels(lang: &str) -> TimelineLabels {
     }
 }
 
+/// Query params accepted by `GET /projects/{id}` (IMP-REQ-005-04):
+/// `lang` is the explicit UI-locale override, highest-precedence input to
+/// `locale::resolve_ui_locale` — the same shared utility `get_search_page`
+/// uses, so this page now honors `?lang=`/`lang` cookie/`Accept-Language`
+/// precedence rather than only `Accept-Language` (the plain `detect_lang`
+/// call this superseded).
+#[derive(Debug, Deserialize)]
+pub struct ProjectDetailParams {
+    pub lang: Option<String>,
+}
+
 /// GET /projects/{id}.
 ///
 /// Server-rendered project-detail page: renders the timeline inline (no
@@ -422,9 +436,20 @@ fn timeline_labels(lang: &str) -> TimelineLabels {
 pub async fn get_project_detail_page(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    Query(params): Query<ProjectDetailParams>,
     headers: HeaderMap,
 ) -> Result<(StatusCode, Html<String>), StatusCode> {
-    let lang = detect_lang(&headers);
+    // IMP-REQ-005-04: explicit `?lang=` param > `lang` cookie >
+    // `Accept-Language` header > `"en"` default, via the SAME shared
+    // `locale::resolve_ui_locale` utility `get_search_page` uses (extracted
+    // from `search.rs`'s `core` module), superseding the plain
+    // `detect_lang(&headers)` call this page previously used, which only
+    // ever consulted `Accept-Language`.
+    let accept_language = headers
+        .get(axum::http::header::ACCEPT_LANGUAGE)
+        .and_then(|v| v.to_str().ok());
+    let cookie_lang = extract_cookie_value(&headers, "lang");
+    let lang = resolve_ui_locale(params.lang.as_deref(), cookie_lang, accept_language);
     let labels = timeline_labels(lang);
 
     let tmpl = state

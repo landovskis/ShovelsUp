@@ -8,6 +8,7 @@ use minijinja::context;
 use crate::AppState;
 
 pub mod admin;
+pub(crate) mod locale;
 pub mod projects;
 pub mod review_queue;
 pub mod search;
