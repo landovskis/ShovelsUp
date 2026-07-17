@@ -198,9 +198,9 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-006-14 — Integration test TC-006-4 (already satisfied — passes)
 - [x] IMP-REQ-006-15 — Integration test TC-006-5 (already satisfied — passes, via citation_db_override fault injection)
 #### Frontend Engineer
-- [ ] IMP-REQ-006-07 — EN/FR label struct additions
-- [ ] IMP-REQ-006-08 — `.project-source` template section (all states)
-- [ ] IMP-REQ-006-09 — Accessibility pass
+- [x] IMP-REQ-006-07 — EN/FR label struct additions (already complete — all citation labels have EN/FR pairs)
+- [x] IMP-REQ-006-08 — `.project-source` template section (all states) (already correct from IMP-REQ-006-06 — hyperlink/text-only/fallback/omitted all verified against tc_006_1-5)
+- [x] IMP-REQ-006-09 — Accessibility pass (no color-only cue risk confirmed, structural <a>-vs-<span> distinction; new tc_006_6 test locks in meaningful link text — REQ-006 complete, all 6 tc_006_* pass, 40/40 verified single-threaded)
 
 ## REQ-007 — Date-range filter
 

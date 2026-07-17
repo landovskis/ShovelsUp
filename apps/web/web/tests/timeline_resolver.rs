@@ -1227,6 +1227,156 @@ async fn tc_006_5_citation_query_failure_isolated_from_page(pool: PgPool) {
     );
 }
 
+/// IMP-REQ-006-09: accessibility pass on the citation section. The
+/// distinction between "reliable" and "unreliable" sources must be
+/// structural (`<a>` vs. plain `<span>`), never conveyed by color alone,
+/// and the hyperlink's link text must be meaningful (the municipality
+/// name) rather than a generic "click here"/"link" placeholder. This test
+/// seeds one reliable-source project (TC-006-1-style) and one
+/// unreliable-source project (TC-006-2-style) and asserts both properties
+/// concretely against the rendered HTML.
+#[sqlx::test(migrations = "./migrations")]
+async fn tc_006_6_citation_link_text_is_meaningful_and_unreliable_is_not_a_link(pool: PgPool) {
+    // Reliable citation: expect a real `<a>` whose visible text is the
+    // municipality name, not placeholder text like "click here"/"link".
+    let reliable_project_id =
+        seed_project(&pool, "605 accessible reliable ave", "residential").await;
+    let reliable_chunk_id = seed_document_chunk_with_source_url(
+        &pool,
+        "https://test-city.example/accessible-reliable-doc",
+    )
+    .await;
+    let reliable_mention_id = insert_mention(
+        &pool,
+        reliable_chunk_id,
+        "605 accessible reliable ave",
+        "residential",
+    )
+    .await;
+    seed_timeline_event(
+        &pool,
+        reliable_project_id,
+        reliable_mention_id,
+        chrono::Utc::now(),
+        "approved",
+    )
+    .await;
+
+    let reliable_app = app(test_state(pool.clone()).await);
+    let response = reliable_app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{reliable_project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    let link_open = r#"<a id="citation-link" href="https://test-city.example/accessible-reliable-doc">"#;
+    let link_start = html
+        .find(link_open)
+        .unwrap_or_else(|| panic!("expected a citation hyperlink in: {html}"));
+    let after_open = &html[link_start + link_open.len()..];
+    let link_close = after_open
+        .find("</a>")
+        .unwrap_or_else(|| panic!("expected a closing </a> after the citation link in: {html}"));
+    let link_text = &after_open[..link_close];
+
+    assert_eq!(
+        link_text, "Test City",
+        "citation link text must be the real municipality name, not a generic placeholder"
+    );
+    let lowercase_link_text = link_text.to_lowercase();
+    assert!(
+        !lowercase_link_text.contains("click here") && !lowercase_link_text.contains("link"),
+        "citation link text must not be generic \"click here\"/\"link\" placeholder text, \
+         got: {link_text}"
+    );
+
+    // Unreliable citation: expect a plain, non-clickable element — no
+    // `<a href>` wrapping the unreliable URL anywhere on the page, so the
+    // reliable/unreliable distinction stays structural rather than a
+    // color-only cue on an otherwise-identical-looking link. Seeded with a
+    // distinct municipality name (rather than reusing
+    // `seed_document_chunk_with_source_url`'s hardcoded "Test City") since
+    // `municipalities.name` is unique and the reliable case above already
+    // inserted "Test City" into this same pool/database.
+    let unreliable_project_id =
+        seed_project(&pool, "606 accessible unreliable blvd", "commercial").await;
+    let unreliable_municipality_id = sqlx::query_scalar!(
+        "INSERT INTO municipalities (name, slug, domain_allowlist) \
+         VALUES ('Test City Two', 'test-city-two', ARRAY['test-city-two.example']) RETURNING id"
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let unreliable_doc_id = sqlx::query_scalar!(
+        "INSERT INTO source_documents (municipality_id, source_url, checksum, content, content_type) \
+         VALUES ($1, $2, 'chk', ''::bytea, 'text/html') RETURNING id",
+        unreliable_municipality_id,
+        "https://montreal.ca/portal/session/9a2b7?token=ephemeral",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let unreliable_chunk_id = sqlx::query_scalar!(
+        "INSERT INTO document_chunks (source_document_id, chunk_index, content) \
+         VALUES ($1, 0, 'chunk text') RETURNING id",
+        unreliable_doc_id
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let unreliable_mention_id = insert_mention(
+        &pool,
+        unreliable_chunk_id,
+        "606 accessible unreliable blvd",
+        "commercial",
+    )
+    .await;
+    seed_timeline_event(
+        &pool,
+        unreliable_project_id,
+        unreliable_mention_id,
+        chrono::Utc::now(),
+        "proposed",
+    )
+    .await;
+
+    let unreliable_app = app(test_state(pool).await);
+    let response = unreliable_app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{unreliable_project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"<span id="citation-text">Test City Two</span>"#),
+        "unreliable citation must render as a plain, non-clickable <span>, got: {html}"
+    );
+    assert!(
+        !html.contains("<a") || !html.contains("montreal.ca/portal/session/9a2b7"),
+        "the unreliable source URL must never be wrapped in an <a href>, got: {html}"
+    );
+}
+
 // ---------------------------------------------------------------------
 // REQ-015 Loop A (detail-page half): search-result confidence indicator
 // ("Detected N days ago from M council source(s)"), also required on the
