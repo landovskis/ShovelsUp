@@ -1338,14 +1338,13 @@ async fn tc_004_5_out_of_range_page_returns_empty_results_not_an_error(pool: PgP
 /// TC-007-1: `date_preset=last_7_days` returns only projects surfaced within
 /// the last 7 UTC days, excluding an older fixture.
 ///
-/// Blocked on IMP-REQ-004-01 (the migration adding
+/// Was blocked on IMP-REQ-004-01 (the migration adding
 /// `public_search_documents.first_surfaced_at`) and IMP-REQ-007-05 (wiring
-/// `date_preset` into `run_search`'s query). Written directly against
-/// `first_surfaced_at` via runtime-checked `sqlx::query` (not the
-/// compile-time-checked macros, which would fail `cargo build` today against
-/// a schema lacking the column), with the full intended assertion body, per
-/// the same pattern as TC-004-4.
-#[ignore = "blocked on IMP-REQ-004-01 migration (first_surfaced_at) and IMP-REQ-007-05 (date filter wiring)"]
+/// `date_preset` into `run_search`'s query); both have since landed. Written
+/// directly against `first_surfaced_at` via runtime-checked `sqlx::query`
+/// (not the compile-time-checked macros, which would fail `cargo build`
+/// against an older schema lacking the column), per the same pattern as
+/// TC-004-4.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_007_1_last_7_days_preset_excludes_older_fixture(pool: PgPool) {
     let recent_project =
@@ -1386,7 +1385,10 @@ async fn tc_007_1_last_7_days_preset_excludes_older_fixture(pool: PgPool) {
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert_eq!(
         results.len(),
         1,
@@ -1401,9 +1403,8 @@ async fn tc_007_1_last_7_days_preset_excludes_older_fixture(pool: PgPool) {
 /// TC-007-2: custom range `date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` returns
 /// only projects within that inclusive range.
 ///
-/// Blocked on IMP-REQ-004-01 (first_surfaced_at) and IMP-REQ-007-05 (date
-/// filter wiring), same as TC-007-1.
-#[ignore = "blocked on IMP-REQ-004-01 migration (first_surfaced_at) and IMP-REQ-007-05 (date filter wiring)"]
+/// Was blocked on IMP-REQ-004-01 (first_surfaced_at) and IMP-REQ-007-05
+/// (date filter wiring), same as TC-007-1; both have since landed.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_007_2_custom_range_returns_only_projects_within_range(pool: PgPool) {
     let in_range_project =
@@ -1448,7 +1449,10 @@ async fn tc_007_2_custom_range_returns_only_projects_within_range(pool: PgPool) 
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert_eq!(
         results.len(),
         1,
@@ -1461,9 +1465,8 @@ async fn tc_007_2_custom_range_returns_only_projects_within_range(pool: PgPool) 
 }
 
 /// TC-007-3: an invalid range (`date_from` after `date_to`) is rejected with
-/// 400/409 before any query runs. No such validation exists yet
-/// (IMP-REQ-007-03), so this currently fails: the handler runs the query
-/// anyway (ignoring the stub params) and returns 200.
+/// 400/409 before any query runs, via `core::parse_date_filter`
+/// (IMP-REQ-007-03) wired into `run_search` (IMP-REQ-007-05).
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_007_3_date_from_after_date_to_rejected(pool: PgPool) {
     let app = app(test_state(pool).await);
@@ -1486,10 +1489,8 @@ async fn tc_007_3_date_from_after_date_to_rejected(pool: PgPool) {
     );
 }
 
-/// TC-007-4: a malformed date string (not ISO 8601) is rejected with 400,
-/// not a 500/panic. No parsing/validation exists yet (IMP-REQ-007-03), so
-/// this currently fails: the handler ignores the unparsed stub field
-/// entirely and returns 200.
+/// TC-007-4: a malformed date string (not `YYYY-MM-DD`) is rejected with
+/// 400, not a 500/panic, via `core::parse_date_filter` (IMP-REQ-007-03).
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_007_4_malformed_date_string_rejected_with_400(pool: PgPool) {
     let app = app(test_state(pool).await);
@@ -1513,8 +1514,7 @@ async fn tc_007_4_malformed_date_string_rejected_with_400(pool: PgPool) {
 }
 
 /// TC-007-5: no date filter at all still returns all matching projects —
-/// backward-compatible with REQ-001/002's plain search. Trivially true today
-/// since date filtering isn't wired into `run_search` yet.
+/// backward-compatible with REQ-001/002's plain search.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_007_5_no_date_filter_returns_all_matching_projects(pool: PgPool) {
     seed_searchable_project(&pool, "1 rue sans filtre", "Ville de Sansfiltre Un").await;
@@ -1537,7 +1537,10 @@ async fn tc_007_5_no_date_filter_returns_all_matching_projects(pool: PgPool) {
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert_eq!(
         results.len(),
         2,
@@ -1549,11 +1552,11 @@ async fn tc_007_5_no_date_filter_returns_all_matching_projects(pool: PgPool) {
 /// (midnight UTC) is included (inclusive boundary); one exactly one second
 /// before is excluded.
 ///
-/// Blocked on IMP-REQ-004-01 (first_surfaced_at) and IMP-REQ-007-05 (date
-/// filter wiring), same as TC-007-1/-2. Written directly against
-/// `first_surfaced_at` via runtime-checked `sqlx::query`, with the full
+/// Was blocked on IMP-REQ-004-01 (first_surfaced_at) and IMP-REQ-007-05
+/// (date filter wiring), same as TC-007-1/-2; both have since landed.
+/// Written directly against `first_surfaced_at` via runtime-checked
+/// `sqlx::query`, with the full
 /// intended assertion body.
-#[ignore = "blocked on IMP-REQ-004-01 migration (first_surfaced_at) and IMP-REQ-007-05 (date filter wiring)"]
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_007_6_date_from_boundary_is_inclusive(pool: PgPool) {
     let on_boundary_project =
@@ -1602,7 +1605,10 @@ async fn tc_007_6_date_from_boundary_is_inclusive(pool: PgPool) {
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert_eq!(
         results.len(),
         1,

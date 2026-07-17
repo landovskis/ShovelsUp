@@ -218,11 +218,11 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 
 ⚠️ **Test-fixture staleness found (not yet fixed, flagged for next task):** tc_007_5 (and by extension tc_007_1/2/6 once un-ignored) still deserialize the JSON API response as a bare array, but REQ-004's IMP-REQ-004-04 changed `search_projects` to return a `SearchResultsEnvelope` object. Needs fixing when wiring the real DateFilter (same class of staleness already fixed for REQ-002/003's tests after REQ-002-04 landed). (`TIMESTAMPTZ NOT NULL` assumption; correct in place if wrong — blocks downstream tasks until reconciled)
 - [x] IMP-REQ-007-02 — Migration: supporting index (`CONCURRENTLY`, non-locking) (already satisfied — REQ-004's migration 019 already created idx_public_search_documents_first_surfaced_at)
-- [ ] IMP-REQ-007-03 — `DateFilter` parse/validate module
-- [ ] IMP-REQ-007-04 — Unit tests for `DateFilter`
-- [ ] IMP-REQ-007-05 — Wire into search query builder, map errors to 400/409
-- [ ] IMP-REQ-007-06 — 503 handling verification
-- [ ] IMP-REQ-007-07 — Integration tests (composed endpoint)
+- [x] IMP-REQ-007-03 — `DateFilter` parse/validate module (pure core::parse_date_filter, last_7_days preset + custom YYYY-MM-DD range, inclusive UTC boundaries, 15 unit tests)
+- [x] IMP-REQ-007-04 — Unit tests for `DateFilter` (already satisfied by IMP-REQ-007-03's 15 tests)
+- [x] IMP-REQ-007-05 — Wire into search query builder, map errors to 400/409 (MalformedDate->400, DateRangeInverted->409; validated before any DB query; all 6 tc_007_* pass, 46/46 verified single-threaded)
+- [x] IMP-REQ-007-06 — 503 handling verification (existing error mapping already covers the date-extended query, confirmed via tc_req_008_4)
+- [x] IMP-REQ-007-07 — Integration tests (composed endpoint) (all 6 tc_007_* tests pass, fixed envelope-shape staleness, un-ignored tc_007_1/2/6)
 - [ ] IMP-REQ-007-12 — System E2E test cases 1-6
 - [ ] IMP-REQ-007-13 — Bilingual QA pass
 #### Frontend Engineer

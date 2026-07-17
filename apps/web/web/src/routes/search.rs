@@ -21,6 +21,7 @@ const MAX_PER_PAGE: i64 = 100;
 /// Wired into `run_search` (IMP-REQ-001-04).
 mod core {
     use super::{DEFAULT_PER_PAGE, MAX_PER_PAGE};
+    use chrono::{DateTime, Duration, NaiveDate, Utc};
 
     /// Search params that have passed validation and are ready to drive a
     /// query.
@@ -38,6 +39,17 @@ mod core {
         /// outside `[a-z0-9-]`, or was longer than
         /// `MAX_MUNICIPALITY_SLUG_LEN`.
         InvalidMunicipalitySlugFormat,
+        /// `date_preset` was set to something other than the one supported
+        /// value (`last_7_days`), or `date_from`/`date_to` failed to parse
+        /// as `YYYY-MM-DD` (IMP-REQ-007-03). Maps to 400 (TC-007-4):
+        /// distinct from `DateRangeInverted` below, which maps to 409, so
+        /// callers can tell the two apart.
+        MalformedDate,
+        /// `date_from` parsed to a date strictly after `date_to` (TC-007-3).
+        /// Kept distinct from `MalformedDate` (both dates are individually
+        /// well-formed here — it's their combination that's invalid) so
+        /// `run_search` can map it to 409 rather than 400.
+        DateRangeInverted,
     }
 
     /// Generous upper bound on a syntactically valid slug's length. Real
@@ -136,6 +148,119 @@ mod core {
             ("vancouver", _) => Some("Vancouver"),
             _ => None,
         }
+    }
+
+    /// A validated `first_surfaced_at` date-range filter (IMP-REQ-007-03):
+    /// `start`/`end` are both inclusive UTC bounds ready to bind directly
+    /// into a `BETWEEN`-shaped SQL predicate.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct DateRange {
+        pub start: DateTime<Utc>,
+        pub end: DateTime<Utc>,
+    }
+
+    /// The one supported `date_preset` value (IMP-REQ-007-03's confirmed
+    /// param contract). Any other non-empty `date_preset` value is rejected
+    /// as `MalformedDate` rather than silently ignored, since a caller that
+    /// sent an unrecognized preset almost certainly made a mistake (a typo,
+    /// or a client built against a preset this server doesn't support yet)
+    /// rather than meaning "no filter".
+    const PRESET_LAST_7_DAYS: &str = "last_7_days";
+
+    /// Parses and validates the `date_preset`/`date_from`/`date_to` query
+    /// params (IMP-REQ-007-03) into an optional `DateRange`, without
+    /// touching the database. `now` is passed in explicitly (rather than
+    /// read via `Utc::now()` inside this function) so `date_preset` is
+    /// exercisable by pure, deterministic unit tests.
+    ///
+    /// - All three params absent (or `date_preset`/`date_from`/`date_to`
+    ///   present but blank) means "no filter": returns `Ok(None)`.
+    /// - `date_preset = "last_7_days"` computes `[now - 7 days, now]`,
+    ///   ignoring any `date_from`/`date_to` also present (the preset takes
+    ///   precedence — the two are alternative ways to specify a range, not
+    ///   meant to be combined).
+    /// - Any other non-blank `date_preset` value is rejected as
+    ///   `MalformedDate`.
+    /// - Otherwise, `date_from`/`date_to` (either or both may be present)
+    ///   are each parsed as `YYYY-MM-DD` into UTC midnight boundaries:
+    ///   `date_from` becomes that day's `00:00:00` UTC (inclusive, TC-007-6);
+    ///   `date_to` becomes the LAST instant of that same day (`23:59:59.999999999`
+    ///   UTC), so an inclusive `<=` comparison captures the whole day rather
+    ///   than excluding everything after midnight. A missing `date_from`
+    ///   defaults to the minimum representable `DateTime<Utc>`; a missing
+    ///   `date_to` defaults to `now`, one-sided range.
+    /// - A malformed (non-`YYYY-MM-DD`) `date_from`/`date_to` is rejected as
+    ///   `MalformedDate` (TC-007-4).
+    /// - `date_from > date_to` (both present and individually well-formed)
+    ///   is rejected as `DateRangeInverted` (TC-007-3), distinct from
+    ///   `MalformedDate` so callers can map it to a different status code
+    ///   (409 vs 400).
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no environment
+    /// reads (the only "clock" involved is the caller-supplied `now`).
+    pub fn parse_date_filter(
+        date_preset: Option<&str>,
+        date_from: Option<&str>,
+        date_to: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<Option<DateRange>, SearchValidationError> {
+        let date_preset = date_preset.filter(|s| !s.trim().is_empty());
+        let date_from = date_from.filter(|s| !s.trim().is_empty());
+        let date_to = date_to.filter(|s| !s.trim().is_empty());
+
+        if let Some(preset) = date_preset {
+            return if preset == PRESET_LAST_7_DAYS {
+                Ok(Some(DateRange {
+                    start: now - Duration::days(7),
+                    end: now,
+                }))
+            } else {
+                Err(SearchValidationError::MalformedDate)
+            };
+        }
+
+        if date_from.is_none() && date_to.is_none() {
+            return Ok(None);
+        }
+
+        let start = date_from
+            .map(parse_ymd_start_of_day)
+            .transpose()?
+            .unwrap_or(DateTime::<Utc>::MIN_UTC);
+        let end = date_to
+            .map(parse_ymd_end_of_day)
+            .transpose()?
+            .unwrap_or(now);
+
+        if start > end {
+            return Err(SearchValidationError::DateRangeInverted);
+        }
+
+        Ok(Some(DateRange { start, end }))
+    }
+
+    /// Parses a `YYYY-MM-DD` string into that day's `00:00:00` UTC instant
+    /// (inclusive lower bound).
+    fn parse_ymd_start_of_day(raw: &str) -> Result<DateTime<Utc>, SearchValidationError> {
+        let date = NaiveDate::parse_from_str(raw, "%Y-%m-%d")
+            .map_err(|_| SearchValidationError::MalformedDate)?;
+        Ok(date
+            .and_hms_opt(0, 0, 0)
+            .expect("00:00:00 is always a valid time")
+            .and_utc())
+    }
+
+    /// Parses a `YYYY-MM-DD` string into that day's LAST representable UTC
+    /// instant (`23:59:59.999999999`), so an inclusive `<=` comparison
+    /// against it captures the entire day rather than excluding everything
+    /// after midnight.
+    fn parse_ymd_end_of_day(raw: &str) -> Result<DateTime<Utc>, SearchValidationError> {
+        let date = NaiveDate::parse_from_str(raw, "%Y-%m-%d")
+            .map_err(|_| SearchValidationError::MalformedDate)?;
+        Ok(date
+            .and_hms_nano_opt(23, 59, 59, 999_999_999)
+            .expect("23:59:59.999999999 is always a valid time")
+            .and_utc())
     }
 
     /// Builds the "N results found" header shown above a non-empty result
@@ -475,6 +600,202 @@ mod core {
             assert_eq!(
                 format_result_count_label("fr", 0),
                 "0 résultats trouvés"
+            );
+        }
+
+        /// A fixed reference instant used across `parse_date_filter` tests so
+        /// they are deterministic rather than depending on the real clock.
+        fn fixed_now() -> DateTime<Utc> {
+            DateTime::parse_from_rfc3339("2026-07-15T12:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc)
+        }
+
+        #[test]
+        fn date_filter_no_params_means_no_filter() {
+            let result = parse_date_filter(None, None, None, fixed_now()).unwrap();
+            assert_eq!(result, None);
+        }
+
+        #[test]
+        fn date_filter_blank_params_mean_no_filter() {
+            let result = parse_date_filter(Some(""), Some("  "), None, fixed_now()).unwrap();
+            assert_eq!(result, None);
+        }
+
+        #[test]
+        fn date_filter_last_7_days_preset_computes_now_minus_7_days() {
+            let now = fixed_now();
+            let result = parse_date_filter(Some("last_7_days"), None, None, now)
+                .unwrap()
+                .unwrap();
+            assert_eq!(result.start, now - Duration::days(7));
+            assert_eq!(result.end, now);
+        }
+
+        #[test]
+        fn date_filter_unrecognized_preset_is_rejected_as_malformed() {
+            let result = parse_date_filter(Some("last_month"), None, None, fixed_now());
+            assert_eq!(result, Err(SearchValidationError::MalformedDate));
+        }
+
+        #[test]
+        fn date_filter_preset_takes_precedence_over_date_from_to() {
+            // The preset and an explicit custom range are alternative ways to
+            // specify a filter, not meant to be combined; the preset wins.
+            let now = fixed_now();
+            let result = parse_date_filter(
+                Some("last_7_days"),
+                Some("2020-01-01"),
+                Some("2020-01-02"),
+                now,
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(result.start, now - Duration::days(7));
+            assert_eq!(result.end, now);
+        }
+
+        #[test]
+        fn date_filter_valid_custom_range_parses_both_bounds() {
+            let result = parse_date_filter(
+                None,
+                Some("2026-06-01"),
+                Some("2026-06-30"),
+                fixed_now(),
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(
+                result.start,
+                DateTime::parse_from_rfc3339("2026-06-01T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc)
+            );
+            assert_eq!(
+                result.end,
+                NaiveDate::from_ymd_opt(2026, 6, 30)
+                    .unwrap()
+                    .and_hms_nano_opt(23, 59, 59, 999_999_999)
+                    .unwrap()
+                    .and_utc()
+            );
+        }
+
+        #[test]
+        fn date_filter_only_date_from_defaults_end_to_now() {
+            let now = fixed_now();
+            let result = parse_date_filter(None, Some("2026-06-01"), None, now)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                result.start,
+                DateTime::parse_from_rfc3339("2026-06-01T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc)
+            );
+            assert_eq!(result.end, now);
+        }
+
+        #[test]
+        fn date_filter_only_date_to_defaults_start_to_minimum() {
+            let result = parse_date_filter(None, None, Some("2026-06-30"), fixed_now())
+                .unwrap()
+                .unwrap();
+            assert_eq!(result.start, DateTime::<Utc>::MIN_UTC);
+        }
+
+        #[test]
+        fn date_filter_malformed_date_from_is_rejected() {
+            let result = parse_date_filter(None, Some("not-a-date"), None, fixed_now());
+            assert_eq!(result, Err(SearchValidationError::MalformedDate));
+        }
+
+        #[test]
+        fn date_filter_malformed_date_to_is_rejected() {
+            let result = parse_date_filter(None, None, Some("2026-13-40"), fixed_now());
+            assert_eq!(result, Err(SearchValidationError::MalformedDate));
+        }
+
+        #[test]
+        fn date_filter_wrong_format_is_rejected() {
+            // ISO 8601 with a time component, not the expected YYYY-MM-DD.
+            let result = parse_date_filter(None, Some("2026-06-01T00:00:00Z"), None, fixed_now());
+            assert_eq!(result, Err(SearchValidationError::MalformedDate));
+        }
+
+        #[test]
+        fn date_filter_date_from_after_date_to_is_rejected() {
+            let result = parse_date_filter(
+                None,
+                Some("2026-07-20"),
+                Some("2026-07-10"),
+                fixed_now(),
+            );
+            assert_eq!(result, Err(SearchValidationError::DateRangeInverted));
+        }
+
+        #[test]
+        fn date_filter_date_from_equals_date_to_is_accepted() {
+            let result = parse_date_filter(
+                None,
+                Some("2026-07-10"),
+                Some("2026-07-10"),
+                fixed_now(),
+            )
+            .unwrap()
+            .unwrap();
+            assert!(result.start <= result.end);
+        }
+
+        /// Boundary: a project surfaced at exactly midnight UTC on
+        /// `date_from` is inside the range (inclusive); one exactly one
+        /// second before is outside it (TC-007-6).
+        #[test]
+        fn date_filter_date_from_boundary_is_inclusive_at_midnight() {
+            let result = parse_date_filter(None, Some("2026-07-10"), None, fixed_now())
+                .unwrap()
+                .unwrap();
+            let midnight = NaiveDate::from_ymd_opt(2026, 7, 10)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap()
+                .and_utc();
+            let one_second_before = midnight - Duration::seconds(1);
+
+            assert!(midnight >= result.start, "midnight boundary must be inside the range");
+            assert!(
+                one_second_before < result.start,
+                "one second before midnight must be outside the range"
+            );
+        }
+
+        /// Boundary: a project surfaced at the last instant of `date_to`'s
+        /// day is inside the range (inclusive); the first instant of the
+        /// following day is outside it.
+        #[test]
+        fn date_filter_date_to_boundary_is_inclusive_through_end_of_day() {
+            let result = parse_date_filter(None, None, Some("2026-07-10"), fixed_now())
+                .unwrap()
+                .unwrap();
+            let last_instant_of_day = NaiveDate::from_ymd_opt(2026, 7, 10)
+                .unwrap()
+                .and_hms_nano_opt(23, 59, 59, 999_999_999)
+                .unwrap()
+                .and_utc();
+            let start_of_next_day = NaiveDate::from_ymd_opt(2026, 7, 11)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap()
+                .and_utc();
+
+            assert!(
+                last_instant_of_day <= result.end,
+                "last instant of date_to's day must be inside the range"
+            );
+            assert!(
+                start_of_next_day > result.end,
+                "the following day must be outside the range"
             );
         }
 
@@ -1034,6 +1355,16 @@ pub struct SearchResultsEnvelope {
     pub has_more: bool,
 }
 
+/// Raw (unvalidated) `date_preset`/`date_from`/`date_to` query params,
+/// bundled into a single struct so `run_search` takes one argument for the
+/// three rather than three more positional parameters (see its doc comment).
+#[derive(Debug, Clone, Copy)]
+struct RawDateFilterQuery<'a> {
+    date_preset: Option<&'a str>,
+    date_from: Option<&'a str>,
+    date_to: Option<&'a str>,
+}
+
 /// Validates `per_page` (TC-REQ-008-3: rejected before any DB query runs)
 /// and runs the keyword search shared by both the JSON API and the
 /// server-rendered page. `q` matches against either the civic address or
@@ -1047,12 +1378,18 @@ pub struct SearchResultsEnvelope {
 /// returned `Vec<SearchResult>` is only this page's slice while the returned
 /// `core::PaginationInfo` reflects the full unpaginated match count and
 /// whether a further page remains.
+///
+/// `date_filter` bundles the raw, unvalidated `date_preset`/`date_from`/
+/// `date_to` query params into a single argument (rather than three more
+/// positional parameters) purely to stay under clippy's
+/// `too_many_arguments` threshold.
 async fn run_search(
     pool: &sqlx::PgPool,
     q: &str,
     per_page: Option<i64>,
     municipality_slug: Option<String>,
     page: Option<i64>,
+    date_filter: RawDateFilterQuery<'_>,
 ) -> Result<(Vec<SearchResult>, core::PaginationInfo), StatusCode> {
     let core::ValidatedSearchParams { per_page } =
         core::validate_search_params(per_page).map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -1061,6 +1398,24 @@ async fn run_search(
     // DB query runs.
     let municipality_slug = core::validate_municipality_slug(municipality_slug)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    // IMP-REQ-007-05: `date_preset`/`date_from`/`date_to` parsing/validation
+    // also runs before any DB query, matching the `municipality_slug`
+    // pattern immediately above. A malformed date (TC-007-4) maps to 400; an
+    // inverted `date_from > date_to` range (TC-007-3) maps to 409, distinct
+    // from every other validation failure in this function so far.
+    let date_range = core::parse_date_filter(
+        date_filter.date_preset,
+        date_filter.date_from,
+        date_filter.date_to,
+        chrono::Utc::now(),
+    )
+    .map_err(|err| match err {
+        core::SearchValidationError::DateRangeInverted => StatusCode::CONFLICT,
+        _ => StatusCode::BAD_REQUEST,
+    })?;
+    let date_start = date_range.map(|range| range.start);
+    let date_end = date_range.map(|range| range.end);
 
     // If a slug was supplied and is syntactically valid, it must also exist
     // in the live `municipalities` table (TC-002-2: a slug that is
@@ -1106,10 +1461,14 @@ async fn run_search(
             OR search_vector_en @@ plainto_tsquery('english', $2)
         )
           AND ($3::text IS NULL OR municipality_slug = $3)
+          AND ($4::timestamptz IS NULL OR first_surfaced_at >= $4)
+          AND ($5::timestamptz IS NULL OR first_surfaced_at <= $5)
         "#,
         keyword,
         normalized_query,
         municipality_slug,
+        date_start,
+        date_end,
     )
     .fetch_one(pool)
     .await
@@ -1129,6 +1488,8 @@ async fn run_search(
             OR search_vector_en @@ plainto_tsquery('english', $4)
         )
           AND ($3::text IS NULL OR municipality_slug = $3)
+          AND ($6::timestamptz IS NULL OR first_surfaced_at >= $6)
+          AND ($7::timestamptz IS NULL OR first_surfaced_at <= $7)
         ORDER BY civic_address_normalized ASC
         LIMIT $2 OFFSET $5
         "#,
@@ -1137,6 +1498,8 @@ async fn run_search(
         municipality_slug,
         normalized_query,
         pagination.offset,
+        date_start,
+        date_end,
     )
     .fetch_all(pool)
     .await
@@ -1179,6 +1542,11 @@ pub async fn search_projects(
         params.per_page,
         params.municipality_slug,
         params.page,
+        RawDateFilterQuery {
+            date_preset: params.date_preset.as_deref(),
+            date_from: params.date_from.as_deref(),
+            date_to: params.date_to.as_deref(),
+        },
     )
     .await?;
 
@@ -1327,6 +1695,11 @@ pub async fn get_search_page(
                 params.per_page,
                 params.municipality_slug.clone(),
                 params.page,
+                RawDateFilterQuery {
+                    date_preset: params.date_preset.as_deref(),
+                    date_from: params.date_from.as_deref(),
+                    date_to: params.date_to.as_deref(),
+                },
             )
             .await,
         )
