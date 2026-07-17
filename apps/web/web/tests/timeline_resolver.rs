@@ -57,6 +57,53 @@ async fn seed_project(pool: &PgPool, address: &str, project_type: &str) -> Uuid 
 }
 
 async fn seed_document_chunk(pool: &PgPool) -> Uuid {
+    seed_document_chunk_with_source_url(pool, "https://test-city.example/doc").await
+}
+
+/// Same as `seed_document_chunk` but with a caller-supplied `source_url`,
+/// so REQ-006 tests can seed a "reliable" direct document URL vs. a
+/// Montreal-style session-scoped portal URL (the latter being the
+/// motivating example for `citation_url_reliable = false` in TC-006-2).
+/// `source_documents` has no `citation_url_reliable`/`meeting_date`
+/// columns yet (IMP-REQ-006-05's migration), so this seeds only what
+/// today's schema supports.
+async fn seed_document_chunk_with_source_url(pool: &PgPool, source_url: &str) -> Uuid {
+    let municipality_id = sqlx::query_scalar!(
+        "INSERT INTO municipalities (name, slug, domain_allowlist) \
+         VALUES ('Test City', 'test-city', ARRAY['test-city.example']) RETURNING id"
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let doc_id = sqlx::query_scalar!(
+        "INSERT INTO source_documents (municipality_id, source_url, checksum, content, content_type) \
+         VALUES ($1, $2, 'chk', ''::bytea, 'text/html') RETURNING id",
+        municipality_id,
+        source_url,
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query_scalar!(
+        "INSERT INTO document_chunks (source_document_id, chunk_index, content) \
+         VALUES ($1, 0, 'chunk text') RETURNING id",
+        doc_id
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// Same as `seed_document_chunk`, but records a caller-supplied
+/// `document_chunks.language` (e.g. "fr"). Needed for TC-005-5
+/// (description-language-divergence indicator): no code path anywhere
+/// backfills `document_chunks.language`, and `seed_document_chunk`/
+/// `seed_document_chunk_with_source_url` never set it (it stays NULL), so
+/// without this helper TC-005-5's fixture could never produce a genuine
+/// mismatch against the resolved UI locale — the same class of
+/// test-fixture gap REQ-002/REQ-003 fixed with their own seed-helper
+/// additions.
+async fn seed_document_chunk_with_language(pool: &PgPool, language: &str) -> Uuid {
     let municipality_id = sqlx::query_scalar!(
         "INSERT INTO municipalities (name, slug, domain_allowlist) \
          VALUES ('Test City', 'test-city', ARRAY['test-city.example']) RETURNING id"
@@ -67,15 +114,16 @@ async fn seed_document_chunk(pool: &PgPool) -> Uuid {
     let doc_id = sqlx::query_scalar!(
         "INSERT INTO source_documents (municipality_id, source_url, checksum, content, content_type) \
          VALUES ($1, 'https://test-city.example/doc', 'chk', ''::bytea, 'text/html') RETURNING id",
-        municipality_id
+        municipality_id,
     )
     .fetch_one(pool)
     .await
     .unwrap();
     sqlx::query_scalar!(
-        "INSERT INTO document_chunks (source_document_id, chunk_index, content) \
-         VALUES ($1, 0, 'chunk text') RETURNING id",
-        doc_id
+        "INSERT INTO document_chunks (source_document_id, chunk_index, content, language) \
+         VALUES ($1, 0, 'chunk text', $2) RETURNING id",
+        doc_id,
+        language,
     )
     .fetch_one(pool)
     .await
@@ -450,5 +498,605 @@ async fn imp_req_006_07_resolver_write_reflected_in_timeline(pool: PgPool) {
     assert_eq!(
         events[0]["project_mention_id"].as_str().unwrap(),
         mention_id.to_string()
+    );
+}
+
+// ---------------------------------------------------------------------
+// REQ-005 Loop A: project-detail descriptive fields (description,
+// confidence_level, source_document_url, description_lang).
+//
+// `projects` has no `description_lang`/`confidence_level`/
+// `source_document_url` columns yet — that migration is IMP-REQ-005-05's
+// job, not this pass's. TC-005-1/-2/-5 below seed only what today's schema
+// supports and assert on stable ids (`#project-description`,
+// `#confidence-notice`, `#source-document-link`,
+// `#description-language-notice`) that `project_detail.html` must render
+// once those fields exist. They are EXPECTED TO FAIL right now, for the
+// documented reason that the template doesn't render these elements yet —
+// see `ProjectDetailContext` in `web/src/routes/projects.rs` for the stub
+// Loop B must wire up. TC-005-3/-4 are regression guards against already-
+// working behavior and are expected to PASS today.
+// ---------------------------------------------------------------------
+
+/// TC-005-1: happy path — a project with a timeline (i.e. as "fully
+/// populated" as today's schema allows) must, once IMP-REQ-005-05/-06
+/// land, render a description, a confidence notice, and a source-document
+/// link, each behind a stable id. Currently FAILS: `project_detail.html`
+/// has no such elements yet.
+#[sqlx::test(migrations = "./migrations")]
+async fn tc_005_1_happy_path_all_optional_fields_render(pool: PgPool) {
+    let project_id = seed_project(&pool, "100 fulldata ave", "residential").await;
+    let chunk_id = seed_document_chunk(&pool).await;
+    let mention_id = insert_mention(&pool, chunk_id, "100 fulldata ave", "residential").await;
+    seed_timeline_event(
+        &pool,
+        project_id,
+        mention_id,
+        chrono::Utc::now(),
+        "approved",
+    )
+    .await;
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"id="project-description""#),
+        "expected a #project-description element once IMP-REQ-005-05/-06 land"
+    );
+    assert!(
+        html.contains(r#"id="confidence-notice""#),
+        "expected a #confidence-notice element once IMP-REQ-005-05/-06 land"
+    );
+    assert!(
+        html.contains(r#"id="source-document-link""#),
+        "expected a #source-document-link element once IMP-REQ-005-05/-06 land"
+    );
+}
+
+/// TC-005-2: graceful degradation — a project with no document chunk /
+/// mention / timeline event seeded (today's closest available proxy for
+/// "description and source_document_url absent", since those columns
+/// don't exist yet to null out independently) must still return 200 OK,
+/// must not leak raw Jinja syntax or a literal "None" for the missing
+/// pieces, must omit the description/source-document elements entirely,
+/// yet must still render the confidence notice (per IMP-REQ-005-05,
+/// confidence_level is independent of description/source_document_url).
+/// Independent seed data from TC-005-1. Currently FAILS: the
+/// confidence-notice assertion fails because the element doesn't exist
+/// yet (the negative assertions already hold today, trivially, since none
+/// of the new elements exist regardless of data).
+#[sqlx::test(migrations = "./migrations")]
+async fn tc_005_2_graceful_degradation_missing_fields(pool: PgPool) {
+    let project_id = seed_project(&pool, "200 partialdata rd", "commercial").await;
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        !html.contains("{{"),
+        "template must not leak raw Jinja syntax when optional fields are missing"
+    );
+    assert!(
+        !html.contains(">None<"),
+        "missing optional fields must be omitted entirely, not rendered as literal None"
+    );
+    assert!(
+        !html.contains(r#"id="project-description""#),
+        "description element must be omitted entirely when no description is available"
+    );
+    assert!(
+        !html.contains(r#"id="source-document-link""#),
+        "source-document-link element must be omitted entirely when no source url is available"
+    );
+    assert!(
+        html.contains(r#"id="confidence-notice""#),
+        "expected a #confidence-notice element once IMP-REQ-005-05/-06 land, \
+         even when description/source_document_url are absent"
+    );
+}
+
+/// TC-005-3 (regression guard): a malformed UUID in the `/projects/{id}`
+/// path is rejected with 400 by Axum's `Path<Uuid>` extractor before the
+/// handler runs. Locks in already-working behavior.
+#[sqlx::test(migrations = "./migrations")]
+async fn tc_005_3_malformed_uuid_returns_400(pool: PgPool) {
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/projects/not-a-uuid")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+/// TC-005-4 (regression guard): a well-formed but nonexistent project id
+/// returns 404. Locks in already-working behavior.
+#[sqlx::test(migrations = "./migrations")]
+async fn tc_005_4_nonexistent_project_returns_404(pool: PgPool) {
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{}", Uuid::new_v4()))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+/// TC-005-4 (regression guard): DB unavailability on `/projects/{id}`
+/// returns 503 with the rendered error page body (retry affordance).
+/// Locks in already-working behavior (same technique as
+/// `tc_req_006_6_db_unavailability_renders_retry_ui`: `pool.close()`
+/// forces subsequent queries to fail immediately with `PoolClosed`).
+#[sqlx::test(migrations = "./migrations")]
+async fn tc_005_4_db_unavailable_returns_503_with_error_page(pool: PgPool) {
+    let project_id = seed_project(&pool, "400 outage terrace", "residential").await;
+    pool.close().await;
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+    assert!(html.contains("Retry timeline"));
+    assert!(html.contains("role=\"alert\""));
+}
+
+/// TC-005-5: locale/source-language divergence — a project rendered under
+/// the default (English, no `Accept-Language` header) UI locale must,
+/// once IMP-REQ-005-05/-06 land and `description_lang` is populated and
+/// differs from the resolved UI `lang`, surface an explicit
+/// `#description-language-notice` indicator rather than silently
+/// displaying foreign-language text with no cue. Currently FAILS: no such
+/// element exists yet.
+#[sqlx::test(migrations = "./migrations")]
+async fn tc_005_5_description_language_divergence_indicator(pool: PgPool) {
+    let project_id = seed_project(&pool, "500 languedivergente st", "institutional").await;
+    // "fr" so it diverges from the resolved UI locale below ("en", no
+    // Accept-Language header) — see `seed_document_chunk_with_language`'s
+    // doc comment for why this dedicated helper exists.
+    let chunk_id = seed_document_chunk_with_language(&pool, "fr").await;
+    let mention_id =
+        insert_mention(&pool, chunk_id, "500 languedivergente st", "institutional").await;
+    seed_timeline_event(
+        &pool,
+        project_id,
+        mention_id,
+        chrono::Utc::now(),
+        "proposed",
+    )
+    .await;
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                // No accept-language header: resolves to the "en" default
+                // per `detect_lang`, against a (future) French description.
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"id="description-language-notice""#),
+        "expected a #description-language-notice element once IMP-REQ-005-05/-06 land \
+         and description_lang diverges from the resolved UI locale"
+    );
+}
+
+// ---------------------------------------------------------------------
+// REQ-006 Loop A: source transparency notice (citation section).
+//
+// `source_documents` has no `meeting_date`/`citation_url_reliable` columns
+// yet — that migration is IMP-REQ-006-05's job, not this pass's. Today
+// `project_detail.html` renders no citation section at all (see
+// `ProjectDetailContext` in `web/src/routes/projects.rs` for the stub Loop
+// B must wire up). TC-006-1/-2/-3/-5 below are therefore EXPECTED TO FAIL
+// right now, each for the documented reason given in its doc comment.
+// TC-006-4 (no source document at all) is the one case where "the
+// citation section is omitted" already holds trivially today, so it is
+// EXPECTED TO PASS, and is written to assert something meaningful (200 OK
+// plus absence of citation markup/error text) rather than a vacuous
+// no-op.
+// ---------------------------------------------------------------------
+
+/// TC-006-1: a project whose source document has a reliable, real
+/// `source_url` must, once IMP-REQ-006-05/-06/-08 land, render a
+/// clickable hyperlink citation (including the `meeting_date`, once that
+/// column exists) inside a `#project-source` element. Currently FAILS:
+/// `project_detail.html` has no `#project-source` element yet, and
+/// `citation_url_reliable`/`meeting_date` don't exist in the schema for
+/// the handler to query.
+#[sqlx::test(migrations = "./migrations")]
+async fn tc_006_1_reliable_source_renders_hyperlink_citation(pool: PgPool) {
+    let project_id = seed_project(&pool, "600 reliable source ave", "residential").await;
+    let chunk_id =
+        seed_document_chunk_with_source_url(&pool, "https://test-city.example/reliable-doc")
+            .await;
+    let mention_id = insert_mention(&pool, chunk_id, "600 reliable source ave", "residential")
+        .await;
+    seed_timeline_event(
+        &pool,
+        project_id,
+        mention_id,
+        chrono::Utc::now(),
+        "approved",
+    )
+    .await;
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"id="project-source""#),
+        "expected a #project-source citation element once IMP-REQ-006-05/-06/-08 land"
+    );
+    assert!(
+        html.contains(r#"href="https://test-city.example/reliable-doc""#),
+        "expected a clickable hyperlink to the reliable source_url once wired up"
+    );
+}
+
+/// TC-006-2: a project whose source document has `citation_url_reliable =
+/// false` (e.g. Montreal's session-scoped portal URL pattern, where the
+/// URL is only valid for the duration of the browsing session and would
+/// mislead readers if hyperlinked) must render citation-only text
+/// (municipality + meeting date) and NOT a hyperlink, even though a
+/// `source_url` value exists in the row. Independent seed data from
+/// TC-006-1 (distinct address, distinct session-scoped URL shape).
+/// Currently FAILS: no `#project-source` element exists yet, and there is
+/// no `citation_url_reliable` column to drive the link/no-link decision.
+#[sqlx::test(migrations = "./migrations")]
+async fn tc_006_2_unreliable_source_renders_citation_text_only(pool: PgPool) {
+    let project_id = seed_project(&pool, "601 session scoped blvd", "commercial").await;
+    let chunk_id = seed_document_chunk_with_source_url(
+        &pool,
+        "https://montreal.ca/portal/session/8f3c1?token=ephemeral",
+    )
+    .await;
+    let mention_id = insert_mention(&pool, chunk_id, "601 session scoped blvd", "commercial")
+        .await;
+    seed_timeline_event(
+        &pool,
+        project_id,
+        mention_id,
+        chrono::Utc::now(),
+        "proposed",
+    )
+    .await;
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"id="project-source""#),
+        "expected a #project-source citation element once IMP-REQ-006-05/-06/-08 land"
+    );
+    assert!(
+        html.contains("Test City"),
+        "expected the municipality name to appear in the citation-only text"
+    );
+    assert!(
+        !html.contains("https://montreal.ca/portal/session/8f3c1?token=ephemeral"),
+        "an unreliable source_url must never be rendered as a hyperlink target, \
+         even as citation text"
+    );
+}
+
+/// TC-006-3: a project whose source document has no `meeting_date` (which
+/// is every source document today, since the column doesn't exist yet)
+/// must fall back to a "Document retrieved" message instead of a date,
+/// without breaking the rest of the page. Independent seed data from
+/// TC-006-1/-2. Currently FAILS: no `#project-source` element (or its
+/// "Document retrieved" fallback text) exists yet.
+#[sqlx::test(migrations = "./migrations")]
+async fn tc_006_3_missing_meeting_date_falls_back_to_document_retrieved(pool: PgPool) {
+    let project_id = seed_project(&pool, "602 no meeting date way", "institutional").await;
+    let chunk_id =
+        seed_document_chunk_with_source_url(&pool, "https://test-city.example/undated-doc").await;
+    let mention_id =
+        insert_mention(&pool, chunk_id, "602 no meeting date way", "institutional").await;
+    seed_timeline_event(
+        &pool,
+        project_id,
+        mention_id,
+        chrono::Utc::now(),
+        "deferred",
+    )
+    .await;
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"id="project-source""#),
+        "expected a #project-source citation element once IMP-REQ-006-05/-06/-08 land"
+    );
+    assert!(
+        html.contains("Document retrieved"),
+        "expected a 'Document retrieved' fallback when meeting_date is absent"
+    );
+}
+
+/// TC-006-4: a project with NO associated source document at all (no
+/// document chunk, no mention — the edge case) must omit the citation
+/// section entirely rather than erroring; the page must still render 200.
+/// This is the one REQ-006 test that legitimately PASSES today: since no
+/// citation section exists anywhere yet, "the section is omitted" holds
+/// trivially, but the assertions below are written to be meaningful (a
+/// real 200 response, and an explicit absence of citation-related error
+/// text) rather than a no-op that would pass regardless of behavior.
+#[sqlx::test(migrations = "./migrations")]
+async fn tc_006_4_no_source_document_omits_citation_section(pool: PgPool) {
+    let project_id = seed_project(&pool, "603 no source document cres", "residential").await;
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        !html.contains(r#"id="project-source""#),
+        "a project with no source document must not render a #project-source element"
+    );
+    assert!(
+        !html.contains("citation-error"),
+        "a project with no source document must not surface a citation error state"
+    );
+}
+
+/// TC-006-5: a DB failure specifically on the citation lookup query must
+/// be isolated from the rest of the project detail page — the citation
+/// query failing must NOT take down the whole page with a 503. This test
+/// uses the same `pool.close()` technique as `tc_req_006_6_...` and
+/// `tc_005_4_...` to simulate a DB outage, since Loop A cannot yet target
+/// only the (not-yet-written) citation query. Currently FAILS, for a
+/// documented reason distinct from "not implemented": today the handler
+/// has no query isolation at all — `project_exists` runs first and any
+/// DB outage fails that query too, so the whole page 503s (matching
+/// `tc_req_006_6_db_unavailability_renders_retry_ui`'s existing, correct
+/// behavior for a *full* outage). IMP-REQ-006-05/-06 must specifically
+/// wrap the new citation query in its own error handling so it degrades
+/// independently of the page-critical queries; this test's `assert_eq!`
+/// against `StatusCode::OK` will keep failing until the citation query is
+/// written to fail without a live DB while the rest of the page can still
+/// serve from an unaffected connection — the test remains valid as a
+/// pre-registration of that requirement.
+#[sqlx::test(migrations = "./migrations")]
+async fn tc_006_5_citation_query_failure_isolated_from_page(pool: PgPool) {
+    let project_id = seed_project(&pool, "604 isolated failure pl", "commercial").await;
+    let chunk_id =
+        seed_document_chunk_with_source_url(&pool, "https://test-city.example/doomed-doc").await;
+    let mention_id = insert_mention(&pool, chunk_id, "604 isolated failure pl", "commercial")
+        .await;
+    seed_timeline_event(
+        &pool,
+        project_id,
+        mention_id,
+        chrono::Utc::now(),
+        "approved",
+    )
+    .await;
+    pool.close().await;
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "a citation-query-only DB failure must not 503 the whole page; today it does, \
+         because the handler has no query isolation yet"
+    );
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        html.contains("timeline-event") || html.contains("citation-error"),
+        "expected the rest of the page to render normally with a graceful citation \
+         fallback/error state, once query isolation is implemented"
+    );
+}
+
+// ---------------------------------------------------------------------
+// REQ-015 Loop A (detail-page half): search-result confidence indicator
+// ("Detected N days ago from M council source(s)"), also required on the
+// project-detail page per TC-015-2 (not just the search card — see
+// `tests/search_integration.rs`'s `tc_015_*` tests for the search-card
+// halves of TC-015-1/-3/-4/-5/-6).
+//
+// `public_search_documents` has neither `first_detected_at` nor
+// `source_count` yet (IMP-REQ-015-02/03/04's migration), and
+// `ProjectDetailContext` in `web/src/routes/projects.rs` carries them as
+// Loop A stub fields that `get_project_detail_page` never populates or
+// threads into `project_detail.html` — so this is EXPECTED TO FAIL today.
+// ---------------------------------------------------------------------
+
+/// TC-015-2: the confidence indicator ("Detected N days ago from M council
+/// source(s)") renders on the project-detail page, not just the search
+/// results card. Seeds a project with two distinct source documents/chunks
+/// (the future "distinct council source" signal), documenting the target
+/// N=5/M=2 contract used consistently with `tc_015_1_...` in
+/// `search_integration.rs`. Currently FAILS: `get_project_detail_page` has
+/// no query populating `first_detected_at`/`source_count`, and
+/// `project_detail.html` has no rendering for the indicator at all yet.
+#[sqlx::test(migrations = "./migrations")]
+async fn tc_015_2_project_detail_page_shows_days_and_source_count(pool: PgPool) {
+    let project_id = seed_project(&pool, "700 rue detection detail", "residential").await;
+    let chunk_id_one =
+        seed_document_chunk_with_source_url(&pool, "https://test-city.example/detail-doc-one")
+            .await;
+    let mention_id =
+        insert_mention(&pool, chunk_id_one, "700 rue detection detail", "residential").await;
+    seed_timeline_event(
+        &pool,
+        project_id,
+        mention_id,
+        chrono::Utc::now(),
+        "approved",
+    )
+    .await;
+
+    // Second distinct source document, feeding the same project via a
+    // second project_mention — the future "distinct council source" signal
+    // that would drive source_count = 2 once IMP-REQ-015 lands.
+    let chunk_id_two =
+        seed_document_chunk_with_source_url(&pool, "https://test-city.example/detail-doc-two")
+            .await;
+    insert_mention(&pool, chunk_id_two, "700 rue detection detail", "residential").await;
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains("Detected 5 days ago from 2 council sources"),
+        "expected the confidence indicator sentence on the project-detail \
+         page once IMP-REQ-015-02/03/04/07/12 land and \
+         first_detected_at/source_count are populated, got: {html}"
     );
 }

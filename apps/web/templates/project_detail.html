@@ -6,6 +6,20 @@
 <section class="project-detail" aria-labelledby="project-title">
     <h1 id="project-title">{% if project is defined and project.title is defined %}{{ project.title }}{% else %}{{ page_title | default("Project details", true) }}{% endif %}</h1>
 
+    {% if description is defined and description %}
+    <p id="project-description">{{ description }}</p>
+    {% endif %}
+
+    <p id="confidence-notice">{{ confidence_notice_label | default("Confidence level: ", true) }}{{ confidence_level | default(confidence_unassessed_fallback | default("not yet assessed", true), true) }}</p>
+
+    {% if description_language_diverges is defined and description_language_diverges %}
+    <p id="description-language-notice">{{ description_language_notice | default("This description is sourced from a document in a different language than this page.", true) }}</p>
+    {% endif %}
+
+    {% if source_document_url is defined and source_document_url %}
+    <p><a id="source-document-link" href="{{ source_document_url }}">{{ source_document_link_label | default("View source document", true) }}</a></p>
+    {% endif %}
+
     <section aria-labelledby="timeline-title">
         <h2 id="timeline-title">{{ timeline_title | default("Project timeline", true) }}</h2>
 
