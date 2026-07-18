@@ -64,6 +64,11 @@ mod core {
         // handler once that wiring lands.
         #[allow(dead_code)]
         InvalidCategoryFormat,
+        /// `sort`, after trimming and lowercasing, was neither `relevance`
+        /// nor `date` (TC-009-5). Maps to 400, raised before any project
+        /// query runs, matching `InvalidCategoryFormat`/`validate_category`'s
+        /// own division of labor.
+        InvalidSortValue,
     }
 
     /// Generous upper bound on a syntactically valid slug's length. Real
@@ -227,6 +232,50 @@ mod core {
         }
 
         Ok(Some(CategoryFilter::Code(normalized)))
+    }
+
+    /// A validated `sort` query param (IMP-REQ-009-04): which ordering
+    /// `run_search` should apply. `Relevance` is the existing default
+    /// ordering (`civic_address_normalized` ASC, TC-009-2 regression guard);
+    /// `Date` orders by `latest_meeting_date DESC NULLS LAST` (TC-009-1/-3),
+    /// tie-broken by `civic_address_normalized ASC` (TC-009-4).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum SortOrder {
+        Relevance,
+        Date,
+    }
+
+    /// Pure, syntactic validation of a raw `sort` query param
+    /// (IMP-REQ-009-04), mirroring `validate_category`'s own shape:
+    /// normalize first, then recognize a small fixed set of literal values,
+    /// rejecting anything else BEFORE any query runs (TC-009-5).
+    ///
+    /// - `None` or an empty/whitespace-only string means "no explicit sort
+    ///   requested", defaulting to `SortOrder::Relevance` (TC-009-2: omitted
+    ///   `sort` preserves today's default ordering).
+    /// - The value is trimmed and lowercased first, same normalization as
+    ///   `validate_category`/`validate_municipality_slug`.
+    /// - `"relevance"` maps to `SortOrder::Relevance`, `"date"` to
+    ///   `SortOrder::Date`.
+    /// - Anything else is rejected as `InvalidSortValue` (TC-009-5), mapped
+    ///   to 400 by the caller.
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    pub fn validate_sort(raw: Option<String>) -> Result<SortOrder, SearchValidationError> {
+        let Some(raw) = raw else {
+            return Ok(SortOrder::Relevance);
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(SortOrder::Relevance);
+        }
+
+        match trimmed.to_lowercase().as_str() {
+            "relevance" => Ok(SortOrder::Relevance),
+            "date" => Ok(SortOrder::Date),
+            _ => Err(SearchValidationError::InvalidSortValue),
+        }
     }
 
     /// Maps a normalized municipality slug (as produced by
@@ -680,6 +729,17 @@ mod core {
         pub date_preset: Option<&'a str>,
         pub date_from: Option<&'a str>,
         pub date_to: Option<&'a str>,
+        // IMP-REQ-009-08: the raw (unvalidated) `sort` query param, so
+        // clicking a category chip (`build_category_filter_href`) doesn't
+        // silently drop back to the default `relevance` ordering when the
+        // user had `sort=date` active — same "preserve every other filter"
+        // principle as `date_preset`/`date_from`/`date_to` above.
+        pub sort: Option<&'a str>,
+        // IMP-REQ-009-08: the raw (already-normalized-or-not) `category`
+        // query param, so toggling `sort` (`build_sort_toggle_href`) doesn't
+        // silently drop an active category filter — same reasoning as
+        // `sort` above, just the other direction.
+        pub category: Option<&'a str>,
     }
 
     /// Builds the `href` for a category filter chip (IMP-REQ-008-07): always
@@ -719,6 +779,59 @@ mod core {
         }
         if let Some(code) = category.filter(|c| !c.is_empty()) {
             pairs.push(format!("category={}", percent_encode_query_value(code)));
+        }
+        if let Some(sort) = ctx.sort.filter(|s| !s.trim().is_empty()) {
+            pairs.push(format!("sort={}", percent_encode_query_value(sort)));
+        }
+        pairs.push(format!("lang={}", ctx.lang));
+
+        format!("/search?{}", pairs.join("&"))
+    }
+
+    /// Builds the `href` for the sort-toggle button/link pair
+    /// (IMP-REQ-009-08): always `/search` with `sort` set to
+    /// `target_sort`'s literal query value (omitted entirely for
+    /// `SortOrder::Relevance`, mirroring `build_category_filter_href`'s own
+    /// "omit the param for the default state" convention for its "All
+    /// categories" chip), plus whichever of `q`/`municipality_slug`/
+    /// `date_preset`/`date_from`/`date_to`/`category` in `ctx` are actually
+    /// present, plus the current `lang` — so toggling sort doesn't lose any
+    /// other filter already in play, matching every other href builder in
+    /// this module's own param-preservation precedent.
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    pub fn build_sort_toggle_href(ctx: FilterHrefContext<'_>, target_sort: SortOrder) -> String {
+        let mut pairs: Vec<String> = Vec::new();
+        if !ctx.q.is_empty() {
+            pairs.push(format!("q={}", percent_encode_query_value(ctx.q)));
+        }
+        if let Some(slug) = ctx.municipality_slug.filter(|s| !s.is_empty()) {
+            pairs.push(format!(
+                "municipality_slug={}",
+                percent_encode_query_value(slug)
+            ));
+        }
+        if let Some(preset) = ctx.date_preset.filter(|s| !s.trim().is_empty()) {
+            pairs.push(format!(
+                "date_preset={}",
+                percent_encode_query_value(preset)
+            ));
+        }
+        if let Some(from) = ctx.date_from.filter(|s| !s.trim().is_empty()) {
+            pairs.push(format!("date_from={}", percent_encode_query_value(from)));
+        }
+        if let Some(to) = ctx.date_to.filter(|s| !s.trim().is_empty()) {
+            pairs.push(format!("date_to={}", percent_encode_query_value(to)));
+        }
+        if let Some(code) = ctx
+            .category
+            .filter(|c| !c.trim().is_empty())
+        {
+            pairs.push(format!("category={}", percent_encode_query_value(code)));
+        }
+        if target_sort == SortOrder::Date {
+            pairs.push("sort=date".to_string());
         }
         pairs.push(format!("lang={}", ctx.lang));
 
@@ -1312,6 +1425,159 @@ mod core {
         }
 
         #[test]
+        fn sort_none_input_defaults_to_relevance() {
+            assert_eq!(validate_sort(None).unwrap(), SortOrder::Relevance);
+        }
+
+        #[test]
+        fn sort_empty_string_defaults_to_relevance() {
+            assert_eq!(validate_sort(Some(String::new())).unwrap(), SortOrder::Relevance);
+        }
+
+        #[test]
+        fn sort_whitespace_only_defaults_to_relevance() {
+            assert_eq!(
+                validate_sort(Some("   ".to_string())).unwrap(),
+                SortOrder::Relevance
+            );
+        }
+
+        #[test]
+        fn sort_relevance_literal_is_accepted() {
+            assert_eq!(
+                validate_sort(Some("relevance".to_string())).unwrap(),
+                SortOrder::Relevance
+            );
+        }
+
+        #[test]
+        fn sort_date_literal_is_accepted() {
+            assert_eq!(
+                validate_sort(Some("date".to_string())).unwrap(),
+                SortOrder::Date
+            );
+        }
+
+        #[test]
+        fn sort_uppercase_is_normalized_to_lowercase() {
+            assert_eq!(
+                validate_sort(Some("DATE".to_string())).unwrap(),
+                SortOrder::Date
+            );
+        }
+
+        #[test]
+        fn sort_surrounding_whitespace_is_trimmed() {
+            assert_eq!(
+                validate_sort(Some("  date  ".to_string())).unwrap(),
+                SortOrder::Date
+            );
+        }
+
+        #[test]
+        fn sort_invalid_value_is_rejected() {
+            let result = validate_sort(Some("alphabetical".to_string()));
+            assert_eq!(result, Err(SearchValidationError::InvalidSortValue));
+        }
+
+        #[test]
+        fn sort_valid_looking_but_unrecognized_value_is_rejected() {
+            // "relevancy" is not "relevance" — must not fuzzy-match.
+            let result = validate_sort(Some("relevancy".to_string()));
+            assert_eq!(result, Err(SearchValidationError::InvalidSortValue));
+        }
+
+        #[test]
+        fn build_sort_toggle_href_relevance_omits_sort_param() {
+            let ctx = no_filters_ctx("en");
+            assert_eq!(
+                build_sort_toggle_href(ctx, SortOrder::Relevance),
+                "/search?lang=en"
+            );
+        }
+
+        #[test]
+        fn build_sort_toggle_href_date_includes_sort_param() {
+            let ctx = no_filters_ctx("en");
+            assert_eq!(
+                build_sort_toggle_href(ctx, SortOrder::Date),
+                "/search?sort=date&lang=en"
+            );
+        }
+
+        #[test]
+        fn build_sort_toggle_href_preserves_query_and_municipality_slug() {
+            let ctx = FilterHrefContext {
+                lang: "fr",
+                q: "saint-denis",
+                municipality_slug: Some("montreal"),
+                date_preset: None,
+                date_from: None,
+                date_to: None,
+                sort: None,
+                category: None,
+            };
+            assert_eq!(
+                build_sort_toggle_href(ctx, SortOrder::Date),
+                "/search?q=saint-denis&municipality_slug=montreal&sort=date&lang=fr"
+            );
+        }
+
+        #[test]
+        fn build_sort_toggle_href_preserves_active_category() {
+            let ctx = FilterHrefContext {
+                lang: "en",
+                q: "",
+                municipality_slug: None,
+                date_preset: None,
+                date_from: None,
+                date_to: None,
+                sort: None,
+                category: Some("residential"),
+            };
+            assert_eq!(
+                build_sort_toggle_href(ctx, SortOrder::Date),
+                "/search?category=residential&sort=date&lang=en"
+            );
+        }
+
+        #[test]
+        fn build_sort_toggle_href_percent_encodes_the_preserved_query_value() {
+            let ctx = FilterHrefContext {
+                lang: "en",
+                q: "rue saint-denis",
+                municipality_slug: None,
+                date_preset: None,
+                date_from: None,
+                date_to: None,
+                sort: None,
+                category: None,
+            };
+            assert_eq!(
+                build_sort_toggle_href(ctx, SortOrder::Relevance),
+                "/search?q=rue%20saint-denis&lang=en"
+            );
+        }
+
+        #[test]
+        fn build_category_filter_href_preserves_active_sort() {
+            let ctx = FilterHrefContext {
+                lang: "en",
+                q: "",
+                municipality_slug: None,
+                date_preset: None,
+                date_from: None,
+                date_to: None,
+                sort: Some("date"),
+                category: None,
+            };
+            assert_eq!(
+                build_category_filter_href(ctx, Some("residential")),
+                "/search?category=residential&sort=date&lang=en"
+            );
+        }
+
+        #[test]
         fn municipality_display_name_montreal_english() {
             assert_eq!(
                 municipality_display_name("montreal", "en"),
@@ -1710,6 +1976,8 @@ mod core {
                 date_preset: None,
                 date_from: None,
                 date_to: None,
+                sort: None,
+                category: None,
             }
         }
 
@@ -1740,6 +2008,8 @@ mod core {
                 date_preset: None,
                 date_from: None,
                 date_to: None,
+                sort: None,
+                category: None,
             };
             assert_eq!(
                 build_category_filter_href(ctx, Some("commercial")),
@@ -1756,6 +2026,8 @@ mod core {
                 date_preset: Some("last_7_days"),
                 date_from: None,
                 date_to: None,
+                sort: None,
+                category: None,
             };
             assert_eq!(
                 build_category_filter_href(ctx, Some("other")),
@@ -1772,6 +2044,8 @@ mod core {
                 date_preset: None,
                 date_from: Some("2026-01-01"),
                 date_to: Some("2026-01-31"),
+                sort: None,
+                category: None,
             };
             assert_eq!(
                 build_category_filter_href(ctx, None),
@@ -1788,6 +2062,8 @@ mod core {
                 date_preset: None,
                 date_from: None,
                 date_to: None,
+                sort: None,
+                category: None,
             };
             assert_eq!(
                 build_category_filter_href(ctx, Some("residential")),
@@ -1809,6 +2085,8 @@ mod core {
                 date_preset: Some(""),
                 date_from: Some("   "),
                 date_to: Some(""),
+                sort: None,
+                category: None,
             };
             assert_eq!(
                 build_category_filter_href(ctx, None),
@@ -1825,6 +2103,8 @@ mod core {
                 date_preset: None,
                 date_from: None,
                 date_to: None,
+                sort: None,
+                category: None,
             };
             assert_eq!(
                 build_category_filter_href(ctx, None),
@@ -2082,8 +2362,12 @@ pub struct SearchParams {
     // it yet, and no validation against the (not-yet-existing)
     // `category_taxonomy` table happens yet.
     pub category: Option<String>,
-    // Loop A stub: sort param + latest_meeting_date ORDER BY wired by
-    // IMP-REQ-009-04/06
+    // IMP-REQ-009-04: validated via `core::validate_sort` (TC-009-5: an
+    // unrecognized value is rejected with 400 before any query runs), then
+    // wired into `run_search`'s `ORDER BY` (IMP-REQ-009-06). `None` or
+    // `"relevance"` preserves today's default ordering
+    // (`civic_address_normalized` ASC); `"date"` orders by
+    // `latest_meeting_date DESC NULLS LAST`.
     pub sort: Option<String>,
     // IMP-REQ-003-04: explicit UI-locale override, highest-precedence input
     // to `core::resolve_ui_locale`.
@@ -2143,6 +2427,13 @@ pub struct SearchResult {
     // omitted entirely when either is `None` (TC-015-5).
     pub first_detected_at: Option<chrono::DateTime<chrono::Utc>>,
     pub source_count: Option<i64>,
+    // IMP-REQ-009-06: mirrors `public_search_documents.latest_meeting_date`
+    // (migration 024) — the most recent council meeting date this project
+    // has been discussed at, `None` for a project with no timeline events
+    // yet. Populated regardless of the active `sort` (not just when
+    // `sort=date`), so the per-row meeting-date display (IMP-REQ-009-09) has
+    // it available whenever it exists.
+    pub latest_meeting_date: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Paginated envelope returned by `GET /api/v1/projects/search`
@@ -2166,6 +2457,15 @@ struct RawDateFilterQuery<'a> {
     date_preset: Option<&'a str>,
     date_from: Option<&'a str>,
     date_to: Option<&'a str>,
+}
+
+/// Raw (unvalidated) `category`/`sort` query params, bundled into a single
+/// struct for the same `too_many_arguments`-avoidance reason as
+/// `RawDateFilterQuery` above (IMP-REQ-009-04).
+#[derive(Debug, Clone)]
+struct RawResultFilterQuery {
+    category: Option<String>,
+    sort: Option<String>,
 }
 
 /// Validates `per_page` (TC-REQ-008-3: rejected before any DB query runs)
@@ -2193,10 +2493,17 @@ async fn run_search(
     municipality_slug: Option<String>,
     page: Option<i64>,
     date_filter: RawDateFilterQuery<'_>,
-    category: Option<String>,
+    result_filter: RawResultFilterQuery,
 ) -> Result<(Vec<SearchResult>, core::PaginationInfo), StatusCode> {
+    let RawResultFilterQuery { category, sort } = result_filter;
     let core::ValidatedSearchParams { per_page } =
         core::validate_search_params(per_page).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    // IMP-REQ-009-04: syntactic validation of `sort` (TC-009-5), before any
+    // DB query runs — same "validate first" position as
+    // `validate_search_params`/`validate_municipality_slug`/
+    // `validate_category` above and below.
+    let sort_order = core::validate_sort(sort).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     // IMP-REQ-002-04: syntactic validation first (TC-002-2/-6), before any
     // DB query runs.
@@ -2325,58 +2632,113 @@ async fn run_search(
 
     let pagination = core::paginate(total, page.unwrap_or(1), per_page);
 
-    let rows = sqlx::query!(
-        r#"
-        SELECT project_id, civic_address_normalized, municipality_name, project_type, normalized_status, source_language
-        FROM public_search_documents
-        WHERE (
-            civic_address_normalized ILIKE $1
-            OR municipality_name ILIKE $1
-            OR search_vector_fr @@ plainto_tsquery('french', $4)
-            OR search_vector_en @@ plainto_tsquery('english', $4)
+    // IMP-REQ-009-06: `sqlx::query!`'s compile-time SQL checking requires a
+    // string literal, so the `ORDER BY` clause can't be parameter-bound —
+    // hence two textually near-identical branches (same `WHERE`/bind
+    // params, different `ORDER BY`) rather than one query with an
+    // interpolated column name. `SortOrder::Relevance` preserves the
+    // pre-existing `civic_address_normalized ASC` ordering (TC-009-2
+    // regression guard); `SortOrder::Date` orders by `latest_meeting_date
+    // DESC NULLS LAST` (TC-009-1/-3), tie-broken by
+    // `civic_address_normalized ASC` for determinism (TC-009-4).
+    let rows = match sort_order {
+        core::SortOrder::Relevance => sqlx::query!(
+            r#"
+            SELECT project_id, civic_address_normalized, municipality_name, project_type, normalized_status, source_language, latest_meeting_date
+            FROM public_search_documents
+            WHERE (
+                civic_address_normalized ILIKE $1
+                OR municipality_name ILIKE $1
+                OR search_vector_fr @@ plainto_tsquery('french', $4)
+                OR search_vector_en @@ plainto_tsquery('english', $4)
+            )
+              AND ($3::text IS NULL OR municipality_slug = $3)
+              AND ($6::timestamptz IS NULL OR first_surfaced_at >= $6)
+              AND ($7::timestamptz IS NULL OR first_surfaced_at <= $7)
+              AND ($8::text IS NULL OR category_code = $8)
+              AND (NOT $9::bool OR category_code IS NULL)
+            ORDER BY civic_address_normalized ASC
+            LIMIT $2 OFFSET $5
+            "#,
+            keyword,
+            pagination.per_page,
+            municipality_slug,
+            normalized_query,
+            pagination.offset,
+            date_start,
+            date_end,
+            category_code_eq,
+            require_uncategorised,
         )
-          AND ($3::text IS NULL OR municipality_slug = $3)
-          AND ($6::timestamptz IS NULL OR first_surfaced_at >= $6)
-          AND ($7::timestamptz IS NULL OR first_surfaced_at <= $7)
-          AND ($8::text IS NULL OR category_code = $8)
-          AND (NOT $9::bool OR category_code IS NULL)
-        ORDER BY civic_address_normalized ASC
-        LIMIT $2 OFFSET $5
-        "#,
-        keyword,
-        pagination.per_page,
-        municipality_slug,
-        normalized_query,
-        pagination.offset,
-        date_start,
-        date_end,
-        category_code_eq,
-        require_uncategorised,
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
-    .into_iter()
-    .map(|row| SearchResult {
-        project_id: row.project_id,
-        civic_address_normalized: row.civic_address_normalized.clone(),
-        municipality_name: row.municipality_name,
-        // IMP-REQ-004-09: synthesized from the civic address + project type
-        // (e.g. "Demolition — 123 Main St") rather than left as the prior
-        // `None` stub.
-        display_name: Some(core::synthesize_display_name(
-            &row.civic_address_normalized,
-            row.project_type.as_deref(),
-        )),
-        project_type: row.project_type,
-        normalized_status: row.normalized_status,
-        source_language: row.source_language,
-        // Loop A stub: see `SearchResult::first_detected_at`/`source_count`
-        // doc comment — IMP-REQ-015-02/03/04 migration+materializer.
-        first_detected_at: None,
-        source_count: None,
-    })
-    .collect();
+        .fetch_all(pool)
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .into_iter()
+        .map(|row| SearchResult {
+            project_id: row.project_id,
+            civic_address_normalized: row.civic_address_normalized.clone(),
+            municipality_name: row.municipality_name,
+            display_name: Some(core::synthesize_display_name(
+                &row.civic_address_normalized,
+                row.project_type.as_deref(),
+            )),
+            project_type: row.project_type,
+            normalized_status: row.normalized_status,
+            source_language: row.source_language,
+            first_detected_at: None,
+            source_count: None,
+            latest_meeting_date: row.latest_meeting_date,
+        })
+        .collect(),
+        core::SortOrder::Date => sqlx::query!(
+            r#"
+            SELECT project_id, civic_address_normalized, municipality_name, project_type, normalized_status, source_language, latest_meeting_date
+            FROM public_search_documents
+            WHERE (
+                civic_address_normalized ILIKE $1
+                OR municipality_name ILIKE $1
+                OR search_vector_fr @@ plainto_tsquery('french', $4)
+                OR search_vector_en @@ plainto_tsquery('english', $4)
+            )
+              AND ($3::text IS NULL OR municipality_slug = $3)
+              AND ($6::timestamptz IS NULL OR first_surfaced_at >= $6)
+              AND ($7::timestamptz IS NULL OR first_surfaced_at <= $7)
+              AND ($8::text IS NULL OR category_code = $8)
+              AND (NOT $9::bool OR category_code IS NULL)
+            ORDER BY latest_meeting_date DESC NULLS LAST, civic_address_normalized ASC
+            LIMIT $2 OFFSET $5
+            "#,
+            keyword,
+            pagination.per_page,
+            municipality_slug,
+            normalized_query,
+            pagination.offset,
+            date_start,
+            date_end,
+            category_code_eq,
+            require_uncategorised,
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+        .into_iter()
+        .map(|row| SearchResult {
+            project_id: row.project_id,
+            civic_address_normalized: row.civic_address_normalized.clone(),
+            municipality_name: row.municipality_name,
+            display_name: Some(core::synthesize_display_name(
+                &row.civic_address_normalized,
+                row.project_type.as_deref(),
+            )),
+            project_type: row.project_type,
+            normalized_status: row.normalized_status,
+            source_language: row.source_language,
+            first_detected_at: None,
+            source_count: None,
+            latest_meeting_date: row.latest_meeting_date,
+        })
+        .collect(),
+    };
 
     Ok((rows, pagination))
 }
@@ -2399,7 +2761,10 @@ pub async fn search_projects(
             date_from: params.date_from.as_deref(),
             date_to: params.date_to.as_deref(),
         },
-        params.category,
+        RawResultFilterQuery {
+            category: params.category,
+            sort: params.sort,
+        },
     )
     .await?;
 
@@ -2485,6 +2850,17 @@ struct SearchLabels {
     // `municipality_all_option`'s role for the municipality `<select>`).
     category_filter_label: &'static str,
     category_all_option: &'static str,
+    // IMP-REQ-009-10: labels for the sort toggle button pair
+    // (IMP-REQ-009-08). `sort_filter_label` is the toggle group's accessible
+    // group label (the `role="group"`'s `aria-label`), mirroring
+    // `category_filter_label`'s own role; `sort_relevance_label`/
+    // `sort_date_label` are each toggle button's own visible text.
+    sort_filter_label: &'static str,
+    sort_relevance_label: &'static str,
+    sort_date_label: &'static str,
+    // IMP-REQ-009-09: label prefixing each result row's meeting-date display
+    // (only rendered when `SearchResult.latest_meeting_date` is present).
+    meeting_date_label: &'static str,
 }
 
 fn search_labels(lang: &str) -> SearchLabels {
@@ -2512,6 +2888,10 @@ fn search_labels(lang: &str) -> SearchLabels {
             date_filter_clear_label: "Effacer le filtre de date",
             category_filter_label: "Filtrer par catégorie",
             category_all_option: "Toutes les catégories",
+            sort_filter_label: "Trier par",
+            sort_relevance_label: "Pertinence",
+            sort_date_label: "Date de réunion",
+            meeting_date_label: "Réunion :",
         },
         _ => SearchLabels {
             page_title: "Search projects",
@@ -2536,6 +2916,10 @@ fn search_labels(lang: &str) -> SearchLabels {
             date_filter_clear_label: "Clear date filter",
             category_filter_label: "Filter by category",
             category_all_option: "All categories",
+            sort_filter_label: "Sort results",
+            sort_relevance_label: "Relevance",
+            sort_date_label: "Meeting date",
+            meeting_date_label: "Meeting:",
         },
     }
 }
@@ -2603,7 +2987,10 @@ pub async fn get_search_page(
                     date_from: params.date_from.as_deref(),
                     date_to: params.date_to.as_deref(),
                 },
-                params.category.clone(),
+                RawResultFilterQuery {
+                    category: params.category.clone(),
+                    sort: params.sort.clone(),
+                },
             )
             .await,
         )
@@ -2701,14 +3088,17 @@ pub async fn get_search_page(
         .filter(|s| !s.is_empty())
         .map(str::to_lowercase);
 
-    let category_href_ctx = core::FilterHrefContext {
+    let filter_href_ctx = core::FilterHrefContext {
         lang,
         q: &params.q,
         municipality_slug: params.municipality_slug.as_deref(),
         date_preset: params.date_preset.as_deref(),
         date_from: params.date_from.as_deref(),
         date_to: params.date_to.as_deref(),
+        sort: params.sort.as_deref(),
+        category: params.category.as_deref(),
     };
+    let category_href_ctx = filter_href_ctx;
     let category_all_href = core::build_category_filter_href(category_href_ctx, None);
     let category_chips: Vec<CategoryChip> = category_codes
         .into_iter()
@@ -2733,6 +3123,22 @@ pub async fn get_search_page(
     // search rather than losing the user's current filters.
     let lang_toggle_href =
         core::build_lang_toggle_href(lang, &params.q, params.municipality_slug.as_deref());
+
+    // IMP-REQ-009-07/-08: `active_sort` drives the toggle button pair's
+    // `aria-current`/visual-selected styling (IMP-REQ-009-11: never
+    // color-only), matching `selected_category`'s own role for the category
+    // chip row. Falls back to `SortOrder::Relevance` for a malformed `sort`
+    // value (`run_search` above already surfaced that as `search_error` —
+    // this is purely about which toggle link renders "active" in the
+    // chrome, not a second validation pass).
+    let active_sort = core::validate_sort(params.sort.clone()).unwrap_or(core::SortOrder::Relevance);
+    let active_sort_label = match active_sort {
+        core::SortOrder::Date => "date",
+        core::SortOrder::Relevance => "relevance",
+    };
+    let sort_relevance_href =
+        core::build_sort_toggle_href(filter_href_ctx, core::SortOrder::Relevance);
+    let sort_date_href = core::build_sort_toggle_href(filter_href_ctx, core::SortOrder::Date);
 
     // IMP-REQ-007-10: which of the three date-filter presets currently
     // renders `selected` in the search form, derived from the same raw
@@ -2838,6 +3244,13 @@ pub async fn get_search_page(
             category_all_href => category_all_href,
             selected_category => selected_category,
             category_chips => category_chips,
+            sort_filter_label => labels.sort_filter_label,
+            sort_relevance_label => labels.sort_relevance_label,
+            sort_date_label => labels.sort_date_label,
+            sort_relevance_href => sort_relevance_href,
+            sort_date_href => sort_date_href,
+            active_sort => active_sort_label,
+            meeting_date_label => labels.meeting_date_label,
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -2892,7 +3305,7 @@ mod search_labels_tests {
         // `SearchLabels` field has a genuinely distinct EN/FR wording.
         let identical_by_design: &[&str] = &[];
 
-        let pairs: [(&str, &str, &str); 20] = [
+        let pairs: [(&str, &str, &str); 24] = [
             ("page_title", en.page_title, fr.page_title),
             ("heading", en.heading, fr.heading),
             ("search_label", en.search_label, fr.search_label),
@@ -2952,6 +3365,22 @@ mod search_labels_tests {
                 "date_filter_clear_label",
                 en.date_filter_clear_label,
                 fr.date_filter_clear_label,
+            ),
+            (
+                "sort_filter_label",
+                en.sort_filter_label,
+                fr.sort_filter_label,
+            ),
+            (
+                "sort_relevance_label",
+                en.sort_relevance_label,
+                fr.sort_relevance_label,
+            ),
+            ("sort_date_label", en.sort_date_label, fr.sort_date_label),
+            (
+                "meeting_date_label",
+                en.meeting_date_label,
+                fr.meeting_date_label,
             ),
         ];
 

@@ -19,6 +19,15 @@ use sqlx::PgPool;
 /// from its most recently created mention — a project can only exist once
 /// at least one mention resolved to it, and the latest mention is the best
 /// available signal for "current" status.
+///
+/// `latest_meeting_date` (IMP-REQ-009-02, migration 024) is
+/// `MAX(project_timeline_events.event_date)` across every timeline event
+/// resolved to the project, via a second `LEFT JOIN LATERAL` independent of
+/// the `latest` mention lateral above (a project's most-recent mention and
+/// its most-recent timeline event are not necessarily the same row) — `LEFT`
+/// so a project with no timeline events yet still gets a row, with
+/// `latest_meeting_date` left `NULL` (TC-009-3: `sort=date` sorts those
+/// last, `NULLS LAST`, rather than excluding them).
 pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Error> {
     // IMP-REQ-003-04: `source_language` (migration 018) needs the same
     // ongoing maintenance on every insert/update this job already gives
@@ -41,7 +50,7 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
     let result = sqlx::query!(
         r#"
         INSERT INTO public_search_documents
-            (project_id, civic_address_normalized, municipality_name, municipality_slug, project_type, normalized_status, source_language, category_code, first_surfaced_at, updated_at)
+            (project_id, civic_address_normalized, municipality_name, municipality_slug, project_type, normalized_status, source_language, category_code, latest_meeting_date, first_surfaced_at, updated_at)
         SELECT
             p.id,
             p.civic_address_normalized,
@@ -51,6 +60,7 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
             latest.normalized_status,
             latest.language,
             p.category_code,
+            timeline.latest_meeting_date,
             now(),
             now()
         FROM projects p
@@ -64,6 +74,11 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
         ) latest ON true
         LEFT JOIN source_documents sd ON sd.id = latest.source_document_id
         LEFT JOIN municipalities m ON m.id = sd.municipality_id
+        LEFT JOIN LATERAL (
+            SELECT MAX(pte.event_date) AS latest_meeting_date
+            FROM project_timeline_events pte
+            WHERE pte.project_id = p.id
+        ) timeline ON true
         WHERE p.civic_address_normalized IS NOT NULL
         ON CONFLICT (project_id) DO UPDATE SET
             civic_address_normalized = EXCLUDED.civic_address_normalized,
@@ -73,6 +88,7 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
             normalized_status = EXCLUDED.normalized_status,
             source_language = EXCLUDED.source_language,
             category_code = EXCLUDED.category_code,
+            latest_meeting_date = EXCLUDED.latest_meeting_date,
             updated_at = now()
         "#
     )
@@ -145,6 +161,68 @@ mod tests {
         .unwrap();
 
         project_id
+    }
+
+    /// Like `seed_project_with_mention`, but also returns the seeded
+    /// `project_mentions.id` (IMP-REQ-009-03), which
+    /// `project_timeline_events.project_mention_id` requires — the base
+    /// helper discards it since no test before this one needed it.
+    async fn seed_project_with_mention_and_id(
+        pool: &PgPool,
+        civic_address_normalized: &str,
+        project_type: &str,
+        municipality_name: &str,
+    ) -> (Uuid, Uuid) {
+        let project_id = sqlx::query_scalar!(
+            "INSERT INTO projects (civic_address_normalized, project_type) VALUES ($1, $2) RETURNING id",
+            civic_address_normalized,
+            project_type,
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+
+        let municipality_id = sqlx::query_scalar!(
+            "INSERT INTO municipalities (name, slug, domain_allowlist) VALUES ($1, $2, ARRAY[$3]) RETURNING id",
+            municipality_name,
+            municipality_name.to_lowercase().replace(' ', "-"),
+            format!("{}.example", municipality_name.to_lowercase().replace(' ', "-")),
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        let doc_id = sqlx::query_scalar!(
+            "INSERT INTO source_documents (municipality_id, source_url, checksum, content, content_type) \
+             VALUES ($1, $2, 'chk', ''::bytea, 'text/html') RETURNING id",
+            municipality_id,
+            format!("https://{}.example/doc", municipality_name.to_lowercase().replace(' ', "-")),
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        let chunk_id = sqlx::query_scalar!(
+            "INSERT INTO document_chunks (source_document_id, chunk_index, content, language) \
+             VALUES ($1, 0, 'chunk text', 'en') RETURNING id",
+            doc_id
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+
+        let mention_id = sqlx::query_scalar!(
+            "INSERT INTO project_mentions \
+             (document_chunk_id, project_id, physical_work, civic_address, project_type, scale_units, normalized_status) \
+             VALUES ($1, $2, true, $3, $4, 1, 'approved') RETURNING id",
+            chunk_id,
+            project_id,
+            civic_address_normalized,
+            project_type,
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+
+        (project_id, mention_id)
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -279,6 +357,181 @@ mod tests {
         assert_eq!(
             first_surfaced_at_initial, first_surfaced_at_after_second_refresh,
             "first_surfaced_at must not change across a second refresh-job upsert of the same project"
+        );
+    }
+
+    /// IMP-REQ-009-03: a project with a single timeline event gets that
+    /// event's `event_date` mirrored onto `latest_meeting_date`.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn latest_meeting_date_mirrors_single_timeline_event(pool: PgPool) {
+        let (project_id, mention_id) = seed_project_with_mention_and_id(
+            &pool,
+            "1 rue timeline unique",
+            "residential",
+            "Ville Timeline Un",
+        )
+        .await;
+
+        let event_date = chrono::Utc::now() - chrono::Duration::days(3);
+        sqlx::query!(
+            "INSERT INTO project_timeline_events (project_id, project_mention_id, event_date) VALUES ($1, $2, $3)",
+            project_id,
+            mention_id,
+            event_date,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        refresh_public_search_index(&pool).await.unwrap();
+
+        let latest_meeting_date: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar!(
+            "SELECT latest_meeting_date FROM public_search_documents WHERE project_id = $1",
+            project_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            latest_meeting_date, Some(event_date),
+            "latest_meeting_date must mirror the project's single timeline event's event_date"
+        );
+    }
+
+    /// IMP-REQ-009-03: with multiple timeline events, `latest_meeting_date`
+    /// takes the MAX `event_date`, not the first/last inserted.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn latest_meeting_date_takes_max_event_date_across_multiple_events(pool: PgPool) {
+        let (project_id, mention_id) = seed_project_with_mention_and_id(
+            &pool,
+            "2 rue timeline multiple",
+            "commercial",
+            "Ville Timeline Deux",
+        )
+        .await;
+
+        let earlier = chrono::Utc::now() - chrono::Duration::days(30);
+        let latest = chrono::Utc::now() - chrono::Duration::days(1);
+        let middle = chrono::Utc::now() - chrono::Duration::days(10);
+
+        for event_date in [earlier, latest, middle] {
+            sqlx::query!(
+                "INSERT INTO project_timeline_events (project_id, project_mention_id, event_date) VALUES ($1, $2, $3)",
+                project_id,
+                mention_id,
+                event_date,
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        refresh_public_search_index(&pool).await.unwrap();
+
+        let latest_meeting_date: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar!(
+            "SELECT latest_meeting_date FROM public_search_documents WHERE project_id = $1",
+            project_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            latest_meeting_date, Some(latest),
+            "latest_meeting_date must be the MAX event_date across all of the project's timeline events"
+        );
+    }
+
+    /// IMP-REQ-009-03 / TC-009-3: a project with NO timeline events gets a
+    /// NULL `latest_meeting_date` (the `LEFT JOIN LATERAL` must not drop the
+    /// project's row, nor invent a date).
+    #[sqlx::test(migrations = "./migrations")]
+    async fn latest_meeting_date_is_null_with_no_timeline_events(pool: PgPool) {
+        let project_id = seed_project_with_mention(
+            &pool,
+            "3 rue sans timeline",
+            "institutional",
+            "Ville Timeline Trois",
+            Some("proposed"),
+        )
+        .await;
+
+        refresh_public_search_index(&pool).await.unwrap();
+
+        let latest_meeting_date: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar!(
+            "SELECT latest_meeting_date FROM public_search_documents WHERE project_id = $1",
+            project_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            latest_meeting_date, None,
+            "a project with no timeline events must get a NULL latest_meeting_date, not a fabricated one"
+        );
+    }
+
+    /// IMP-REQ-009-03: `latest_meeting_date` is re-derived (not frozen like
+    /// `first_surfaced_at`) on a second refresh once a new, later timeline
+    /// event is added — it must track the live MAX, unlike
+    /// `first_surfaced_at`'s deliberate immutability.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn latest_meeting_date_updates_on_subsequent_refresh(pool: PgPool) {
+        let (project_id, mention_id) = seed_project_with_mention_and_id(
+            &pool,
+            "4 rue timeline evolutive",
+            "infrastructure",
+            "Ville Timeline Quatre",
+        )
+        .await;
+
+        let first_event_date = chrono::Utc::now() - chrono::Duration::days(20);
+        sqlx::query!(
+            "INSERT INTO project_timeline_events (project_id, project_mention_id, event_date) VALUES ($1, $2, $3)",
+            project_id,
+            mention_id,
+            first_event_date,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        refresh_public_search_index(&pool).await.unwrap();
+
+        let after_first_refresh: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar!(
+            "SELECT latest_meeting_date FROM public_search_documents WHERE project_id = $1",
+            project_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(after_first_refresh, Some(first_event_date));
+
+        let later_event_date = chrono::Utc::now() - chrono::Duration::days(2);
+        sqlx::query!(
+            "INSERT INTO project_timeline_events (project_id, project_mention_id, event_date) VALUES ($1, $2, $3)",
+            project_id,
+            mention_id,
+            later_event_date,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        refresh_public_search_index(&pool).await.unwrap();
+
+        let after_second_refresh: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar!(
+            "SELECT latest_meeting_date FROM public_search_documents WHERE project_id = $1",
+            project_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            after_second_refresh, Some(later_event_date),
+            "latest_meeting_date must be re-derived on each refresh to track the live MAX(event_date), not frozen like first_surfaced_at"
         );
     }
 }

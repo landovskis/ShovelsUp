@@ -15,6 +15,9 @@
         <span class="status-indicator{% if status %} status-indicator--{{ status }}{% endif %}">{{ status }}</span>
         {% if result.source_language == "en" %}<span class="result-lang-badge">[EN]</span>
         {%- elif result.source_language == "fr" %}<span class="result-lang-badge">[FR]</span>{% endif %}
+        {% if result.latest_meeting_date %}
+        <span class="search-result-meeting-date">{{ meeting_date_label | default("Meeting:", true) }} {{ result.latest_meeting_date }}</span>
+        {% endif %}
     </li>
     {% endfor %}
 </ul>

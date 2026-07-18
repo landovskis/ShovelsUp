@@ -57,6 +57,11 @@
     </div>
     {% endif %}
 
+    <div class="sort-toggle-row" role="group" aria-label="{{ sort_filter_label | default('Sort results', true) }}">
+        <a href="{{ sort_relevance_href }}" class="sort-toggle{% if active_sort != 'date' %} sort-toggle-selected{% endif %}"{% if active_sort != 'date' %} aria-current="true"{% endif %} hx-get="{{ sort_relevance_href }}" hx-target="#search-results" hx-swap="innerHTML" hx-push-url="true">{{ sort_relevance_label | default("Relevance", true) }}</a>
+        <a href="{{ sort_date_href }}" class="sort-toggle{% if active_sort == 'date' %} sort-toggle-selected{% endif %}"{% if active_sort == 'date' %} aria-current="true"{% endif %} hx-get="{{ sort_date_href }}" hx-target="#search-results" hx-swap="innerHTML" hx-push-url="true">{{ sort_date_label | default("Meeting date", true) }}</a>
+    </div>
+
     {% if date_filter_chip_label %}
     <p class="search-filter-chip" id="date-filter-chip">
         <span>{{ date_filter_chip_label }}</span>

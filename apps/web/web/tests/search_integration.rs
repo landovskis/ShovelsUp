@@ -1922,9 +1922,17 @@ async fn imp_req_008_07_category_chip_row_renders_all_five_categories_with_label
 
     // With no `category` param, the "All categories" chip (not any specific
     // category chip) must be the one marked as the current selection —
-    // exactly one `aria-current="true"` in the whole chip row.
+    // exactly one `aria-current="true"` in the whole chip row. Scoped to the
+    // category-chip-row markup only, since the sort-toggle-row (IMP-REQ-009)
+    // also carries its own independent `aria-current="true"` on the page.
+    let category_chip_row_html = html
+        .split(r#"class="sort-toggle-row""#)
+        .next()
+        .unwrap_or(&html);
     assert_eq!(
-        html.matches(r#"aria-current="true""#).count(),
+        category_chip_row_html
+            .matches(r#"aria-current="true""#)
+            .count(),
         1,
         "expected exactly one accessibly-marked current chip when no \
          category filter is active, got: {html}"
@@ -2013,8 +2021,17 @@ async fn imp_req_008_14_selected_category_is_accessible_and_chips_preserve_other
     let html = String::from_utf8(body.to_vec()).unwrap();
 
     // Exactly one chip is accessibly marked as current: the commercial one.
+    // Scoped to the category-chip-row markup only, since the
+    // sort-toggle-row (IMP-REQ-009) also carries its own independent
+    // `aria-current="true"` on the page.
+    let category_chip_row_html = html
+        .split(r#"class="sort-toggle-row""#)
+        .next()
+        .unwrap_or(&html);
     assert_eq!(
-        html.matches(r#"aria-current="true""#).count(),
+        category_chip_row_html
+            .matches(r#"aria-current="true""#)
+            .count(),
         1,
         "expected exactly one accessibly-marked current chip, got: {html}"
     );
@@ -2106,7 +2123,6 @@ async fn imp_req_008_10_category_chip_labels_are_localized_in_french(pool: PgPoo
 /// compile-time-checked macros, which would fail `cargo build` today against
 /// a schema lacking the column), with the full intended assertion body, per
 /// the same pattern as TC-004-4/TC-007-1.
-#[ignore = "blocked on IMP-REQ-009-01 migration (latest_meeting_date)"]
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_009_1_sort_date_orders_by_latest_meeting_date_descending(pool: PgPool) {
     let newer_project =
@@ -2156,7 +2172,10 @@ async fn tc_009_1_sort_date_orders_by_latest_meeting_date_descending(pool: PgPoo
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert_eq!(results.len(), 2, "both fixtures must match, got: {results:?}");
     assert_eq!(
         results[0]["project_id"].as_str().unwrap(),
@@ -2196,7 +2215,10 @@ async fn tc_009_2_sort_relevance_preserves_default_civic_address_order(pool: PgP
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert_eq!(results.len(), 2, "both fixtures must match, got: {results:?}");
     assert_eq!(
         results[0]["civic_address_normalized"].as_str().unwrap(),
@@ -2216,7 +2238,6 @@ async fn tc_009_2_sort_relevance_preserves_default_civic_address_order(pool: PgP
 /// `sort=date` direction (NULLS LAST).
 ///
 /// Blocked on IMP-REQ-009-01/-06, same as TC-009-1.
-#[ignore = "blocked on IMP-REQ-009-01 migration (latest_meeting_date)"]
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_009_3_null_latest_meeting_date_sorts_last(pool: PgPool) {
     let dated_project =
@@ -2252,7 +2273,10 @@ async fn tc_009_3_null_latest_meeting_date_sorts_last(pool: PgPool) {
         .await
         .unwrap()
         .to_bytes();
-    let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let envelope: Value = serde_json::from_slice(&body).unwrap();
+    let results = envelope["results"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
     assert_eq!(results.len(), 2, "both fixtures must match, got: {results:?}");
     assert_eq!(
         results[0]["project_id"].as_str().unwrap(),
@@ -2273,7 +2297,6 @@ async fn tc_009_3_null_latest_meeting_date_sorts_last(pool: PgPool) {
 /// deterministic order across repeated calls.
 ///
 /// Blocked on IMP-REQ-009-01/-06, same as TC-009-1.
-#[ignore = "blocked on IMP-REQ-009-01 migration (latest_meeting_date)"]
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_009_4_identical_latest_meeting_date_ties_break_stably(pool: PgPool) {
     let second_alphabetically =
@@ -2319,7 +2342,10 @@ async fn tc_009_4_identical_latest_meeting_date_ties_break_stably(pool: PgPool) 
             .await
             .unwrap()
             .to_bytes();
-        let results: Vec<Value> = serde_json::from_slice(&body).unwrap();
+        let envelope: Value = serde_json::from_slice(&body).unwrap();
+        let results = envelope["results"]
+            .as_array()
+            .unwrap_or_else(|| panic!("expected a 'results' array field, got: {envelope:?}"));
         assert_eq!(
             results.len(),
             2,
