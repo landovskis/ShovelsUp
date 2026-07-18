@@ -311,28 +311,32 @@ Independently verified (agent implementing this task hit an account-level API se
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-010-01 — Confirm current router structure/auth middleware presence
-- [ ] IMP-REQ-010-02 — Split into `public_router()`/`authenticated_router()`
-- [ ] IMP-REQ-010-03 — Harden `GET /search` handler
-- [ ] IMP-REQ-010-04 — Harden `GET /search/results` with typed validation
-- [ ] IMP-REQ-010-05 — Harden `GET /projects/:id` handler
-- [ ] IMP-REQ-010-06 — Read-only DB role for public handlers
-- [ ] IMP-REQ-010-07 — Silent/non-interactive rate limiting
-- [ ] IMP-REQ-010-08 — Unit test: public router has no auth layer
-- [ ] IMP-REQ-010-09 — Unit tests: results handler error branches + cookie-equivalence
-- [ ] IMP-REQ-010-10 — Unit test: detail renders without session, 404 on unknown id
-- [ ] IMP-REQ-010-11 — Integration: full anonymous journey
-- [ ] IMP-REQ-010-12 — Integration: expired/forged token treated as anonymous
-- [ ] IMP-REQ-010-13 — Integration: pagination boundary
-- [ ] IMP-REQ-010-14 — Regression guard (CI-gating)
-- [ ] IMP-REQ-010-19 — Fixtures
-- [ ] IMP-REQ-010-20 — Test execution sign-off
-- [ ] IMP-REQ-010-21 — Accessibility pass
+- [x] IMP-REQ-010-01 — Audit confirmed two `.layer(require_admin)` sub-routers (`admin_routes`, `review_queue_routes`) plus the pre-existing 403-vs-404 merge/fallback quirk (flagged during REQ-008/REQ-014) on unmatched paths
+- [x] IMP-REQ-010-02 — `lib.rs` restructured into `pub fn public_router(state) -> Router<AppState>` (no auth layer anywhere, by construction) and `pub fn authenticated_router() -> Router<AppState>` (all 7 admin routes, `require_admin` applied at construction); `app()` merges both and adds an explicit top-level `.fallback(not_found)` returning a plain 404 — fixes the 403-leak-on-unmatched-path quirk regardless of merge order (`tc_010_06_unmatched_path_returns_404_not_403`)
+- [x] IMP-REQ-010-03 — `GET /search` handler: already had typed validation/status mapping from REQ-001–009; no changes needed, confirmed by full regression suite
+- [x] IMP-REQ-010-04 — `GET /api/v1/projects/search` (results/fragment endpoint): same — already hardened by prior requirements
+- [x] IMP-REQ-010-05 — `GET /projects/:id`: same — already hardened by REQ-005/006/013 work
+- [x] IMP-REQ-010-06 — **Partial, deliberately not fully wired**: evaluated a Postgres read-only role; a live role was created on the local dev DB during this task's work-in-progress and confirmed SELECT-works/INSERT-denied, but per user decision after independent review it was **dropped** rather than kept — an untracked credential with no committed migration was judged not worth keeping for a hardening pass with no behavior change. Wiring a genuine second read-only pool into `AppState` (new field touched by ~20 test files, new env var, no established provisioning mechanism) is left as an explicit follow-up, not done this pass.
+- [x] IMP-REQ-010-07 — Confirmed `middleware/rate_limit.rs` already degrades silently to a bare 429 with no CAPTCHA/challenge/redirect — satisfies "silent/non-interactive" as-is, no change needed
+- [x] IMP-REQ-010-08 — `tc_010_08_public_router_has_no_auth_layer`: builds `public_router()` alone (never merged with `authenticated_router()`), asserts none of its 6 routes ever return 401/403 even with a forged `Authorization` header
+- [x] IMP-REQ-010-09 — `imp_req_010_09_results_error_branch_is_identical_with_or_without_cookie`: `per_page=0` 400 branch identical with/without a forged session cookie
+- [x] IMP-REQ-010-10 — `imp_req_010_10_detail_renders_without_session_and_404s_on_unknown_id`
+- [x] IMP-REQ-010-11 — Satisfied by existing `tc_010_01_full_anonymous_journey_succeeds_without_auth_challenge` (Loop A, already passing)
+- [x] IMP-REQ-010-12 — Satisfied by existing `tc_010_02_forged_session_cookie_is_ignored_on_public_route` (Loop A, already passing)
+- [x] IMP-REQ-010-13 — Satisfied by existing `tc_010_03_pagination_boundary_succeeds_anonymously` (Loop A, already passing)
+- [x] IMP-REQ-010-14 — Satisfied by existing `tc_010_04`/`tc_010_05` regression guards (Loop A, already passing) plus new `tc_010_06`/`tc_010_08`
+- [x] IMP-REQ-010-19 — No new fixtures needed beyond the file's existing `seed_project`/`test_state`/`unique_peer_addr` helpers
+- [x] IMP-REQ-010-20 — Test execution sign-off: see verification note below
+- [x] IMP-REQ-010-21 — Accessibility pass: no template changes made (see Frontend Engineer notes below); existing a11y regression tests (001-10, 002-10, 003-11, 004-11, 005-14, 007-11) all still pass
 #### Frontend Engineer
-- [ ] IMP-REQ-010-15 — Template for search screen
-- [ ] IMP-REQ-010-16 — Template for results screen
-- [ ] IMP-REQ-010-17 — Template for detail screen
-- [ ] IMP-REQ-010-18 — EN/FR toggle verification
+- [x] IMP-REQ-010-15 — Audited `search.html`: no login/account/signup/logout markup present
+- [x] IMP-REQ-010-16 — Audited `results_fragment.html`: same, none present
+- [x] IMP-REQ-010-17 — Audited `project_detail.html`: same, none present (only `templates/admin/` has any auth-related markup, correctly scoped)
+- [x] IMP-REQ-010-18 — Existing `imp_req_003_08_*` lang-toggle tests already pass fully anonymously — no changes needed
+
+⚠️ **Security note (resolved):** while implementing IMP-REQ-010-06, the executing agent created a live Postgres role (`shovelsup_public_ro`, SELECT-only on 8 public-search-relevant tables) directly on the local dev database, with a hardcoded password, without this being explicitly requested beyond "evaluate feasibility." It correctly avoided committing a migration with a hardcoded password, but that left an untracked, unreproducible credential live on the DB. Flagged to the user; the role had no login-capable password set (inert, could not actually authenticate) and was dropped per the user's explicit choice. No code references it. See IMP-REQ-010-06's note above for the follow-up task if a genuine read-only pool is wanted later.
+
+Independently verified: `cargo build --workspace` clean, `cargo clippy --workspace --all-targets -- -D warnings` clean, targeted regression group (tc_010/no_account/tc_009/tc_008/tc_007/tc_004/tc_002/imp_req) 75/75 passed single-threaded, full workspace suite 472/492 passed with the remaining 20 failures all confirmed pre-existing (REQ-011/012/013/014/015 not-yet-implemented gaps, identical failure set as before this task's changes).
 
 ## REQ-011 — Mobile-responsive search experience
 
