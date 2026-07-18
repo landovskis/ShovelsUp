@@ -48,6 +48,15 @@
         <button type="submit" class="search-filter-submit">{{ submit_label | default("Search", true) }}</button>
     </form>
 
+    {% if category_chips %}
+    <div class="category-chip-row" role="group" aria-label="{{ category_filter_label | default('Filter by category', true) }}">
+        <a href="{{ category_all_href }}" class="category-chip{% if not selected_category %} category-chip-selected{% endif %}"{% if not selected_category %} aria-current="true"{% endif %} hx-get="{{ category_all_href }}" hx-target="#search-results" hx-swap="innerHTML" hx-push-url="true">{{ category_all_option | default("All categories", true) }}</a>
+        {% for chip in category_chips %}
+        <a href="{{ chip.href }}" class="category-chip{% if chip.selected %} category-chip-selected{% endif %}"{% if chip.selected %} aria-current="true"{% endif %} hx-get="{{ chip.href }}" hx-target="#search-results" hx-swap="innerHTML" hx-push-url="true">{{ chip.label }}</a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     {% if date_filter_chip_label %}
     <p class="search-filter-chip" id="date-filter-chip">
         <span>{{ date_filter_chip_label }}</span>

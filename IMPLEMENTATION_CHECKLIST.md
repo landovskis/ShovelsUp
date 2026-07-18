@@ -250,16 +250,17 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-008-04 — `GET /categories` facet endpoint (real handler, publicly routed not admin-gated, returns Vec<String> of codes matching tc_008_4's exact literal expectation; added migration 023 for category_taxonomy.sort_order + public_search_documents.category_code, mirrored by the refresh job)
 - [x] IMP-REQ-008-05 — Uncategorised serialization + 503-degraded mode (category_code IS NULL for uncategorised, live-table existence check for real codes, 400 on invalid; /categories degrades to 503 on query failure; all 5 tc_008_* pass, 55/55 verified single-threaded; also fixed two pre-existing stale-envelope test bugs in tc_008_1/2)
 - [x] IMP-REQ-008-06 — Security review (parameterized queries, escaping) (verified all new/changed queries use bind parameters exclusively, no string-interpolated SQL; the one format! use builds a bound ILIKE value, pre-existing pattern)
-- [ ] IMP-REQ-008-10 — Locale string entries
 - [x] IMP-REQ-008-11 — Unit tests (already satisfied — 13 validate_category unit tests from IMP-REQ-008-03)
 - [x] IMP-REQ-008-12 — Integration tests (already satisfied — all 5 tc_008_* tests pass)
 - [x] IMP-REQ-008-13 — System tests TC-008-1..5 (already satisfied — all 5 tc_008_* tests pass)
 - [ ] IMP-REQ-008-14 — Accessibility tests
 - [x] IMP-REQ-008-15 — Deploy sequencing (migration before code deploy) (already satisfied — migration 022/023 applied before code change, per established convention)
 #### Frontend Engineer
-- [ ] IMP-REQ-008-07 — Filter chip row template
-- [ ] IMP-REQ-008-08 — htmx wiring, loading/empty/error states
-- [ ] IMP-REQ-008-09 — Responsive/keyboard nav
+- [x] IMP-REQ-008-07 — Filter chip row template (renders all 5 categories with labels, preserves other params)
+- [x] IMP-REQ-008-08 — htmx wiring, loading/empty/error states (plain-link no-JS baseline; /categories fetch failure degrades gracefully, no page break)
+- [x] IMP-REQ-008-09 — Responsive/keyboard nav (chips wrap at 640px, real <a> tags keyboard-reachable)
+- [x] IMP-REQ-008-10 — Locale string entries (EN/FR category labels + "All categories" default, verified via new French test)
+- [x] IMP-REQ-008-14 — Accessibility tests (selected category indicated non-color-only, chips preserve other active filters; REQ-008 complete, all 5 tc_008_* pass, 59/59 verified single-threaded)
 
 ## REQ-009 — Timeline / chronological view
 

@@ -662,6 +662,97 @@ mod core {
         format!("/search?{}", pairs.join("&"))
     }
 
+    /// Bundles the raw filter params that every "preserve the user's other
+    /// active filters, but change just this one thing" href builder for the
+    /// category chip row (IMP-REQ-008-07) needs to carry forward: `q`/
+    /// `municipality_slug` mirror `build_lang_toggle_href`'s own preserved
+    /// fields, and `date_preset`/`date_from`/`date_to` are the raw
+    /// (unvalidated) date-filter params, so switching category doesn't
+    /// silently drop whatever date filter is currently active. Bundled into
+    /// one struct (rather than five more positional parameters) purely to
+    /// stay clear of clippy's `too_many_arguments` threshold, same reasoning
+    /// as `RawDateFilterQuery` for `run_search`.
+    #[derive(Debug, Clone, Copy)]
+    pub struct FilterHrefContext<'a> {
+        pub lang: &'a str,
+        pub q: &'a str,
+        pub municipality_slug: Option<&'a str>,
+        pub date_preset: Option<&'a str>,
+        pub date_from: Option<&'a str>,
+        pub date_to: Option<&'a str>,
+    }
+
+    /// Builds the `href` for a category filter chip (IMP-REQ-008-07): always
+    /// `/search` with `category` set to `category` (omitted entirely for the
+    /// "All categories" chip, i.e. `category = None`), plus whichever of
+    /// `q`/`municipality_slug`/`date_preset`/`date_from`/`date_to` in `ctx`
+    /// are actually present, plus the current `lang` — so clicking a chip
+    /// re-runs the same search scoped to (or cleared of) a category without
+    /// losing any other filter already in play, matching
+    /// `build_lang_toggle_href`/`build_pagination_href`'s own
+    /// param-preservation precedent.
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    pub fn build_category_filter_href(ctx: FilterHrefContext<'_>, category: Option<&str>) -> String {
+        let mut pairs: Vec<String> = Vec::new();
+        if !ctx.q.is_empty() {
+            pairs.push(format!("q={}", percent_encode_query_value(ctx.q)));
+        }
+        if let Some(slug) = ctx.municipality_slug.filter(|s| !s.is_empty()) {
+            pairs.push(format!(
+                "municipality_slug={}",
+                percent_encode_query_value(slug)
+            ));
+        }
+        if let Some(preset) = ctx.date_preset.filter(|s| !s.trim().is_empty()) {
+            pairs.push(format!(
+                "date_preset={}",
+                percent_encode_query_value(preset)
+            ));
+        }
+        if let Some(from) = ctx.date_from.filter(|s| !s.trim().is_empty()) {
+            pairs.push(format!("date_from={}", percent_encode_query_value(from)));
+        }
+        if let Some(to) = ctx.date_to.filter(|s| !s.trim().is_empty()) {
+            pairs.push(format!("date_to={}", percent_encode_query_value(to)));
+        }
+        if let Some(code) = category.filter(|c| !c.is_empty()) {
+            pairs.push(format!("category={}", percent_encode_query_value(code)));
+        }
+        pairs.push(format!("lang={}", ctx.lang));
+
+        format!("/search?{}", pairs.join("&"))
+    }
+
+    /// Maps a category taxonomy code to its localized display label
+    /// (IMP-REQ-008-10), matching `municipality_display_name`'s pattern:
+    /// covers the launch taxonomy (`residential`, `commercial`,
+    /// `institutional`, `infrastructure`, `other` — the same five codes
+    /// `GET /categories` returns), returning `None` for any code outside
+    /// that set rather than guessing at a label. Expects `code` to already be
+    /// lowercase-normalized (as the live `category_taxonomy` table's `code`
+    /// column and `validate_category` both are); this function does not
+    /// itself lowercase or trim.
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    pub fn category_display_name(code: &str, lang: &str) -> Option<&'static str> {
+        match (code, lang) {
+            ("residential", "fr") => Some("Résidentiel"),
+            ("residential", _) => Some("Residential"),
+            ("commercial", "fr") => Some("Commercial"),
+            ("commercial", _) => Some("Commercial"),
+            ("institutional", "fr") => Some("Institutionnel"),
+            ("institutional", _) => Some("Institutional"),
+            ("infrastructure", "fr") => Some("Infrastructures"),
+            ("infrastructure", _) => Some("Infrastructure"),
+            ("other", "fr") => Some("Autre"),
+            ("other", _) => Some("Other"),
+            _ => None,
+        }
+    }
+
     /// Pagination math shared by the JSON envelope (IMP-REQ-004-04) and the
     /// HTML fragment's next/prev branching (IMP-REQ-004-05). Pure
     /// data-in/data-out over an already-known `total` row count — no
@@ -1799,6 +1890,24 @@ pub struct MunicipalityOption {
     pub display_name: String,
 }
 
+/// A single category filter chip in the search form's chip row
+/// (IMP-REQ-008-07): `code` is the raw taxonomy code the chip's `href`
+/// filters on, `label` is its localized display text (via
+/// `core::category_display_name`, falling back to the raw code for any
+/// taxonomy entry outside today's launch set, mirroring
+/// `MunicipalityOption::display_name`'s own DB-`name` fallback),
+/// `selected` drives the chip's `aria-current`/visual-selected styling
+/// (IMP-REQ-008-14: never color-only), and `href` is pre-built via
+/// `core::build_category_filter_href` so the template does no URL
+/// construction of its own.
+#[derive(Debug, Serialize)]
+pub struct CategoryChip {
+    pub code: String,
+    pub label: String,
+    pub href: String,
+    pub selected: bool,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SearchResult {
     pub project_id: uuid::Uuid,
@@ -2157,6 +2266,12 @@ struct SearchLabels {
     date_from_label: &'static str,
     date_to_label: &'static str,
     date_filter_clear_label: &'static str,
+    // IMP-REQ-008-07/-10: the category chip row's accessible group label
+    // (the `role="group"`'s `aria-label`) and the "All categories" chip's
+    // own text (the default/clear-filter option, matching
+    // `municipality_all_option`'s role for the municipality `<select>`).
+    category_filter_label: &'static str,
+    category_all_option: &'static str,
 }
 
 fn search_labels(lang: &str) -> SearchLabels {
@@ -2182,6 +2297,8 @@ fn search_labels(lang: &str) -> SearchLabels {
             date_from_label: "Depuis",
             date_to_label: "Jusqu'au",
             date_filter_clear_label: "Effacer le filtre de date",
+            category_filter_label: "Filtrer par catégorie",
+            category_all_option: "Toutes les catégories",
         },
         _ => SearchLabels {
             page_title: "Search projects",
@@ -2204,6 +2321,8 @@ fn search_labels(lang: &str) -> SearchLabels {
             date_from_label: "From",
             date_to_label: "To",
             date_filter_clear_label: "Clear date filter",
+            category_filter_label: "Filter by category",
+            category_all_option: "All categories",
         },
     }
 }
@@ -2343,6 +2462,58 @@ pub async fn get_search_page(
         None
     };
 
+    // IMP-REQ-008-08: populates the category chip row from the live
+    // `category_taxonomy` table (`is_public`, `sort_order`), the same query
+    // `list_categories` (`GET /categories`) runs. A query failure here
+    // degrades to an empty list (`category_chips` stays empty, so the whole
+    // chip row is omitted by the template's `{% if category_chips %}` guard)
+    // rather than failing the whole page render — mirroring the
+    // `municipalities` select's own degradation above.
+    let category_codes: Vec<String> = sqlx::query_scalar!(
+        "SELECT code FROM category_taxonomy WHERE is_public ORDER BY sort_order"
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    // IMP-REQ-008-07: the raw `category` query param, trimmed and
+    // lowercased for chip-selection comparison — mirrors
+    // `core::validate_category`'s own normalization so a chip renders
+    // selected/`aria-current` for exactly the same value `run_search` above
+    // actually filtered on.
+    let selected_category = params
+        .category
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_lowercase);
+
+    let category_href_ctx = core::FilterHrefContext {
+        lang,
+        q: &params.q,
+        municipality_slug: params.municipality_slug.as_deref(),
+        date_preset: params.date_preset.as_deref(),
+        date_from: params.date_from.as_deref(),
+        date_to: params.date_to.as_deref(),
+    };
+    let category_all_href = core::build_category_filter_href(category_href_ctx, None);
+    let category_chips: Vec<CategoryChip> = category_codes
+        .into_iter()
+        .map(|code| {
+            let selected = selected_category.as_deref() == Some(code.as_str());
+            let label = core::category_display_name(&code, lang)
+                .map(str::to_string)
+                .unwrap_or_else(|| code.clone());
+            let href = core::build_category_filter_href(category_href_ctx, Some(&code));
+            CategoryChip {
+                code,
+                label,
+                href,
+                selected,
+            }
+        })
+        .collect();
+
     // IMP-REQ-003-08: the toggle always targets the OTHER language than
     // this page's resolved `lang`, preserving the `q`/`municipality_slug`
     // filters actually in play so following the link re-renders the same
@@ -2449,6 +2620,11 @@ pub async fn get_search_page(
             date_to_value => params.date_to,
             date_filter_chip_label => date_filter_chip_label,
             clear_date_filter_href => clear_date_filter_href,
+            category_filter_label => labels.category_filter_label,
+            category_all_option => labels.category_all_option,
+            category_all_href => category_all_href,
+            selected_category => selected_category,
+            category_chips => category_chips,
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

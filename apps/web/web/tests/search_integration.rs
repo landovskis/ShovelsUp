@@ -1869,6 +1869,179 @@ async fn tc_008_5_categories_facet_degrades_gracefully_on_db_failure(pool: PgPoo
     );
 }
 
+/// IMP-REQ-008-07/-08: the search page's category chip row renders one chip
+/// per category returned by the live `category_taxonomy` table (the same
+/// five codes TC-008-4 pins for `GET /categories`), each with its localized
+/// EN display text, alongside a default "All categories" chip — and the row
+/// renders even before any search has been submitted (no `q` in the query
+/// string), since the categories are fetched unconditionally, independent of
+/// `has_searched`.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_008_07_category_chip_row_renders_all_five_categories_with_labels(pool: PgPool) {
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"class="category-chip-row""#),
+        "expected the category chip row to render, got: {html}"
+    );
+    assert!(
+        html.contains(">All categories</a>"),
+        "expected the default 'All categories' chip text, got: {html}"
+    );
+    for (code, label) in [
+        ("residential", "Residential"),
+        ("commercial", "Commercial"),
+        ("institutional", "Institutional"),
+        ("infrastructure", "Infrastructure"),
+        ("other", "Other"),
+    ] {
+        assert!(
+            html.contains(&format!(">{label}</a>")),
+            "expected a chip labeled {label:?} for category code {code:?}, got: {html}"
+        );
+        assert!(
+            html.contains(&format!("category={code}&amp;lang=en")),
+            "expected the {code:?} chip's href to filter on category={code}, got: {html}"
+        );
+    }
+
+    // With no `category` param, the "All categories" chip (not any specific
+    // category chip) must be the one marked as the current selection —
+    // exactly one `aria-current="true"` in the whole chip row.
+    assert_eq!(
+        html.matches(r#"aria-current="true""#).count(),
+        1,
+        "expected exactly one accessibly-marked current chip when no \
+         category filter is active, got: {html}"
+    );
+}
+
+/// IMP-REQ-008-14: the currently-selected category chip is indicated in an
+/// accessible, non-color-only way (`aria-current="true"` plus the
+/// `category-chip-selected` class, not a color-only cue), and every chip's
+/// link — selected or not — preserves the other active filters (`q`,
+/// `municipality_slug`) already in the query string, matching
+/// `build_lang_toggle_href`/`build_pagination_href`'s own
+/// param-preservation precedent.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_008_14_selected_category_is_accessible_and_chips_preserve_other_filters(
+    pool: PgPool,
+) {
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?q=demolition&municipality_slug=montreal&category=commercial")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    // Exactly one chip is accessibly marked as current: the commercial one.
+    assert_eq!(
+        html.matches(r#"aria-current="true""#).count(),
+        1,
+        "expected exactly one accessibly-marked current chip, got: {html}"
+    );
+    assert!(
+        html.contains(
+            r#"class="category-chip category-chip-selected" aria-current="true" hx-get="&#x2f;search?q=demolition&amp;municipality_slug=montreal&amp;category=commercial&amp;lang=en"#
+        ),
+        "expected the selected commercial chip to carry both the \
+         category-chip-selected class AND aria-current=\"true\" (not a \
+         color-only cue), with its href preserving q/municipality_slug, \
+         got: {html}"
+    );
+
+    // Every other chip must still preserve q/municipality_slug in its own
+    // href, just scoped to its own category code instead.
+    for code in ["residential", "institutional", "infrastructure", "other"] {
+        assert!(
+            html.contains(&format!(
+                "&#x2f;search?q=demolition&amp;municipality_slug=montreal&amp;category={code}&amp;lang=en"
+            )),
+            "expected the {code:?} chip's href to preserve q/municipality_slug \
+             while switching to category={code}, got: {html}"
+        );
+    }
+
+    // The "All categories" chip must NOT be marked as the current selection.
+    assert!(
+        !html.contains(
+            r#"class="category-chip category-chip-selected" aria-current="true" hx-get="&#x2f;search?q=demolition&amp;municipality_slug=montreal&amp;lang=en"#
+        ),
+        "the 'All categories' chip must not be marked current when a \
+         specific category is selected, got: {html}"
+    );
+}
+
+/// IMP-REQ-008-10: category chip labels are localized — the French page
+/// renders French category names and "Toutes les catégories" for the
+/// default option, not the English strings.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_008_10_category_chip_labels_are_localized_in_french(pool: PgPool) {
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?lang=fr")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(">Toutes les catégories</a>"),
+        "expected the French 'All categories' default chip text, got: {html}"
+    );
+    for label in [
+        "Résidentiel",
+        "Commercial",
+        "Institutionnel",
+        "Infrastructures",
+        "Autre",
+    ] {
+        assert!(
+            html.contains(&format!(">{label}</a>")),
+            "expected a French chip labeled {label:?}, got: {html}"
+        );
+    }
+    assert!(
+        !html.contains(">All categories</a>"),
+        "the French page must not fall back to the English default chip \
+         text, got: {html}"
+    );
+}
+
 /// TC-009-1: `sort=date` orders results by `latest_meeting_date` descending
 /// (newest first).
 ///
