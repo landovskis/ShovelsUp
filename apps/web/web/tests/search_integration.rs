@@ -1931,6 +1931,59 @@ async fn imp_req_008_07_category_chip_row_renders_all_five_categories_with_label
     );
 }
 
+/// IMP-REQ-008-08: `GET /search`'s own category-chip-row query (distinct
+/// from the `GET /categories` facet endpoint TC-008-5 covers) must degrade
+/// gracefully on failure — the same precedent the municipality `<select>`'s
+/// own query already follows (see the doc comment on `get_search_page`'s
+/// `municipalities` query). Simulated the same way TC-REQ-008-4/TC-008-5 do:
+/// closing the pool before the request to force every `sqlx` call against it
+/// to fail. With no `q` param, `run_search` itself is never invoked (only
+/// triggered by `has_searched`), isolating this test to the page-render-time
+/// `municipalities`/`category_taxonomy` queries specifically, so a failure
+/// here can only be attributed to those degrading (or not) as designed.
+#[sqlx::test(migrations = "./migrations")]
+async fn imp_req_008_08_search_page_degrades_gracefully_on_categories_query_failure(
+    pool: PgPool,
+) {
+    pool.close().await;
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "a categories-query failure at page-render time must not surface as \
+         a 500/error status — the page must still render, degrading to an \
+         empty chip row exactly like the municipality <select> already does \
+         on its own query failure"
+    );
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        !html.contains(r#"class="category-chip-row""#),
+        "with the categories query failing, `category_chips` must be empty \
+         so the template's `{{% if category_chips %}}` guard omits the chip \
+         row entirely rather than rendering an empty/broken one, got: {html}"
+    );
+    assert!(
+        html.contains("<form"),
+        "the page itself must still render its normal markup (not a bare \
+         error page) despite the categories query failure, got: {html}"
+    );
+}
+
 /// IMP-REQ-008-14: the currently-selected category chip is indicated in an
 /// accessible, non-color-only way (`aria-current="true"` plus the
 /// `category-chip-selected` class, not a color-only cue), and every chip's

@@ -262,6 +262,8 @@ clippy --workspace -- -D warnings`; REQ-011/REQ-013's browser-driven cases
 - [x] IMP-REQ-008-10 — Locale string entries (EN/FR category labels + "All categories" default, verified via new French test)
 - [x] IMP-REQ-008-14 — Accessibility tests (selected category indicated non-color-only, chips preserve other active filters; REQ-008 complete, all 5 tc_008_* pass, 59/59 verified single-threaded)
 
+⚠️ **Post-commit review gap closure (REQ-008):** review hook flagged 4 missing coverage items after the category-filter-chip commit — added 8 unit tests for `build_category_filter_href`, 11 unit tests for `category_display_name` (5 categories × 2 languages + 1 unrecognized-code case), a blank/whitespace-date-param test, and a `GET /categories` graceful-degradation test. No production code change was needed for the degradation case — `.unwrap_or_default()` already matched the municipality-select precedent. Independently reverified: `cargo build --workspace` clean, `cargo clippy --workspace --all-targets -- -D warnings` clean, targeted regression group 55/55 and 46/46 passed across two separate `--test-threads 1` runs, zero regressions. Files: `apps/web/web/src/routes/search.rs`, `apps/web/web/tests/search_integration.rs`.
+
 ## REQ-009 — Timeline / chronological view
 
 ### Loop A — Test Plan Implementation Breakdown

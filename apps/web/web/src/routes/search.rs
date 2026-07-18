@@ -1699,6 +1699,219 @@ mod core {
             );
         }
 
+        /// Builds a `FilterHrefContext` with every field defaulted to
+        /// "absent" so individual tests below only need to override what
+        /// they're actually exercising.
+        fn no_filters_ctx(lang: &str) -> FilterHrefContext<'_> {
+            FilterHrefContext {
+                lang,
+                q: "",
+                municipality_slug: None,
+                date_preset: None,
+                date_from: None,
+                date_to: None,
+            }
+        }
+
+        #[test]
+        fn build_category_filter_href_no_filters_all_categories() {
+            // category = None is the "All categories" chip: the `category`
+            // param must be omitted entirely, not sent as an empty string.
+            assert_eq!(
+                build_category_filter_href(no_filters_ctx("en"), None),
+                "/search?lang=en"
+            );
+        }
+
+        #[test]
+        fn build_category_filter_href_no_filters_specific_category() {
+            assert_eq!(
+                build_category_filter_href(no_filters_ctx("en"), Some("residential")),
+                "/search?category=residential&lang=en"
+            );
+        }
+
+        #[test]
+        fn build_category_filter_href_preserves_query_and_municipality_slug() {
+            let ctx = FilterHrefContext {
+                lang: "fr",
+                q: "saint-denis",
+                municipality_slug: Some("montreal"),
+                date_preset: None,
+                date_from: None,
+                date_to: None,
+            };
+            assert_eq!(
+                build_category_filter_href(ctx, Some("commercial")),
+                "/search?q=saint-denis&municipality_slug=montreal&category=commercial&lang=fr"
+            );
+        }
+
+        #[test]
+        fn build_category_filter_href_preserves_date_preset() {
+            let ctx = FilterHrefContext {
+                lang: "en",
+                q: "",
+                municipality_slug: None,
+                date_preset: Some("last_7_days"),
+                date_from: None,
+                date_to: None,
+            };
+            assert_eq!(
+                build_category_filter_href(ctx, Some("other")),
+                "/search?date_preset=last_7_days&category=other&lang=en"
+            );
+        }
+
+        #[test]
+        fn build_category_filter_href_preserves_date_from_and_date_to() {
+            let ctx = FilterHrefContext {
+                lang: "en",
+                q: "",
+                municipality_slug: None,
+                date_preset: None,
+                date_from: Some("2026-01-01"),
+                date_to: Some("2026-01-31"),
+            };
+            assert_eq!(
+                build_category_filter_href(ctx, None),
+                "/search?date_from=2026-01-01&date_to=2026-01-31&lang=en"
+            );
+        }
+
+        #[test]
+        fn build_category_filter_href_omits_empty_query_and_absent_municipality_slug() {
+            let ctx = FilterHrefContext {
+                lang: "en",
+                q: "",
+                municipality_slug: Some(""),
+                date_preset: None,
+                date_from: None,
+                date_to: None,
+            };
+            assert_eq!(
+                build_category_filter_href(ctx, Some("residential")),
+                "/search?category=residential&lang=en"
+            );
+        }
+
+        #[test]
+        fn build_category_filter_href_omits_blank_whitespace_only_date_params() {
+            // Mirrors `parse_date_filter`/`format_date_filter_chip_label`'s
+            // own treatment of blank date params as "absent" — a
+            // present-but-whitespace-only `date_preset`/`date_from`/
+            // `date_to` must not leak into the href as an empty/whitespace
+            // query param.
+            let ctx = FilterHrefContext {
+                lang: "en",
+                q: "",
+                municipality_slug: None,
+                date_preset: Some(""),
+                date_from: Some("   "),
+                date_to: Some(""),
+            };
+            assert_eq!(
+                build_category_filter_href(ctx, None),
+                "/search?lang=en"
+            );
+        }
+
+        #[test]
+        fn build_category_filter_href_percent_encodes_the_preserved_query_value() {
+            let ctx = FilterHrefContext {
+                lang: "en",
+                q: "rue saint-denis",
+                municipality_slug: None,
+                date_preset: None,
+                date_from: None,
+                date_to: None,
+            };
+            assert_eq!(
+                build_category_filter_href(ctx, None),
+                "/search?q=rue%20saint-denis&lang=en"
+            );
+        }
+
+        #[test]
+        fn category_display_name_residential_english() {
+            assert_eq!(
+                category_display_name("residential", "en"),
+                Some("Residential")
+            );
+        }
+
+        #[test]
+        fn category_display_name_residential_french() {
+            assert_eq!(
+                category_display_name("residential", "fr"),
+                Some("Résidentiel")
+            );
+        }
+
+        #[test]
+        fn category_display_name_commercial_english() {
+            assert_eq!(
+                category_display_name("commercial", "en"),
+                Some("Commercial")
+            );
+        }
+
+        #[test]
+        fn category_display_name_commercial_french() {
+            assert_eq!(
+                category_display_name("commercial", "fr"),
+                Some("Commercial")
+            );
+        }
+
+        #[test]
+        fn category_display_name_institutional_english() {
+            assert_eq!(
+                category_display_name("institutional", "en"),
+                Some("Institutional")
+            );
+        }
+
+        #[test]
+        fn category_display_name_institutional_french() {
+            assert_eq!(
+                category_display_name("institutional", "fr"),
+                Some("Institutionnel")
+            );
+        }
+
+        #[test]
+        fn category_display_name_infrastructure_english() {
+            assert_eq!(
+                category_display_name("infrastructure", "en"),
+                Some("Infrastructure")
+            );
+        }
+
+        #[test]
+        fn category_display_name_infrastructure_french() {
+            assert_eq!(
+                category_display_name("infrastructure", "fr"),
+                Some("Infrastructures")
+            );
+        }
+
+        #[test]
+        fn category_display_name_other_english() {
+            assert_eq!(category_display_name("other", "en"), Some("Other"));
+        }
+
+        #[test]
+        fn category_display_name_other_french() {
+            assert_eq!(category_display_name("other", "fr"), Some("Autre"));
+        }
+
+        #[test]
+        fn category_display_name_unrecognized_code_returns_none() {
+            assert_eq!(category_display_name("gotham", "en"), None);
+            assert_eq!(category_display_name("gotham", "fr"), None);
+        }
+
         #[test]
         fn paginate_first_page_offset_is_zero() {
             let info = paginate(50, 1, 20);
