@@ -944,6 +944,22 @@ mod core {
         }
     }
 
+    /// IMP-REQ-011-08: pure decision of whether a request's fault-injection
+    /// signals — a `force_fault` query param or `X-Force-Fault` header,
+    /// both checked against the literal value `"503"` — request an injected
+    /// fault. Either signal alone is sufficient (TC-011-5 sends both).
+    /// Whether this hook is honored AT ALL is a separate, environment-gated
+    /// decision the caller (`get_search_page`) makes — only in debug
+    /// builds, never in a release build — so this function only decides
+    /// what the RAW signals mean, independent of that gating, and is
+    /// unit-testable without any environment/cfg concerns.
+    ///
+    /// Pure data-in/data-out: no database access, no HTTP, no clock, no
+    /// environment reads.
+    pub fn should_force_fault(query_param: Option<&str>, header: Option<&str>) -> bool {
+        query_param == Some("503") || header == Some("503")
+    }
+
     /// Capitalizes only the first character of `s`, leaving the rest
     /// untouched (so e.g. an already-mixed-case or accented value isn't
     /// mangled beyond its leading character). Empty input returns empty
@@ -2333,6 +2349,34 @@ mod core {
                 "Demolition — "
             );
         }
+
+        // -- should_force_fault (IMP-REQ-011-08) --
+
+        #[test]
+        fn should_force_fault_neither_signal_present_is_false() {
+            assert!(!should_force_fault(None, None));
+        }
+
+        #[test]
+        fn should_force_fault_query_param_alone_is_sufficient() {
+            assert!(should_force_fault(Some("503"), None));
+        }
+
+        #[test]
+        fn should_force_fault_header_alone_is_sufficient() {
+            assert!(should_force_fault(None, Some("503")));
+        }
+
+        #[test]
+        fn should_force_fault_both_signals_present_is_true() {
+            assert!(should_force_fault(Some("503"), Some("503")));
+        }
+
+        #[test]
+        fn should_force_fault_wrong_value_is_ignored() {
+            assert!(!should_force_fault(Some("500"), None));
+            assert!(!should_force_fault(None, Some("200")));
+        }
     }
 }
 
@@ -2372,6 +2416,12 @@ pub struct SearchParams {
     // IMP-REQ-003-04: explicit UI-locale override, highest-precedence input
     // to `core::resolve_ui_locale`.
     pub lang: Option<String>,
+    // IMP-REQ-011-08: test-only fault-injection signal (TC-011-5), read
+    // alongside the `X-Force-Fault` header by `core::should_force_fault`.
+    // Only honored in debug builds (see `get_search_page`) — production
+    // (release) builds never read this field, so it can't be used to force
+    // a real outage against a live deployment.
+    pub force_fault: Option<String>,
 }
 
 /// A single `<option>` in the search form's municipality `<select>`
@@ -2861,6 +2911,11 @@ struct SearchLabels {
     // IMP-REQ-009-09: label prefixing each result row's meeting-date display
     // (only rendered when `SearchResult.latest_meeting_date` is present).
     meeting_date_label: &'static str,
+    // IMP-REQ-011-04: labels for the mobile filter sheet's trigger button,
+    // panel title, and close control.
+    filter_sheet_open_label: &'static str,
+    filter_sheet_title: &'static str,
+    filter_sheet_close_label: &'static str,
 }
 
 fn search_labels(lang: &str) -> SearchLabels {
@@ -2892,6 +2947,9 @@ fn search_labels(lang: &str) -> SearchLabels {
             sort_relevance_label: "Pertinence",
             sort_date_label: "Date de réunion",
             meeting_date_label: "Réunion :",
+            filter_sheet_open_label: "Filtres",
+            filter_sheet_title: "Filtres",
+            filter_sheet_close_label: "Fermer les filtres",
         },
         _ => SearchLabels {
             page_title: "Search projects",
@@ -2920,6 +2978,9 @@ fn search_labels(lang: &str) -> SearchLabels {
             sort_relevance_label: "Relevance",
             sort_date_label: "Meeting date",
             meeting_date_label: "Meeting:",
+            filter_sheet_open_label: "Filters",
+            filter_sheet_title: "Filters",
+            filter_sheet_close_label: "Close filters",
         },
     }
 }
@@ -2934,7 +2995,7 @@ pub async fn get_search_page(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,
     headers: HeaderMap,
-) -> Result<(HeaderMap, Html<String>), StatusCode> {
+) -> Result<(StatusCode, HeaderMap, Html<String>), StatusCode> {
     // IMP-REQ-003-04: explicit `?lang=` param > `lang` cookie >
     // `Accept-Language` header > `"en"` default, per `resolve_ui_locale`'s
     // verified precedence (IMP-REQ-003-03). Supersedes the plain
@@ -2946,6 +3007,56 @@ pub async fn get_search_page(
     let cookie_lang = extract_cookie_value(&headers, "lang");
     let lang = resolve_ui_locale(params.lang.as_deref(), cookie_lang, accept_language);
     let labels = search_labels(lang);
+
+    // IMP-REQ-011-08: test-only fault-injection hook (TC-011-5). Lets a
+    // test force `/search` to render its error state — through the same
+    // responsive shell as every other page (TC-011-4) — without needing a
+    // real DB outage (unlike `pool.close()`, which can't be scoped to a
+    // single request/test alongside other assertions in the same suite).
+    // Gated on `cfg(debug_assertions)` so it compiles out of release
+    // builds entirely: a production deployment (built with `--release`)
+    // never even contains the code path that reads these signals, so it
+    // can't be used to force an outage against a live deployment. Mirrors
+    // `AppState::citation_db_override`'s existing "test-only hook" pattern
+    // for the project-detail page, just via a compile-time gate instead of
+    // a runtime `Option` field (no new `AppState` field needed here, since
+    // the signal is a per-request header/query param, not a fixture the
+    // test harness wires in once at `AppState` construction).
+    #[cfg(debug_assertions)]
+    let fault_forced = core::should_force_fault(
+        params.force_fault.as_deref(),
+        headers.get("x-force-fault").and_then(|v| v.to_str().ok()),
+    );
+    #[cfg(not(debug_assertions))]
+    let fault_forced = false;
+
+    if fault_forced {
+        let tmpl = state
+            .env
+            .get_template("search.html")
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let html = tmpl
+            .render(context! {
+                lang => lang,
+                nav_permits => labels.nav_permits,
+                nav_council => labels.nav_council,
+                page_title => labels.page_title,
+                heading => labels.heading,
+                search_label => labels.search_label,
+                submit_label => labels.submit_label,
+                query => params.q,
+                has_searched => true,
+                search_error => true,
+                lang_toggle_href => core::build_lang_toggle_href(
+                    lang,
+                    &params.q,
+                    params.municipality_slug.as_deref(),
+                ),
+                lang_toggle_label => labels.lang_toggle_label,
+            })
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        return Ok((StatusCode::SERVICE_UNAVAILABLE, HeaderMap::new(), Html(html)));
+    }
 
     // IMP-REQ-004-05: htmx marks EVERY request it issues with
     // `HX-Request: true` (see https://htmx.org/docs/#request-headers). When
@@ -3251,6 +3362,9 @@ pub async fn get_search_page(
             sort_date_href => sort_date_href,
             active_sort => active_sort_label,
             meeting_date_label => labels.meeting_date_label,
+            filter_sheet_open_label => labels.filter_sheet_open_label,
+            filter_sheet_title => labels.filter_sheet_title,
+            filter_sheet_close_label => labels.filter_sheet_close_label,
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -3269,7 +3383,7 @@ pub async fn get_search_page(
             .expect("lang cookie value is always the ASCII literal \"en\" or \"fr\""),
     );
 
-    Ok((response_headers, Html(html)))
+    Ok((StatusCode::OK, response_headers, Html(html)))
 }
 
 #[cfg(test)]
@@ -3305,7 +3419,7 @@ mod search_labels_tests {
         // `SearchLabels` field has a genuinely distinct EN/FR wording.
         let identical_by_design: &[&str] = &[];
 
-        let pairs: [(&str, &str, &str); 24] = [
+        let pairs: [(&str, &str, &str); 27] = [
             ("page_title", en.page_title, fr.page_title),
             ("heading", en.heading, fr.heading),
             ("search_label", en.search_label, fr.search_label),
@@ -3381,6 +3495,21 @@ mod search_labels_tests {
                 "meeting_date_label",
                 en.meeting_date_label,
                 fr.meeting_date_label,
+            ),
+            (
+                "filter_sheet_open_label",
+                en.filter_sheet_open_label,
+                fr.filter_sheet_open_label,
+            ),
+            (
+                "filter_sheet_title",
+                en.filter_sheet_title,
+                fr.filter_sheet_title,
+            ),
+            (
+                "filter_sheet_close_label",
+                en.filter_sheet_close_label,
+                fr.filter_sheet_close_label,
             ),
         ];
 

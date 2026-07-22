@@ -3,6 +3,12 @@
 {% block title %}{% if project is defined and project.title is defined %}{{ project.title }}{% else %}{{ page_title | default("Project details", true) }}{% endif %} | ShovelsUp{% endblock %}
 
 {% block content %}
+{% if page_error | default(false) %}
+<section class="project-detail project-detail-error" aria-labelledby="project-error-title">
+    <h1 id="project-error-title">{{ page_error_title }}</h1>
+    <p id="project-error-message">{{ page_error_message }}</p>
+</section>
+{% else %}
 <section class="project-detail" aria-labelledby="project-title">
     <h1 id="project-title">{% if project is defined and project.title is defined %}{{ project.title }}{% else %}{{ page_title | default("Project details", true) }}{% endif %}</h1>
 
@@ -68,4 +74,5 @@
         </div>
     </section>
 </section>
+{% endif %}
 {% endblock %}

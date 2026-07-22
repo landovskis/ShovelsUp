@@ -1,4 +1,4 @@
-//! REQ-011 Loop A: TC-011-1..5 — mobile-responsive search experience.
+//! REQ-011: TC-011-1..5 — mobile-responsive search experience.
 //!
 //! TC-011-1, TC-011-4, and TC-011-5 are real, runnable static-HTML/HTTP
 //! assertions (no real browser needed) and are wired up against the actual
@@ -6,20 +6,27 @@
 //! throughout `search_integration.rs` / `timeline_resolver.rs` /
 //! `no_account_required.rs`.
 //!
-//! TC-011-2 and TC-011-3 require a real headless browser (to measure
+//! TC-011-2 and TC-011-3 need a real headless browser (to measure
 //! `document.documentElement.scrollWidth`/`clientWidth` and to drive focus
-//! management), and this repo has no headless-browser/WebDriver tooling yet
-//! — evaluating and wiring up `fantoccini` (falling back to a Playwright CI
-//! stage if unreliable) is Loop B's IMP-REQ-011-13 task, not this pass's.
-//! They are written here `#[ignore]`d, with the full intended assertion body
-//! sketched as comments against the plausible `fantoccini::Client` API shape
-//! (verify the exact API against the crate's docs once it's added — this is
-//! a sketch, not a verified call signature), so Loop B need only:
-//!   1. add `fantoccini` (or equivalent) to `[dev-dependencies]`,
-//!   2. replace the sketched comment block with real calls,
-//!   3. remove the `#[ignore]` attribute.
+//! management) — IMP-REQ-011-13 evaluated `fantoccini` first, per the plan's
+//! own contract, and it was NOT usable in the target environment:
+//! `fantoccini` requires `chromedriver`, and the only available
+//! `chromedriver` build was unsigned/non-notarized and rejected outright by
+//! macOS Gatekeeper (`spctl -a -vv` => "rejected"), with no interactive way
+//! to approve it. The fallback the plan names for exactly this case — a
+//! Node/Playwright system-test stage — is what's actually implemented:
+//! `apps/web/e2e/` is a standalone Playwright project (Playwright manages
+//! its own signed/notarized browser binary via `npx playwright install`,
+//! sidestepping the Gatekeeper problem entirely). System-test coverage for
+//! TC-011-2 (`apps/web/e2e/tests/no-horizontal-scroll.spec.ts`), TC-011-3
+//! (`apps/web/e2e/tests/filter-sheet.spec.ts`), plus the remaining
+//! REQ-011 integration/accessibility coverage (IMP-REQ-011-14..17) now
+//! lives entirely in that project — see `apps/web/e2e/playwright.config.ts`
+//! for exactly how to run it. No Rust-side placeholder is kept for these
+//! two cases: the real assertions exist and pass in the Playwright suite,
+//! so an `#[ignore]`d Rust stub here would be dead, misleading weight.
 //!
-//! Kept in this new, separate file (rather than folding into
+//! Kept in this separate file (rather than folding into
 //! `search_integration.rs`/`timeline_resolver.rs`) because REQ-011 is a
 //! distinct, browser-driven subsystem cutting across both the search and
 //! project-detail pages, matching the precedent set by
@@ -204,20 +211,22 @@ async fn tc_011_4_3_bad_request_error_page_should_use_responsive_shell(pool: PgP
     );
 }
 
-/// TC-011-5: a test-only fault-injection hook (IMP-REQ-011-08) should let a
-/// test force a 503 on `/search` to verify its error state renders through
-/// the responsive shell, without needing a real DB outage (unlike
+/// TC-011-5: a test-only fault-injection hook (IMP-REQ-011-08) lets a test
+/// force a 503 on `/search` to verify its error state renders through the
+/// responsive shell, without needing a real DB outage (unlike
 /// `pool.close()`, which works but can't be scoped to a single request/test
-/// alongside other assertions in the same suite). Grepped `web/src` for
-/// "fault"/"inject" (case-insensitive): no such mechanism exists anywhere in
-/// this codebase today. This test sends the two most plausible signals for
-/// such a hook — an `X-Force-Fault: 503` header and a `force_fault=503`
-/// query param — and documents that neither currently has any effect:
-/// `/search` still returns a normal 200. Once IMP-REQ-011-08 adds a real,
-/// test-only-gated hook, this test should be rewritten to assert the
-/// induced 503 renders through the responsive shell (per TC-011-4).
+/// alongside other assertions in the same suite). `core::should_force_fault`
+/// (`web/src/routes/search.rs`) recognizes either an `X-Force-Fault: 503`
+/// header or a `force_fault=503` query param (either alone is sufficient);
+/// `get_search_page` honors it only in debug builds (`cfg(debug_assertions)`)
+/// — a release build never even contains the code path that reads these
+/// signals, so this hook can't be used to force an outage against a live
+/// deployment. This test integration-tests the debug-build behavior (the
+/// binary under test here is always built without `--release`); the
+/// underlying pure decision function has its own unit tests in
+/// `search.rs`'s `core::tests` module.
 #[sqlx::test(migrations = "./migrations")]
-async fn tc_011_5_no_fault_injection_hook_exists_yet(pool: PgPool) {
+async fn tc_011_5_fault_injection_hook_forces_503_through_responsive_shell(pool: PgPool) {
     let app = app(test_state(pool).await);
     let response = app
         .oneshot(
@@ -232,166 +241,32 @@ async fn tc_011_5_no_fault_injection_hook_exists_yet(pool: PgPool) {
 
     assert_eq!(
         response.status(),
-        StatusCode::OK,
-        "documents today's gap: no fault-injection hook exists yet (IMP-REQ-011-08), so \
-         neither the x-force-fault header nor the force_fault query param can force a 503; \
-         got: {}",
-        response.status()
+        StatusCode::SERVICE_UNAVAILABLE,
+        "IMP-REQ-011-08's fault-injection hook should force a 503 when either the \
+         x-force-fault header or the force_fault query param is set to \"503\""
+    );
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"name="viewport""#),
+        "the induced 503 must route through the responsive shell (viewport meta), got: {html}"
+    );
+    assert!(
+        html.contains("/static/css/main.css"),
+        "the induced 503 must route through the responsive shell (main.css link), got: {html}"
     );
 }
 
-/// TC-011-2: at a 320px viewport, no element on the search results page
-/// causes horizontal scroll
-/// (`document.documentElement.scrollWidth <= document.documentElement.clientWidth`).
-/// Requires a real headless browser to measure actual rendered layout —
-/// blocked on IMP-REQ-011-13 (harness evaluation/setup). The server is
-/// spun up as a real listening HTTP server (not just a `tower::Service` via
-/// `.oneshot()`) using only crates already available to this crate
-/// (`axum`, `tokio`), since a real browser needs an actual URL to navigate
-/// to — this part is left in place, uncommented, for Loop B to reuse.
-#[ignore = "blocked on IMP-REQ-011-13 headless-browser harness setup"]
-#[sqlx::test(migrations = "./migrations")]
-async fn tc_011_2_no_horizontal_scroll_at_320px_viewport(pool: PgPool) {
-    let project_id = seed_project(&pool, "1 no scroll lane").await;
-    let app = app(test_state(pool).await);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    });
-    let search_url = format!("http://{addr}/search?q=no+scroll");
-    let detail_url = format!("http://{addr}/projects/{project_id}");
-
-    // ---- Loop B (IMP-REQ-011-13): replace everything below this line with
-    // real fantoccini calls once the crate is added to [dev-dependencies].
-    // Sketched against the plausible fantoccini::Client API shape (verify
-    // exact method names/signatures against the crate's docs when wiring
-    // this up for real):
-    //
-    // let client = fantoccini::ClientBuilder::native()
-    //     .connect("http://localhost:9515") // local chromedriver/geckodriver
-    //     .await
-    //     .expect("connect to WebDriver session");
-    //
-    // for url in [&search_url, &detail_url] {
-    //     client
-    //         .set_window_size(320, 640)
-    //         .await
-    //         .expect("set 320px-wide viewport");
-    //     client.goto(url).await.expect("navigate to page");
-    //
-    //     let scroll_width: f64 = client
-    //         .execute("return document.documentElement.scrollWidth", vec![])
-    //         .await
-    //         .expect("read scrollWidth")
-    //         .as_f64()
-    //         .expect("scrollWidth is numeric");
-    //     let client_width: f64 = client
-    //         .execute("return document.documentElement.clientWidth", vec![])
-    //         .await
-    //         .expect("read clientWidth")
-    //         .as_f64()
-    //         .expect("clientWidth is numeric");
-    //
-    //     assert!(
-    //         scroll_width <= client_width,
-    //         "{url} must not cause horizontal scroll at 320px \
-    //          (scrollWidth {scroll_width} > clientWidth {client_width})"
-    //     );
-    // }
-    //
-    // client.close().await.ok();
-
-    let _ = (&search_url, &detail_url);
-    unimplemented!(
-        "blocked on IMP-REQ-011-13: replace this body with the fantoccini client \
-         calls sketched in the comment block above once the headless-browser \
-         harness exists"
-    );
-}
-
-/// TC-011-3: the mobile filter sheet (a collapsible filter panel on the
-/// search results page, IMP-REQ-011-03) doesn't block page interaction
-/// while open (e.g. the rest of the page remains reachable/scrollable, or
-/// is correctly `inert`/`aria-hidden` if modal) and returns keyboard focus
-/// to the control that opened it once closed. Requires a real headless
-/// browser to drive focus/keyboard interaction — blocked on
-/// IMP-REQ-011-13, same as TC-011-2.
-#[ignore = "blocked on IMP-REQ-011-13 headless-browser harness setup"]
-#[sqlx::test(migrations = "./migrations")]
-async fn tc_011_3_mobile_filter_sheet_returns_focus_on_close(pool: PgPool) {
-    let app = app(test_state(pool).await);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    });
-    let search_url = format!("http://{addr}/search?q=filter+sheet");
-
-    // ---- Loop B (IMP-REQ-011-13): replace everything below this line with
-    // real fantoccini calls once the crate is added to [dev-dependencies].
-    // Sketched against the plausible fantoccini::Client API shape (verify
-    // exact method names/signatures against the crate's docs when wiring
-    // this up for real). Assumes IMP-REQ-011-03 gives the filter-sheet
-    // trigger button a stable id `#filter-sheet-trigger` and the sheet
-    // itself `#filter-sheet` with a `#filter-sheet-close` control — Loop B
-    // should update these selectors to match whatever markup it actually
-    // lands:
-    //
-    // let client = fantoccini::ClientBuilder::native()
-    //     .connect("http://localhost:9515")
-    //     .await
-    //     .expect("connect to WebDriver session");
-    // client
-    //     .set_window_size(320, 640)
-    //     .await
-    //     .expect("set 320px-wide viewport");
-    // client.goto(&search_url).await.expect("navigate to search results");
-    //
-    // let trigger = client
-    //     .find(fantoccini::Locator::Css("#filter-sheet-trigger"))
-    //     .await
-    //     .expect("find filter-sheet trigger button");
-    // trigger.click().await.expect("open the filter sheet");
-    //
-    // // The rest of the page must still be reachable/interactive, or
-    // // explicitly `inert`/`aria-hidden="true"` if the sheet is modal —
-    // // whichever IMP-REQ-011-03 chooses, it must be intentional, not an
-    // // accidental focus trap with no escape.
-    // let sheet = client
-    //     .find(fantoccini::Locator::Css("#filter-sheet"))
-    //     .await
-    //     .expect("find open filter sheet");
-    // assert!(
-    //     sheet.is_displayed().await.expect("check sheet visibility"),
-    //     "filter sheet must be visible once opened"
-    // );
-    //
-    // let close_button = client
-    //     .find(fantoccini::Locator::Css("#filter-sheet-close"))
-    //     .await
-    //     .expect("find filter-sheet close control");
-    // close_button.click().await.expect("close the filter sheet");
-    //
-    // let focused_element_id: String = client
-    //     .execute("return document.activeElement.id", vec![])
-    //     .await
-    //     .expect("read document.activeElement.id")
-    //     .as_str()
-    //     .expect("activeElement.id is a string")
-    //     .to_string();
-    // assert_eq!(
-    //     focused_element_id, "filter-sheet-trigger",
-    //     "closing the filter sheet must return keyboard focus to the \
-    //      trigger button that opened it, got focus on: {focused_element_id}"
-    // );
-    //
-    // client.close().await.ok();
-
-    let _ = &search_url;
-    unimplemented!(
-        "blocked on IMP-REQ-011-13: replace this body with the fantoccini client \
-         calls sketched in the comment block above once the headless-browser \
-         harness exists"
-    );
-}
+// TC-011-2 (320px no-horizontal-scroll sweep) and TC-011-3 (mobile filter
+// sheet non-blocking + focus-return) both need a real headless browser and
+// now have real, passing coverage in the Playwright harness:
+//   - TC-011-2 / IMP-REQ-011-14: apps/web/e2e/tests/no-horizontal-scroll.spec.ts
+//   - TC-011-3 / IMP-REQ-011-15: apps/web/e2e/tests/filter-sheet.spec.ts
+// See apps/web/e2e/playwright.config.ts for how to run that suite (it
+// expects `cargo run -p shovelsup-web` already running and reachable). No
+// `#[ignore]`d placeholder is kept here for either case — see this file's
+// module doc comment for why.

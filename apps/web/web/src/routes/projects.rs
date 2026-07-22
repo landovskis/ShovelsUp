@@ -600,6 +600,15 @@ struct TimelineLabels {
     source_document_link_label: &'static str,
     description_language_notice: &'static str,
     document_retrieved_fallback_label: &'static str,
+    // IMP-REQ-011-07: whole-page error copy for the 404 (project doesn't
+    // exist) and 400 (malformed `:id` path segment) cases, rendered through
+    // `project_detail.html`'s `page_error` branch (which still extends
+    // `base.html`, so it carries the same viewport meta tag/stylesheet link
+    // as every other page — the "responsive shell" TC-011-4 requires).
+    not_found_title: &'static str,
+    not_found_message: &'static str,
+    bad_request_title: &'static str,
+    bad_request_message: &'static str,
 }
 
 fn timeline_labels(lang: &str) -> TimelineLabels {
@@ -618,6 +627,10 @@ fn timeline_labels(lang: &str) -> TimelineLabels {
             source_document_link_label: "Voir le document source",
             description_language_notice: "Cette description provient d’un document dans une autre langue que l’interface.",
             document_retrieved_fallback_label: "Document récupéré",
+            not_found_title: "Projet introuvable",
+            not_found_message: "Nous n’avons trouvé aucun projet correspondant à cet identifiant.",
+            bad_request_title: "Requête invalide",
+            bad_request_message: "L’identifiant de projet fourni n’est pas valide.",
         },
         _ => TimelineLabels {
             page_title: "Project details",
@@ -633,6 +646,10 @@ fn timeline_labels(lang: &str) -> TimelineLabels {
             source_document_link_label: "View source document",
             description_language_notice: "This description is sourced from a document in a different language than this page.",
             document_retrieved_fallback_label: "Document retrieved",
+            not_found_title: "Project not found",
+            not_found_message: "We couldn’t find a project matching that identifier.",
+            bad_request_title: "Invalid request",
+            bad_request_message: "The project identifier provided isn’t valid.",
         },
     }
 }
@@ -653,9 +670,19 @@ pub struct ProjectDetailParams {
 /// Server-rendered project-detail page: renders the timeline inline (no
 /// separate loading state, since the initial page load already has the
 /// data) or the error state if the DB is unavailable, per TC-REQ-006-6.
+///
+/// IMP-REQ-011-07: the `:id` path segment is extracted as a plain `String`
+/// (not `Path<Uuid>`) and parsed manually below, rather than letting Axum's
+/// `Uuid` extractor reject a malformed id itself. Axum's own extractor
+/// rejection short-circuits BEFORE this handler body ever runs, returning a
+/// bare `400` with an empty body — no viewport meta tag, no stylesheet link,
+/// the exact "unstyled error" gap REQ-011 exists to close (TC-011-4's 400
+/// case). Parsing here instead means a malformed id can render through
+/// `project_detail.html`'s `page_error` branch like every other error case
+/// on this page.
 pub async fn get_project_detail_page(
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(raw_id): Path<String>,
     Query(params): Query<ProjectDetailParams>,
     headers: HeaderMap,
 ) -> Result<(StatusCode, Html<String>), StatusCode> {
@@ -677,8 +704,10 @@ pub async fn get_project_detail_page(
         .get_template("project_detail.html")
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // IMP-REQ-011-07: renders the DB-outage (503) timeline error, unchanged
+    // from before this task (still passes TC-011-4's 503 case).
     let render_error_page =
-        |labels: &TimelineLabels| -> Result<(StatusCode, Html<String>), StatusCode> {
+        |labels: &TimelineLabels, id: Uuid| -> Result<(StatusCode, Html<String>), StatusCode> {
             let html = tmpl
                 .render(context! {
                     lang => lang,
@@ -695,6 +724,41 @@ pub async fn get_project_detail_page(
             Ok((StatusCode::SERVICE_UNAVAILABLE, Html(html)))
         };
 
+    // IMP-REQ-011-07: renders a whole-page error (404 "project not found" /
+    // 400 "malformed id") through `project_detail.html`'s `page_error`
+    // branch, so it still extends `base.html` and carries the same viewport
+    // meta tag/stylesheet link as every normal page (TC-011-4's 404/400
+    // cases) instead of a bare, unstyled `StatusCode` with an empty body.
+    let render_page_error =
+        |status: StatusCode,
+         title: &str,
+         message: &str|
+         -> Result<(StatusCode, Html<String>), StatusCode> {
+            let html = tmpl
+                .render(context! {
+                    lang => lang,
+                    nav_permits => labels.nav_permits,
+                    nav_council => labels.nav_council,
+                    page_title => labels.page_title,
+                    page_error => true,
+                    page_error_title => title,
+                    page_error_message => message,
+                })
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            Ok((status, Html(html)))
+        };
+
+    // IMP-REQ-011-07: a malformed `:id` path segment (not a well-formed
+    // UUID) is a client error, not a 404 — same distinction TC-011-4's 400
+    // vs. 404 sub-tests draw.
+    let Ok(id) = raw_id.parse::<Uuid>() else {
+        return render_page_error(
+            StatusCode::BAD_REQUEST,
+            labels.bad_request_title,
+            labels.bad_request_message,
+        );
+    };
+
     let project_row = match sqlx::query!(
         "SELECT id, confidence_level FROM projects WHERE id = $1",
         id
@@ -703,20 +767,24 @@ pub async fn get_project_detail_page(
     .await
     {
         Ok(row) => row,
-        Err(_) => return render_error_page(&labels),
+        Err(_) => return render_error_page(&labels, id),
     };
     let Some(project_row) = project_row else {
-        return Err(StatusCode::NOT_FOUND);
+        return render_page_error(
+            StatusCode::NOT_FOUND,
+            labels.not_found_title,
+            labels.not_found_message,
+        );
     };
 
     let events = match fetch_timeline_events(&state.db, id).await {
         Ok(events) => events,
-        Err(_) => return render_error_page(&labels),
+        Err(_) => return render_error_page(&labels, id),
     };
 
     let mention = match fetch_latest_mention_for_description(&state.db, id).await {
         Ok(mention) => mention,
-        Err(_) => return render_error_page(&labels),
+        Err(_) => return render_error_page(&labels, id),
     };
 
     // IMP-REQ-005-03: description is synthesized (not stored) from the

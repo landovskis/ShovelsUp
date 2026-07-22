@@ -638,6 +638,18 @@ shovels-header {
     margin-top: 1.5rem;
 }
 
+/* IMP-REQ-011-04: mobile filter sheet. Hidden above the 640px breakpoint
+   (the form renders inline exactly as before, unconditionally visible) —
+   `.filter-sheet-trigger`/`.filter-sheet-header` only become relevant once
+   the 640px media query below turns the form into a collapsible panel. */
+.filter-sheet-trigger {
+    display: none;
+}
+
+.filter-sheet-header {
+    display: none;
+}
+
 .search-filter-field {
     display: flex;
     flex-direction: column;
@@ -979,6 +991,16 @@ shovels-header {
     outline-offset: 2px;
 }
 
+/* IMP-REQ-011-07: whole-page 404/400 error state
+   (`project_detail.html`'s `page_error` branch) — still extends
+   `base.html`/`.site-main`, so this only needs to style the message text,
+   not re-establish any page chrome. */
+#project-error-message {
+    margin-top: 0.75rem;
+    max-width: 60ch;
+    color: var(--color-text-muted);
+}
+
 @keyframes card-arrive {
     from { opacity: 0; transform: translateY(24px); }
     to { opacity: 1; transform: translateY(0); }
@@ -1037,6 +1059,97 @@ shovels-header {
     .hero-footer span:nth-last-child(-n+3) { display: none; }
     .search-filter-bar { flex-direction: column; align-items: stretch; }
     .search-filter-submit { width: 100%; justify-content: center; }
+
+    /* IMP-REQ-011-04: below 640px, the filter form collapses behind a
+       trigger button into a non-modal, collapsible sheet (no backdrop, no
+       scroll lock — the rest of the page stays fully reachable while it's
+       open, per TC-011-3). `#filter-sheet` is a `display:none` block by
+       default (which also removes it from the accessibility tree, so no
+       separate `aria-hidden` bookkeeping is needed); `.filter-sheet-open`
+       (toggled by `static/js/filter-sheet.js`) reveals it. */
+    .filter-sheet-trigger {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 46px;
+        margin-top: 1rem;
+        padding: 0 1.5rem;
+        color: var(--color-text);
+        background: var(--color-surface);
+        border: 1px solid var(--color-line);
+        border-radius: var(--radius);
+        font-weight: 760;
+        cursor: pointer;
+    }
+
+    /* IMP-REQ-011-17 (axe-core pass): text set to `--color-primary` on a
+       white surface fails WCAG AA contrast (3.79:1, needs 4.5:1) at this
+       weight/size — a pre-existing gap in several OTHER hover states across
+       this stylesheet (`.search-pagination-prev:hover`, `#lang-toggle-link:hover`,
+       `#source-document-link:hover`), out of REQ-011's surgical scope to
+       remediate app-wide (it's a DESIGN.md token-level decision). This
+       NEW element avoids introducing the same failure: the hover/focus
+       affordance is border + outline only, text stays `--color-text`
+       (already AA-compliant on `--color-surface`). */
+    .filter-sheet-trigger:hover,
+    .filter-sheet-trigger:focus-visible {
+        border-color: var(--color-primary);
+        outline: 2px solid var(--color-text);
+        outline-offset: 2px;
+    }
+
+    .filter-sheet {
+        display: none;
+        margin-top: 0.75rem;
+        padding: 1rem;
+        background: var(--color-surface);
+        border: 1px solid var(--color-line);
+        border-radius: var(--radius);
+    }
+
+    .filter-sheet.filter-sheet-open {
+        display: block;
+    }
+
+    .filter-sheet .search-filter-bar {
+        margin-top: 0;
+    }
+
+    .filter-sheet-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 0.85rem;
+    }
+
+    .filter-sheet-title {
+        font-size: 0.9rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    .filter-sheet-close {
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        color: var(--color-text);
+        background: var(--color-surface);
+        border: 1px solid var(--color-line);
+        border-radius: 50%;
+        font-size: 1.1rem;
+        line-height: 1;
+        cursor: pointer;
+    }
+
+    .filter-sheet-close:hover,
+    .filter-sheet-close:focus-visible {
+        border-color: var(--color-primary);
+        outline: 2px solid var(--color-text);
+        outline-offset: 2px;
+    }
     .category-chip-row { gap: 0.4rem; }
     .category-chip { padding: 0.35rem 0.75rem; font-size: 0.8rem; }
     .sort-toggle-row { gap: 0.4rem; }
