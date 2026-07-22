@@ -2916,6 +2916,18 @@ struct SearchLabels {
     filter_sheet_open_label: &'static str,
     filter_sheet_title: &'static str,
     filter_sheet_close_label: &'static str,
+    // REQ-012: the richer zero-results empty state — a distinct headline
+    // and body (rendered alongside, not replacing, the existing
+    // `empty_message`/`empty_guidance` pair above), exactly four
+    // refinement suggestions, and the two empty-state action links' own
+    // visible text. The action links' `href`s ("/search", "/") are
+    // language-independent literals, so they live directly in
+    // `templates/empty_state.html` rather than as `SearchLabels` fields.
+    empty_state_heading: &'static str,
+    empty_state_body: &'static str,
+    empty_state_suggestions: [&'static str; 4],
+    empty_state_clear_filters_label: &'static str,
+    empty_state_browse_all_label: &'static str,
 }
 
 fn search_labels(lang: &str) -> SearchLabels {
@@ -2950,6 +2962,16 @@ fn search_labels(lang: &str) -> SearchLabels {
             filter_sheet_open_label: "Filtres",
             filter_sheet_title: "Filtres",
             filter_sheet_close_label: "Fermer les filtres",
+            empty_state_heading: "Aucun résultat pour votre recherche",
+            empty_state_body: "Essayez d'ajuster vos filtres ci-dessous, ou explorez ces suggestions.",
+            empty_state_suggestions: [
+                "Essayez une autre municipalité",
+                "Essayez une autre période",
+                "Essayez un terme de recherche plus large",
+                "Vérifiez l'orthographe",
+            ],
+            empty_state_clear_filters_label: "Effacer les filtres",
+            empty_state_browse_all_label: "Parcourir tous les projets",
         },
         _ => SearchLabels {
             page_title: "Search projects",
@@ -2981,6 +3003,16 @@ fn search_labels(lang: &str) -> SearchLabels {
             filter_sheet_open_label: "Filters",
             filter_sheet_title: "Filters",
             filter_sheet_close_label: "Close filters",
+            empty_state_heading: "No matches for your search",
+            empty_state_body: "Try adjusting your filters below, or explore these suggestions.",
+            empty_state_suggestions: [
+                "Try another municipality",
+                "Try a different date range",
+                "Try a broader search term",
+                "Check your spelling",
+            ],
+            empty_state_clear_filters_label: "Clear filters",
+            empty_state_browse_all_label: "Browse all projects",
         },
     }
 }
@@ -3365,6 +3397,11 @@ pub async fn get_search_page(
             filter_sheet_open_label => labels.filter_sheet_open_label,
             filter_sheet_title => labels.filter_sheet_title,
             filter_sheet_close_label => labels.filter_sheet_close_label,
+            empty_state_heading => labels.empty_state_heading,
+            empty_state_body => labels.empty_state_body,
+            empty_state_suggestions => labels.empty_state_suggestions,
+            empty_state_clear_filters_label => labels.empty_state_clear_filters_label,
+            empty_state_browse_all_label => labels.empty_state_browse_all_label,
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -3419,7 +3456,7 @@ mod search_labels_tests {
         // `SearchLabels` field has a genuinely distinct EN/FR wording.
         let identical_by_design: &[&str] = &[];
 
-        let pairs: [(&str, &str, &str); 27] = [
+        let pairs: [(&str, &str, &str); 35] = [
             ("page_title", en.page_title, fr.page_title),
             ("heading", en.heading, fr.heading),
             ("search_label", en.search_label, fr.search_label),
@@ -3510,6 +3547,46 @@ mod search_labels_tests {
                 "filter_sheet_close_label",
                 en.filter_sheet_close_label,
                 fr.filter_sheet_close_label,
+            ),
+            (
+                "empty_state_heading",
+                en.empty_state_heading,
+                fr.empty_state_heading,
+            ),
+            (
+                "empty_state_body",
+                en.empty_state_body,
+                fr.empty_state_body,
+            ),
+            (
+                "empty_state_suggestions[0]",
+                en.empty_state_suggestions[0],
+                fr.empty_state_suggestions[0],
+            ),
+            (
+                "empty_state_suggestions[1]",
+                en.empty_state_suggestions[1],
+                fr.empty_state_suggestions[1],
+            ),
+            (
+                "empty_state_suggestions[2]",
+                en.empty_state_suggestions[2],
+                fr.empty_state_suggestions[2],
+            ),
+            (
+                "empty_state_suggestions[3]",
+                en.empty_state_suggestions[3],
+                fr.empty_state_suggestions[3],
+            ),
+            (
+                "empty_state_clear_filters_label",
+                en.empty_state_clear_filters_label,
+                fr.empty_state_clear_filters_label,
+            ),
+            (
+                "empty_state_browse_all_label",
+                en.empty_state_browse_all_label,
+                fr.empty_state_browse_all_label,
             ),
         ];
 

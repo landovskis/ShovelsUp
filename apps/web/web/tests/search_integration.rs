@@ -2476,8 +2476,14 @@ async fn tc_012_2_zero_results_french_locale_is_fully_french(pool: PgPool) {
         "expected the target French empty-state headline text, got: {html}"
     );
     assert!(
-        html.contains("Essayez d'ajuster vos filtres ci-dessous, ou explorez ces suggestions."),
-        "expected the target French empty-state body text, got: {html}"
+        html.contains("Essayez d'ajuster vos filtres ci-dessous, ou explorez ces suggestions.")
+            || html.contains(
+                "Essayez d&#x27;ajuster vos filtres ci-dessous, ou explorez ces suggestions."
+            ),
+        "expected the target French empty-state body text (either raw or \
+         Minijinja's HTML-escaped apostrophe form, matching the precedent \
+         for other apostrophe-containing FR strings elsewhere in this \
+         file), got: {html}"
     );
     assert!(
         html.contains("Essayez une autre municipalité"),
@@ -3322,8 +3328,11 @@ async fn imp_req_001_08_zero_results_omits_count_header(pool: PgPool) {
         "zero-results FR response must not render the result-count element, got: {fr_html}"
     );
     assert!(
-        !fr_html.contains("résultat"),
-        "zero-results FR response must not render any 'résultat' text, got: {fr_html}"
+        !fr_html.contains("trouvé"),
+        "zero-results FR response must not render the result-count phrasing \
+         ('N résultat(s) trouvé(s)'); narrowed from a bare 'résultat' \
+         substring check (REQ-012 legitimately renders 'Aucun résultat pour \
+         votre recherche' in this same response), got: {fr_html}"
     );
 }
 
@@ -3369,8 +3378,12 @@ async fn imp_req_001_08_db_error_omits_count_header(pool: PgPool) {
         "a DB-failure response must never render the result-count header, got: {html}"
     );
     assert!(
-        !html.contains("result found") && !html.contains("résultat"),
-        "a DB-failure response must never render 'result found'/'résultat' text, got: {html}"
+        !html.contains("result found") && !html.contains("trouvé"),
+        "a DB-failure response must never render the result-count phrasing \
+         ('result found'/'N résultat(s) trouvé(s)'); narrowed from a bare \
+         'résultat' substring check (REQ-012 legitimately renders 'Aucun \
+         résultat pour votre recherche' in a zero-results, non-error \
+         response), got: {html}"
     );
 }
 

@@ -944,6 +944,73 @@ shovels-header {
     font-weight: 700;
 }
 
+/* REQ-012: zero-results empty state — headline/body/suggestions/action
+   links rendered alongside the existing `.search-empty`/
+   `.search-empty-guidance` copy (`templates/empty_state.html`). */
+.search-empty-heading {
+    margin: 1.25rem 0 0.35rem;
+    color: var(--color-text);
+    font-size: 1.15rem;
+    font-weight: 800;
+}
+
+.search-empty-body {
+    margin: 0 0 1rem;
+    color: var(--color-text-muted);
+    font-size: 0.95rem;
+}
+
+.search-empty-suggestions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin: 0 0 1.25rem;
+    padding: 0;
+    list-style: none;
+}
+
+.search-empty-suggestion {
+    position: relative;
+    padding-left: 1.1rem;
+    color: var(--color-text);
+    font-size: 0.9rem;
+}
+
+/* Non-color-only cue (mirrors `.category-chip-selected`'s own rationale):
+   a bullet glyph marks each suggestion, so the list reads correctly even
+   without relying on color. */
+.search-empty-suggestion::before {
+    content: "\2192";
+    position: absolute;
+    left: 0;
+    color: var(--color-primary);
+}
+
+.search-empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.search-empty-action {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-weight: 700;
+    font-size: 0.85rem;
+    text-decoration: none;
+}
+
+.search-empty-action:hover,
+.search-empty-action:focus-visible {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
 /* Project detail: description, confidence, source-document fields
    (IMP-REQ-005-03/-09). Reuses the existing surface/line/text tokens —
    no new hex literals — and stacks with generous, readable line length
@@ -1059,6 +1126,8 @@ shovels-header {
     .hero-footer span:nth-last-child(-n+3) { display: none; }
     .search-filter-bar { flex-direction: column; align-items: stretch; }
     .search-filter-submit { width: 100%; justify-content: center; }
+    .search-empty-actions { flex-direction: column; align-items: stretch; }
+    .search-empty-action { justify-content: center; }
 
     /* IMP-REQ-011-04: below 640px, the filter form collapses behind a
        trigger button into a non-modal, collapsible sheet (no backdrop, no

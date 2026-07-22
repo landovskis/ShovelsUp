@@ -379,25 +379,29 @@ All 17 Playwright tests pass against a live `cargo run -p shovelsup-web` server 
 ## REQ-012 — Empty-state and no-results messaging
 
 ### Loop A — Test Plan Implementation Breakdown
-- [x] TC-012-1 — compiles, expected-fail (headline/body markup not wired)
-- [x] TC-012-2 — compiles, expected-fail (FR localization not wired)
-- [x] TC-012-3 — compiles, expected-fail (4 suggestions not wired)
-- [x] TC-012-4 — compiles, expected-fail (2 action links not wired)
-- [x] TC-012-5 — compiles, PASSES today (mutual exclusivity, verified non-vacuous)
+- [x] TC-012-1 — PASSES (headline/body markup renders, additive alongside the pre-existing generic guidance text)
+- [x] TC-012-2 — PASSES (FR headline/body/suggestions/actions all render); found and fixed one Minijinja HTML-escaping mismatch in the test's own assertion (see note below)
+- [x] TC-012-3 — PASSES (exactly 4 `search-empty-suggestion` elements)
+- [x] TC-012-4 — PASSES (both action links present, hrefs resolve to real routes: `/search`, `/`)
+- [x] TC-012-5 — PASSES (mutual exclusivity with the error branch still holds)
+
+⚠️ **Contradiction between a REQ-012 Loop A test and a pre-existing REQ-001 test — found and resolved:** TC-012-2 requires the literal FR headline `"Aucun résultat pour votre recherche"` to appear in a zero-results response, but `imp_req_001_08_zero_results_omits_count_header` asserted the broader `!fr_html.contains("résultat")` (written to catch the FR result-count header — `"N résultat(s) trouvé(s)"` — leaking into the empty-results path, before REQ-012 existed). No single wording satisfies both. Resolved by narrowing the older test's assertion from the bare `"résultat"` substring to `"trouvé"` (the word that's actually unique to the count-header phrasing; the new empty-state heading doesn't contain it), in both `imp_req_001_08_zero_results_omits_count_header` and `imp_req_001_08_db_error_omits_count_header`. This preserves the original test's intent (count header must never leak into a zero-results/error response) without forbidding REQ-012's own legitimate content. Also found and fixed one more test bug while re-verifying: TC-012-2's FR body-text assertion checked for a raw apostrophe (`d'ajuster`) but Minijinja's default auto-escaping renders it as `d&#x27;ajuster` — fixed to accept either form, matching the existing precedent for other apostrophe-containing FR strings elsewhere in this file (e.g. "Jusqu'au"/"Jusqu&#x27;au").
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-012-01 — Confirm current `SearchLabels`/branch structure
-- [ ] IMP-REQ-012-02 — Extend `SearchLabels` with 5 new EN/FR fields
-- [ ] IMP-REQ-012-03 — Thread into `context!` call
-- [ ] IMP-REQ-012-04 — Verify action-link targets resolve
-- [ ] IMP-REQ-012-08 — Unit tests (EN/FR/fallback)
-- [ ] IMP-REQ-012-09 — Integration tests TC-012-1..5
-- [ ] IMP-REQ-012-10 — Accessibility verification
+- [x] IMP-REQ-012-01 — Confirmed the existing `SearchLabels`/`search_labels(lang)` EN/FR literal-struct pattern and the `{% if search_error %}...{% elif has_searched %}` mutual-exclusivity branch structure in `results_fragment.html`
+- [x] IMP-REQ-012-02 — Extended `SearchLabels` with 5 fields: `empty_state_heading`, `empty_state_body`, `empty_state_suggestions: [&'static str; 4]`, `empty_state_clear_filters_label`, `empty_state_browse_all_label` — both EN/FR populated with real, distinct translations; the 2 action-link hrefs (`/search`, `/`) are language-independent literals living directly in the template
+- [x] IMP-REQ-012-03 — Threaded all 5 into `get_search_page`'s `context!` call
+- [x] IMP-REQ-012-04 — Confirmed both action-link hrefs (`/search`, `/`) resolve to real, already-routed handlers
+- [x] IMP-REQ-012-08 — No new unit tests: all 5 new fields are static literals (no computed logic), so integration coverage (TC-012-1..4) is the correct layer; extended the existing `en_and_fr_values_are_never_accidentally_identical` copy-paste-guard regression test to cover the 5 new fields, following that file's own established convention
+- [x] IMP-REQ-012-09 — Integration tests TC-012-1 through TC-012-5 (see Loop A above)
+- [x] IMP-REQ-012-10 — Accessibility verified: `<h2>` empty-state heading nests correctly under the page's `<h1>`; both action links have meaningful, specific text (not "click here"); the suggestion list uses a non-color-only bullet cue
 #### Frontend Engineer
-- [ ] IMP-REQ-012-05 — Build `_empty_state.html` partial
-- [ ] IMP-REQ-012-06 — Responsive/visual styling
-- [ ] IMP-REQ-012-07 — Loading/disabled-state pass (confirm non-applicable)
+- [x] IMP-REQ-012-05 — New `templates/empty_state.html` partial (headline, body, 4 suggestions, 2 action links), included via `{% include "empty_state.html" %}` inside `results_fragment.html`'s existing `{% elif has_searched %}` branch — additive alongside the pre-existing generic guidance text, not a replacement, matching TC-012-1's contract
+- [x] IMP-REQ-012-06 — Styled with only DESIGN.md tokens (`--color-primary`/`--color-text`/`--color-text-muted`/`--color-surface`/`--color-line`, no new hex literals); stacks the 2 action links vertically at the existing 640px breakpoint
+- [x] IMP-REQ-012-07 — Confirmed non-applicable: `/search` is a full-page-reload GET with no client-side JS loading spinner anywhere in this app; no loading/disabled state was invented
+
+Independently verified (including resolving the Loop A test contradiction above, which the implementing agent correctly flagged rather than arbitrating itself): `cargo build --workspace` clean, `cargo clippy --workspace --all-targets -- -D warnings` clean, all 5 `tc_012_*` tests pass, all 4 `imp_req_001_08_*` tests pass with the narrowed assertion, broad regression group clean aside from one already-diagnosed transient rate-limiter 429 (`tc_009_5`, previously confirmed passing in isolation during REQ-011's verification).
 
 ## REQ-013 — Shareable project URL
 

@@ -1,0 +1,11 @@
+<h2 class="search-empty-heading">{{ empty_state_heading | default("No matches for your search", true) }}</h2>
+<p class="search-empty-body">{{ empty_state_body | default("Try adjusting your filters below, or explore these suggestions.", true) }}</p>
+<ul class="search-empty-suggestions">
+    {% for suggestion in empty_state_suggestions | default([], true) %}
+    <li class="search-empty-suggestion">{{ suggestion }}</li>
+    {% endfor %}
+</ul>
+<div class="search-empty-actions">
+    <a class="search-empty-action" href="/search">{{ empty_state_clear_filters_label | default("Clear filters", true) }}</a>
+    <a class="search-empty-action" href="/">{{ empty_state_browse_all_label | default("Browse all projects", true) }}</a>
+</div>
