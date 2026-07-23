@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
-    response::Html,
+    response::{Html, IntoResponse, Response},
     Json,
 };
 use chrono::{DateTime, Utc};
@@ -162,6 +162,20 @@ mod core {
     /// crate (IMP-REQ-006-04) for robust query-string/path-segment parsing
     /// rather than naive substring matching, which would be fooled by e.g.
     /// a literal `?` or `session` appearing inside a path segment's text.
+    /// IMP-REQ-013-06: builds the project detail page's canonical, shareable
+    /// URL from a configured base URL (never from the request's own
+    /// `Host`/`X-Forwarded-Host` header, which a client fully controls —
+    /// TC-013-2's exact concern). Pure string composition: the shell
+    /// (`get_project_detail_page`) is responsible for sourcing `base_url`
+    /// from configuration (env var, with a production-safe default) and
+    /// passing it in here; this function never reads the environment or
+    /// request headers itself. `base_url` is expected without a trailing
+    /// slash; a trailing slash is stripped defensively so a misconfigured
+    /// value doesn't produce a doubled `//projects/...` path.
+    pub fn canonical_url(base_url: &str, project_id: uuid::Uuid) -> String {
+        format!("{}/projects/{project_id}", base_url.trim_end_matches('/'))
+    }
+
     fn is_reliable_citation_url(url: &str) -> bool {
         match url::Url::parse(url) {
             Ok(parsed) => {
@@ -330,6 +344,26 @@ mod core {
                 None,
             );
             assert!(view.document_retrieved_fallback);
+        }
+
+        // -- canonical_url (IMP-REQ-013-06) --
+
+        #[test]
+        fn canonical_url_joins_base_and_project_path() {
+            let id = uuid::Uuid::nil();
+            assert_eq!(
+                canonical_url("https://shovelsup.example", id),
+                format!("https://shovelsup.example/projects/{id}")
+            );
+        }
+
+        #[test]
+        fn canonical_url_strips_trailing_slash_from_base() {
+            let id = uuid::Uuid::nil();
+            assert_eq!(
+                canonical_url("https://shovelsup.example/", id),
+                format!("https://shovelsup.example/projects/{id}")
+            );
         }
 
         #[test]
@@ -513,21 +547,25 @@ async fn fetch_primary_citation(
 /// propagating to a page-wide 503 — unlike the project-existence and
 /// timeline queries above, which correctly still 503 on failure (TC-REQ-006-6).
 ///
-/// REQ-013 scaffolding stub: `merged_into_id` and `canonical_url` are the
-/// additional fields TC-013-1/-2 assert against. `projects` has no
-/// `merged_into_id` column yet — IMP-REQ-013-01's migration must add it
-/// (nullable, self-referencing FK to `projects.id`), and
-/// `get_project_detail_page` must query it before any other lookup: when
-/// `Some`, IMP-REQ-013-04 requires a 301 redirect to
-/// `/projects/{merged_into_id}` rather than rendering this project's own
-/// page at all (see TC-013-1). `canonical_url` must be built by
-/// IMP-REQ-013-06 from a configured base URL (not yet present anywhere in
-/// `AppState`/`main.rs`/`.env.example` — that configuration is also
-/// IMP-REQ-013-01's job), never from the request's `Host` or
-/// `X-Forwarded-Host` header, and threaded into `project_detail.html` as a
-/// `<link rel="canonical" href="...">` tag (see TC-013-2, which
-/// deliberately does not hardcode the exact base-URL literal since it
-/// doesn't exist yet).
+/// REQ-013 (IMP-REQ-013-01/-04/-05/-06, done): `projects.merged_into_id`
+/// (migration 025, self-referencing nullable FK + one-hop trigger) is
+/// queried alongside `id`/`confidence_level` before any other lookup;
+/// `get_project_detail_page` 301-redirects to `/projects/{merged_into_id}`
+/// immediately when it is `Some`, never constructing `ProjectDetailContext`
+/// or rendering this project's own page at all (TC-013-1) — so no
+/// `merged_into_id` field lives on this struct itself (would always be
+/// `None` here by construction). `canonical_url` is built by
+/// `core::canonical_url` from the `PUBLIC_BASE_URL` env var (defaulting to
+/// a production domain literal when unset — no such config existed before
+/// this requirement), deliberately ignoring the request's own `Host`/
+/// `X-Forwarded-Host` headers (TC-013-2), and rendered into
+/// `project_detail.html` as both a `<link rel="canonical">` tag and
+/// `og:url`/`og:title` Open Graph tags. Malformed (400) and nonexistent
+/// (404) project ids both render the same friendly `not_found_labels`
+/// bilingual copy through the existing `page_error` branch (TC-013-4/-5) —
+/// no separate `project_not_found.html` template was introduced, since the
+/// existing branch already extends `base.html` (viewport meta, stylesheet)
+/// and needed only a label-source change, not new markup.
 /// REQ-014 scaffolding note (no new struct fields needed): TC-014-1..6 in
 /// `tests/cta_upsell.rs` assert against a CTA card that is purely static
 /// markup/copy/client-JS, not per-project data, so nothing here needs a
@@ -576,9 +614,14 @@ struct ProjectDetailContext {
     citation_meeting_date: Option<chrono::DateTime<chrono::Utc>>,
     citation_municipality_name: Option<String>,
     citation_document_retrieved_fallback: bool,
-    #[allow(dead_code)]
-    merged_into_id: Option<Uuid>,
-    #[allow(dead_code)]
+    // IMP-REQ-013-04/-06: `merged_into_id` is not carried into this struct
+    // at all — by construction, `get_project_detail_page` never reaches
+    // this struct's construction when the project has `merged_into_id` set
+    // (it 301-redirects to the canonical project first, see TC-013-1), so
+    // a field here would always be `None` and is redundant. `canonical_url`
+    // IS populated for real, from `core::canonical_url` + a configured base
+    // URL, and rendered as `project_detail.html`'s `<link rel="canonical">`
+    // and Open Graph `og:url` tags (TC-013-2).
     canonical_url: Option<String>,
     #[allow(dead_code)]
     first_detected_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -600,15 +643,40 @@ struct TimelineLabels {
     source_document_link_label: &'static str,
     description_language_notice: &'static str,
     document_retrieved_fallback_label: &'static str,
-    // IMP-REQ-011-07: whole-page error copy for the 404 (project doesn't
-    // exist) and 400 (malformed `:id` path segment) cases, rendered through
-    // `project_detail.html`'s `page_error` branch (which still extends
-    // `base.html`, so it carries the same viewport meta tag/stylesheet link
-    // as every other page — the "responsive shell" TC-011-4 requires).
-    not_found_title: &'static str,
-    not_found_message: &'static str,
-    bad_request_title: &'static str,
-    bad_request_message: &'static str,
+    copy_link_label: &'static str,
+    copy_link_copied_label: &'static str,
+}
+
+/// IMP-REQ-013-02: EN/FR labels for the friendly "project not found"-style
+/// page, mirroring `search::search_labels`'s pattern (a plain lang-keyed
+/// literal-struct function, no I/O). Deliberately shared by BOTH of
+/// `get_project_detail_page`'s whole-page error branches — a malformed `:id`
+/// path segment (400, TC-013-4) and a well-formed but nonexistent project id
+/// (404, TC-013-5) — rather than each having its own distinct copy: both are
+/// "we can't show you this project" from the visitor's point of view, and
+/// TC-013-4 explicitly asserts the SAME friendly "Project not found"/"Projet
+/// introuvable" copy for the 400 case as the 404 case, just as a different
+/// HTTP status (a malformed id is still a client input error, distinct from
+/// a well-formed-but-missing one — TC-013-4's doc comment). This replaces
+/// the previous, narrower `TimelineLabels::not_found_title`/`bad_request_title`
+/// fields (which gave the 400 case its own "Invalid request" copy) with one
+/// unified label set.
+struct NotFoundLabels {
+    title: &'static str,
+    message: &'static str,
+}
+
+fn not_found_labels(lang: &str) -> NotFoundLabels {
+    match lang {
+        "fr" => NotFoundLabels {
+            title: "Projet introuvable",
+            message: "Nous n’avons trouvé aucun projet correspondant à cet identifiant.",
+        },
+        _ => NotFoundLabels {
+            title: "Project not found",
+            message: "We couldn’t find a project matching that identifier.",
+        },
+    }
 }
 
 fn timeline_labels(lang: &str) -> TimelineLabels {
@@ -627,10 +695,8 @@ fn timeline_labels(lang: &str) -> TimelineLabels {
             source_document_link_label: "Voir le document source",
             description_language_notice: "Cette description provient d’un document dans une autre langue que l’interface.",
             document_retrieved_fallback_label: "Document récupéré",
-            not_found_title: "Projet introuvable",
-            not_found_message: "Nous n’avons trouvé aucun projet correspondant à cet identifiant.",
-            bad_request_title: "Requête invalide",
-            bad_request_message: "L’identifiant de projet fourni n’est pas valide.",
+            copy_link_label: "Copier le lien",
+            copy_link_copied_label: "Lien copié !",
         },
         _ => TimelineLabels {
             page_title: "Project details",
@@ -646,10 +712,8 @@ fn timeline_labels(lang: &str) -> TimelineLabels {
             source_document_link_label: "View source document",
             description_language_notice: "This description is sourced from a document in a different language than this page.",
             document_retrieved_fallback_label: "Document retrieved",
-            not_found_title: "Project not found",
-            not_found_message: "We couldn’t find a project matching that identifier.",
-            bad_request_title: "Invalid request",
-            bad_request_message: "The project identifier provided isn’t valid.",
+            copy_link_label: "Copy link",
+            copy_link_copied_label: "Copied!",
         },
     }
 }
@@ -685,7 +749,7 @@ pub async fn get_project_detail_page(
     Path(raw_id): Path<String>,
     Query(params): Query<ProjectDetailParams>,
     headers: HeaderMap,
-) -> Result<(StatusCode, Html<String>), StatusCode> {
+) -> Result<Response, StatusCode> {
     // IMP-REQ-005-04: explicit `?lang=` param > `lang` cookie >
     // `Accept-Language` header > `"en"` default, via the SAME shared
     // `locale::resolve_ui_locale` utility `get_search_page` uses (extracted
@@ -706,23 +770,22 @@ pub async fn get_project_detail_page(
 
     // IMP-REQ-011-07: renders the DB-outage (503) timeline error, unchanged
     // from before this task (still passes TC-011-4's 503 case).
-    let render_error_page =
-        |labels: &TimelineLabels, id: Uuid| -> Result<(StatusCode, Html<String>), StatusCode> {
-            let html = tmpl
-                .render(context! {
-                    lang => lang,
-                    nav_permits => labels.nav_permits,
-                    nav_council => labels.nav_council,
-                    page_title => labels.page_title,
-                    timeline_title => labels.timeline_title,
-                    timeline_error => true,
-                    timeline_error_message => labels.timeline_error_message,
-                    retry_label => labels.retry_label,
-                    timeline_retry_url => format!("/projects/{id}"),
-                })
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            Ok((StatusCode::SERVICE_UNAVAILABLE, Html(html)))
-        };
+    let render_error_page = |labels: &TimelineLabels, id: Uuid| -> Result<Response, StatusCode> {
+        let html = tmpl
+            .render(context! {
+                lang => lang,
+                nav_permits => labels.nav_permits,
+                nav_council => labels.nav_council,
+                page_title => labels.page_title,
+                timeline_title => labels.timeline_title,
+                timeline_error => true,
+                timeline_error_message => labels.timeline_error_message,
+                retry_label => labels.retry_label,
+                timeline_retry_url => format!("/projects/{id}"),
+            })
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        Ok((StatusCode::SERVICE_UNAVAILABLE, Html(html)).into_response())
+    };
 
     // IMP-REQ-011-07: renders a whole-page error (404 "project not found" /
     // 400 "malformed id") through `project_detail.html`'s `page_error`
@@ -730,10 +793,7 @@ pub async fn get_project_detail_page(
     // meta tag/stylesheet link as every normal page (TC-011-4's 404/400
     // cases) instead of a bare, unstyled `StatusCode` with an empty body.
     let render_page_error =
-        |status: StatusCode,
-         title: &str,
-         message: &str|
-         -> Result<(StatusCode, Html<String>), StatusCode> {
+        |status: StatusCode, title: &str, message: &str| -> Result<Response, StatusCode> {
             let html = tmpl
                 .render(context! {
                     lang => lang,
@@ -745,22 +805,32 @@ pub async fn get_project_detail_page(
                     page_error_message => message,
                 })
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            Ok((status, Html(html)))
+            Ok((status, Html(html)).into_response())
         };
+
+    // IMP-REQ-013-02/-05: both the malformed-id (400) and nonexistent-id
+    // (404) whole-page error branches below render the SAME friendly
+    // "Project not found"/"Projet introuvable" copy (TC-013-4 asserts this
+    // explicitly for the 400 case too) — only the HTTP status differs,
+    // preserving the "malformed id is a client input error, distinct from a
+    // well-formed-but-missing one" distinction TC-011-4/TC-013-4's doc
+    // comments draw.
+    let not_found = not_found_labels(lang);
 
     // IMP-REQ-011-07: a malformed `:id` path segment (not a well-formed
     // UUID) is a client error, not a 404 — same distinction TC-011-4's 400
     // vs. 404 sub-tests draw.
     let Ok(id) = raw_id.parse::<Uuid>() else {
-        return render_page_error(
-            StatusCode::BAD_REQUEST,
-            labels.bad_request_title,
-            labels.bad_request_message,
-        );
+        return render_page_error(StatusCode::BAD_REQUEST, not_found.title, not_found.message);
     };
 
+    // IMP-REQ-013-04: a project that has been merged into another (canonical)
+    // project must 301-redirect to that project's URL instead of rendering
+    // its own (now superseded) page at all — checked before any other
+    // lookup, exactly like TC-013-1 expects. `Location` is a relative path
+    // (`/projects/{id}`); TC-013-1 asserts this exact relative form.
     let project_row = match sqlx::query!(
-        "SELECT id, confidence_level FROM projects WHERE id = $1",
+        "SELECT id, confidence_level, merged_into_id FROM projects WHERE id = $1",
         id
     )
     .fetch_optional(&state.db)
@@ -770,12 +840,24 @@ pub async fn get_project_detail_page(
         Err(_) => return render_error_page(&labels, id),
     };
     let Some(project_row) = project_row else {
-        return render_page_error(
-            StatusCode::NOT_FOUND,
-            labels.not_found_title,
-            labels.not_found_message,
-        );
+        return render_page_error(StatusCode::NOT_FOUND, not_found.title, not_found.message);
     };
+
+    if let Some(canonical_id) = project_row.merged_into_id {
+        // TC-013-1 asserts a literal 301 (`StatusCode::MOVED_PERMANENTLY`),
+        // not axum's `Redirect::permanent` helper (which emits 308
+        // `PERMANENT_REDIRECT` — semantically similar but a different status
+        // code, and not what the plan/test settled on), so the response is
+        // built directly.
+        let mut response = StatusCode::MOVED_PERMANENTLY.into_response();
+        response.headers_mut().insert(
+            axum::http::header::LOCATION,
+            format!("/projects/{canonical_id}")
+                .parse()
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+        );
+        return Ok(response);
+    }
 
     let events = match fetch_timeline_events(&state.db, id).await {
         Ok(events) => events,
@@ -825,6 +907,18 @@ pub async fn get_project_detail_page(
         citation_row.as_ref().and_then(|row| row.meeting_date),
     );
 
+    // IMP-REQ-013-06: sourced from configuration (env var), never from this
+    // request's own `Host`/`X-Forwarded-Host` header (TC-013-2) — a client
+    // fully controls those headers, so trusting them to build a
+    // security/SEO-sensitive canonical URL would let a spoofed `Host` poison
+    // it. Defaults to the production domain when unset, so a deployment
+    // that forgets to set `PUBLIC_BASE_URL` (or a test run, which never sets
+    // it) still gets a valid, absolute `https://` canonical URL rather than
+    // silently omitting the tag.
+    let base_url = std::env::var("PUBLIC_BASE_URL")
+        .unwrap_or_else(|_| "https://shovelsup.example".to_string());
+    let canonical_url = core::canonical_url(&base_url, id);
+
     let detail_context = ProjectDetailContext {
         description,
         confidence_level: project_row.confidence_level,
@@ -835,8 +929,7 @@ pub async fn get_project_detail_page(
         citation_meeting_date: citation_view.meeting_date,
         citation_municipality_name: citation_view.municipality_name,
         citation_document_retrieved_fallback: citation_view.document_retrieved_fallback,
-        merged_into_id: None,
-        canonical_url: None,
+        canonical_url: Some(canonical_url),
         first_detected_at: None,
         source_count: None,
     };
@@ -865,8 +958,11 @@ pub async fn get_project_detail_page(
             citation_municipality_name => detail_context.citation_municipality_name,
             citation_document_retrieved_fallback => detail_context.citation_document_retrieved_fallback,
             document_retrieved_fallback_label => labels.document_retrieved_fallback_label,
+            canonical_url => detail_context.canonical_url,
+            copy_link_label => labels.copy_link_label,
+            copy_link_copied_label => labels.copy_link_copied_label,
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok((StatusCode::OK, Html(html)))
+    Ok((StatusCode::OK, Html(html)).into_response())
 }

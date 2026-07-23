@@ -7,6 +7,7 @@
     <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/static/css/main.css">
     <script src="https://unpkg.com/htmx.org@2.0.3" integrity="sha384-0895/pl2MU10Hqc6jd4RvrthNlDiE9U1tWmX7WRESftEDRosgxNsQG/Ze9YMRzHq" crossorigin="anonymous" defer></script>
+    {% block head_extra %}{% endblock %}
 </head>
 <body>
     <shovels-header data-permits="{{ nav_permits }}" data-council="{{ nav_council }}"></shovels-header>

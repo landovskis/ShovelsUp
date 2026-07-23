@@ -2,6 +2,15 @@
 
 {% block title %}{% if project is defined and project.title is defined %}{{ project.title }}{% else %}{{ page_title | default("Project details", true) }}{% endif %} | ShovelsUp{% endblock %}
 
+{% block head_extra %}
+{% if canonical_url is defined and canonical_url %}
+<link rel="canonical" href="{{ canonical_url | safe }}">
+<meta property="og:url" content="{{ canonical_url | safe }}">
+<meta property="og:title" content="{{ page_title | default('Project details', true) }} | ShovelsUp">
+<meta property="og:type" content="website">
+{% endif %}
+{% endblock %}
+
 {% block content %}
 {% if page_error | default(false) %}
 <section class="project-detail project-detail-error" aria-labelledby="project-error-title">
@@ -11,6 +20,74 @@
 {% else %}
 <section class="project-detail" aria-labelledby="project-title">
     <h1 id="project-title">{% if project is defined and project.title is defined %}{{ project.title }}{% else %}{{ page_title | default("Project details", true) }}{% endif %}</h1>
+
+    {% if canonical_url is defined and canonical_url %}
+    <div class="copy-link-row">
+        <button
+            type="button"
+            id="copy-link-button"
+            data-copy-url="{{ canonical_url | safe }}"
+            data-default-label="{{ copy_link_label | default('Copy link', true) }}"
+            data-copied-label="{{ copy_link_copied_label | default('Copied!', true) }}"
+        >{{ copy_link_label | default("Copy link", true) }}</button>
+        <span id="copy-link-feedback" role="status" hidden>{{ copy_link_copied_label | default("Copied!", true) }}</span>
+    </div>
+    <script>
+    (function () {
+        var button = document.getElementById("copy-link-button");
+        var feedback = document.getElementById("copy-link-feedback");
+        if (!button || !feedback) {
+            return;
+        }
+        var revertTimer = null;
+
+        function copyViaFallback(text) {
+            var textarea = document.createElement("textarea");
+            textarea.value = text;
+            textarea.setAttribute("readonly", "");
+            textarea.style.position = "fixed";
+            textarea.style.opacity = "0";
+            document.body.appendChild(textarea);
+            textarea.select();
+            var succeeded = false;
+            try {
+                succeeded = document.execCommand("copy");
+            } catch (err) {
+                succeeded = false;
+            }
+            document.body.removeChild(textarea);
+            return succeeded;
+        }
+
+        function showCopiedFeedback() {
+            var defaultLabel = button.dataset.defaultLabel;
+            var copiedLabel = button.dataset.copiedLabel;
+            button.textContent = copiedLabel;
+            feedback.hidden = false;
+            if (revertTimer) {
+                clearTimeout(revertTimer);
+            }
+            revertTimer = setTimeout(function () {
+                button.textContent = defaultLabel;
+                feedback.hidden = true;
+            }, 2000);
+        }
+
+        button.addEventListener("click", function () {
+            var url = button.dataset.copyUrl;
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(url).then(showCopiedFeedback, function () {
+                    copyViaFallback(url);
+                    showCopiedFeedback();
+                });
+            } else {
+                copyViaFallback(url);
+                showCopiedFeedback();
+            }
+        });
+    })();
+    </script>
+    {% endif %}
 
     <div class="project-detail-fields">
     {% if description is defined and description %}

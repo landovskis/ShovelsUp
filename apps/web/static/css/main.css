@@ -1058,6 +1058,41 @@ shovels-header {
     outline-offset: 2px;
 }
 
+/* IMP-REQ-013-08/-09: "Copy link" control on the project detail page. The
+   success indicator is never color-only (IMP-REQ-013-14): the button's own
+   text swaps to the "Copied!" label AND a separate `role="status"` element
+   appears, so the feedback is legible even without color perception. */
+.copy-link-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0.75rem 0 1.25rem;
+}
+
+#copy-link-button {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-weight: 700;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+#copy-link-button:hover,
+#copy-link-button:focus-visible {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+#copy-link-feedback {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+}
+
 /* IMP-REQ-011-07: whole-page 404/400 error state
    (`project_detail.html`'s `page_error` branch) — still extends
    `base.html`/`.site-main`, so this only needs to style the message text,

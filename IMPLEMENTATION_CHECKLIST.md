@@ -406,29 +406,31 @@ Independently verified (including resolving the Loop A test contradiction above,
 ## REQ-013 — Shareable project URL
 
 ### Loop A — Test Plan Implementation Breakdown
-- [x] TC-013-1 — `tests/shareable_url.rs`, `#[ignore]`d pending IMP-REQ-013-01 merged_into_id migration
-- [x] TC-013-2 — `tests/shareable_url.rs`, compiles, expected-fail (canonical URL not wired)
-- [x] TC-013-3 — `tests/shareable_url.rs`, `#[ignore]`d pending IMP-REQ-011-13 harness setup (shared with REQ-011), fantoccini sketch included
-- [x] TC-013-4 — `tests/shareable_url.rs`, compiles, expected-fail (malformed UUID returns raw rejection text, not friendly page)
-- [x] TC-013-5 — `tests/shareable_url.rs`, split EN/FR variants, both compile, expected-fail (bare 404, no bilingual template)
+- [x] TC-013-1 — PASSES (merged project 301-redirects to canonical URL)
+- [x] TC-013-2 — PASSES (canonical URL ignores spoofed Host/X-Forwarded-Host headers)
+- [x] TC-013-3 — moved entirely to `apps/web/e2e/tests/copy-link.spec.ts` (Playwright); the dead `#[ignore]`d Rust stub (with a `fantoccini` sketch and an `unimplemented!()` body) was removed, matching the precedent set for TC-011-2/TC-011-3
+- [x] TC-013-4 — PASSES (malformed UUID renders the friendly not-found template, 400 status preserved)
+- [x] TC-013-5 — PASSES, both EN/FR variants (unknown project id renders the friendly bilingual not-found template)
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-013-01 — Migration: `merged_into_id` + one-hop CHECK + index
-- [ ] IMP-REQ-013-02 — `not_found_labels` pure function
-- [ ] IMP-REQ-013-04 — 301-redirect check on `merged_into_id`
-- [ ] IMP-REQ-013-05 — Replace bare 404 with rendered template; 400 on malformed UUID
-- [ ] IMP-REQ-013-06 — `canonical_url` function ignoring Host header
-- [ ] IMP-REQ-013-10 — Fixture harness (plain + merged-pair seeds)
-- [ ] IMP-REQ-013-11 — Integration: TC-013-1, TC-013-2
-- [ ] IMP-REQ-013-12 — Integration: TC-013-4, TC-013-5
-- [ ] IMP-REQ-013-13 — Playwright/fantoccini: TC-013-3 (clipboard)
-- [ ] IMP-REQ-013-14 — Accessibility verification
+- [x] IMP-REQ-013-01 — Migration `025_project_merged_into_id.sql`: nullable `projects.merged_into_id` (self-referencing FK, `ON DELETE SET NULL`), a trigger-enforced one-hop invariant (a merge target can't itself be merged, and a project can't be the target of more than one merge), plus an index; applied via psql and registered in `_sqlx_migrations` (checksum verified to match the committed file byte-for-byte)
+- [x] IMP-REQ-013-02 — `not_found_labels(lang)` pure function, mirroring the `SearchLabels`/`search_labels` EN/FR pattern
+- [x] IMP-REQ-013-04 — `GET /projects/:id` checks `merged_into_id` and issues a real `StatusCode::MOVED_PERMANENTLY` (301) to `/projects/{canonical_id}` when set
+- [x] IMP-REQ-013-05 — Malformed UUID (400) and unknown id (404) both render `project_not_found.html` (real template, not a bare `StatusCode`), extending REQ-011's shell-routing fix
+- [x] IMP-REQ-013-06 — `core::canonical_url(base_url, project_id)` (pure, unit-tested): builds the canonical URL from a configured `PUBLIC_BASE_URL` env var (new, defaults to the production domain if unset — `.unwrap_or_else`, no panic risk), never from the request's own `Host`/`X-Forwarded-Host` header
+- [x] IMP-REQ-013-10 — Fixture helpers for a plain project and a merged pair (canonical + merged-away project)
+- [x] IMP-REQ-013-11 — Integration tests TC-013-1, TC-013-2 (see Loop A)
+- [x] IMP-REQ-013-12 — Integration tests TC-013-4, TC-013-5 (see Loop A)
+- [x] IMP-REQ-013-13 — `apps/web/e2e/tests/copy-link.spec.ts` (Playwright): clicking "Copy link" writes the canonical URL to the clipboard (via `context.grantPermissions`) and shows feedback; verified live against `cargo run -p shovelsup-web`, both EN and FR variants pass
+- [x] IMP-REQ-013-14 — Accessibility verified: "Copy link" button has meaningful text, feedback is non-color-only (both a text-label swap to "Copied!"/"Lien copié !" AND a separate `role="status"` element)
 #### Frontend Engineer
-- [ ] IMP-REQ-013-03 — `project_not_found.html` template
-- [ ] IMP-REQ-013-07 — Canonical/OG head tags
-- [ ] IMP-REQ-013-08 — "Copy link" button markup
-- [ ] IMP-REQ-013-09 — Clipboard JS (write, revert, fallback)
+- [x] IMP-REQ-013-03 — New `project_not_found.html` template, bilingual via `not_found_labels`
+- [x] IMP-REQ-013-07 — `<link rel="canonical">`, `og:url`, `og:title`, `og:type` added to `project_detail.html`'s head, gated on `canonical_url` being defined
+- [x] IMP-REQ-013-08 — `#copy-link-button` markup on the project detail page
+- [x] IMP-REQ-013-09 — Clipboard JS: writes `canonical_url` via `navigator.clipboard.writeText`, swaps button text to "Copied!"/"Lien copié !" plus a separate `#copy-link-feedback` status element, reverts after a delay
+
+Independently verified (agent implementing this task had its connection drop mid-response — I resumed and finished: applying the migration, registering its tracking row, and completing an in-progress cleanup of TC-013-3's dead Rust stub that the agent had started but not finished): `cargo build --workspace` clean, `cargo clippy --workspace --all-targets -- -D warnings` clean, all 5 `tc_013_*` Rust tests pass, all 19 Playwright tests pass (17 pre-existing REQ-011 tests + 2 new copy-link tests) verified live against `cargo run -p shovelsup-web`. Broad regression group (tc_013/tc_011/responsive/tc_010/no_account/imp_req) 58/58 passed. A full-workspace run showed a large cascade of transient rate-limiter 429s (tc_007/008/009 all failing together) — re-confirmed spurious by re-running that exact group after the 60s window cleared: 17/22 passed, with the only remaining failures being the already-documented pre-existing REQ-015 gaps (tc_015_1/2/3/4/6, not yet implemented).
 
 ## REQ-014 — Upsell CTA on project detail page
 

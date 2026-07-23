@@ -21,10 +21,12 @@
 //! lands the migration, this test needs no code changes to become
 //! executable — only removing the `#[ignore]`.
 //!
-//! TC-013-3 requires a real headless browser (to click a button and read
-//! `navigator.clipboard`), same gap `responsive_e2e.rs` documents for
-//! TC-011-2/TC-011-3 — blocked on the shared IMP-REQ-011-13 harness task,
-//! sketched here in the same `fantoccini`-shaped comment-block style.
+//! TC-013-3 needs a real headless browser (to click a button and read
+//! `navigator.clipboard`) — IMP-REQ-011-13 built a Playwright harness for
+//! exactly this class of test (see `responsive_e2e.rs`'s module doc for why
+//! `fantoccini` was rejected in this environment). Its real implementation
+//! lives in `apps/web/e2e/tests/copy-link.spec.ts`; no Rust-side placeholder
+//! is kept here, matching the precedent set for TC-011-2/TC-011-3.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -67,7 +69,6 @@ async fn seed_project(pool: &PgPool, address: &str, project_type: &str) -> Uuid 
 /// file compiles today regardless of the missing column; running the test
 /// fails at runtime with an "column does not exist" error until the
 /// migration lands, hence `#[ignore]`.
-#[ignore = "blocked on IMP-REQ-013-01 migration (merged_into_id)"]
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_013_1_merged_project_redirects_to_canonical(pool: PgPool) {
     let canonical_id = seed_project(&pool, "700 canonical ave", "residential").await;
@@ -161,77 +162,10 @@ async fn tc_013_2_canonical_url_ignores_spoofed_host_header(pool: PgPool) {
 /// IMP-013-09 clipboard JS) writes the canonical URL to the clipboard and
 /// shows UI feedback (e.g. a "Copied!" toast/label change). Requires a real
 /// browser to exercise `navigator.clipboard.writeText` and observe the
-/// resulting UI feedback — same headless-browser gap
-/// `responsive_e2e.rs` documents for TC-011-2/TC-011-3. Sketched against
-/// the same plausible `fantoccini::Client` API shape (verify exact
-/// signatures against the crate's docs once IMP-REQ-011-13 lands the real
-/// dependency) so Loop B need only replace the sketch with real calls and
-/// drop the `#[ignore]`.
-#[ignore = "blocked on IMP-REQ-011-13 headless-browser harness setup (shared with REQ-011)"]
-#[sqlx::test(migrations = "./migrations")]
-async fn tc_013_3_copy_link_button_writes_clipboard_and_shows_feedback(pool: PgPool) {
-    let project_id = seed_project(&pool, "703 copy link crescent", "residential").await;
-    let app = app(test_state(pool).await);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    });
-    let detail_url = format!("http://{addr}/projects/{project_id}");
-
-    // ---- Loop B (IMP-REQ-011-13 / IMP-013-08/-09): replace everything below
-    // this line with real fantoccini calls once the crate is added to
-    // [dev-dependencies]. Sketched against the plausible fantoccini::Client
-    // API shape (verify exact method names/signatures against the crate's
-    // docs when wiring this up for real). Assumes IMP-013-08 gives the
-    // "Copy link" control a stable id `#copy-link-button` and IMP-013-09's
-    // feedback a stable id `#copy-link-feedback` — Loop B should update
-    // these selectors to match whatever markup it actually lands:
-    //
-    // let client = fantoccini::ClientBuilder::native()
-    //     .connect("http://localhost:9515") // local chromedriver/geckodriver
-    //     .await
-    //     .expect("connect to WebDriver session");
-    // client.goto(&detail_url).await.expect("navigate to project detail page");
-    //
-    // let copy_button = client
-    //     .find(fantoccini::Locator::Css("#copy-link-button"))
-    //     .await
-    //     .expect("find the Copy link button");
-    // copy_button.click().await.expect("click Copy link");
-    //
-    // let clipboard_text: String = client
-    //     .execute("return await navigator.clipboard.readText()", vec![])
-    //     .await
-    //     .expect("read clipboard contents")
-    //     .as_str()
-    //     .expect("clipboard contents is a string")
-    //     .to_string();
-    // assert!(
-    //     clipboard_text.ends_with(&format!("/projects/{project_id}")),
-    //     "expected the clipboard to contain this project's canonical URL, \
-    //      got: {clipboard_text}"
-    // );
-    //
-    // let feedback = client
-    //     .find(fantoccini::Locator::Css("#copy-link-feedback"))
-    //     .await
-    //     .expect("find the copy-link feedback element");
-    // assert!(
-    //     feedback.is_displayed().await.expect("check feedback visibility"),
-    //     "expected UI feedback (e.g. a \"Copied!\" indicator) after clicking Copy link"
-    // );
-    //
-    // client.close().await.ok();
-
-    let _ = &detail_url;
-    unimplemented!(
-        "blocked on IMP-REQ-011-13: replace this body with the fantoccini client \
-         calls sketched in the comment block above once the headless-browser \
-         harness exists"
-    );
-}
-
+/// resulting UI feedback — implemented for real in
+/// `apps/web/e2e/tests/copy-link.spec.ts` (Playwright), which passes
+/// against a live server. No Rust-side placeholder is kept here.
+///
 /// TC-013-4: a malformed UUID in the `/projects/{id}` path renders a
 /// friendly, bilingual not-found-style page — not Axum's raw plain-text
 /// rejection body (`Path<Uuid>`'s extractor failure, e.g. "Invalid URL: UUID
