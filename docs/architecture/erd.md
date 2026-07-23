@@ -1,8 +1,8 @@
 # Entity-Relationship Diagram — ShovelsUp (apps/web)
 
-Reflects the schema as of migration `025_project_merged_into_id.sql` (the latest applied
-migration at time of writing). Reconstructed by reading every file in
-`apps/web/web/migrations/` — not inferred from application code.
+Reflects the schema as of migration `026_cta_events.sql` (the latest applied migration at
+time of writing). Reconstructed by reading every file in `apps/web/web/migrations/` — not
+inferred from application code.
 
 No pre-existing ERD convention was found elsewhere in `docs/`; this uses Mermaid
 `erDiagram` syntax, which GitHub renders natively with no external tooling.
@@ -176,6 +176,13 @@ erDiagram
         TIMESTAMPTZ updated_at
     }
 
+    cta_events {
+        UUID id PK
+        UUID project_id FK
+        TEXT event_type "CHECK: impression|click"
+        TIMESTAMPTZ created_at
+    }
+
     municipalities ||--o{ source_documents : "publishes"
     municipalities ||--o{ fetch_jobs : "scheduled for"
     source_documents ||--o{ document_chunks : "parsed into"
@@ -190,6 +197,7 @@ erDiagram
     review_candidates ||--o{ audit_events : "logs action on"
     projects ||--|| public_search_documents : "denormalized into"
     category_taxonomy ||--o{ public_search_documents : "classifies"
+    projects ||--o{ cta_events : "impression/click telemetry for"
 ```
 
 ## Notes on specific columns
@@ -222,3 +230,9 @@ erDiagram
   search-index row per project); `source_documents(municipality_id, checksum)` is
   `UNIQUE` (dedupes re-fetches of identical content); `document_chunks(source_document_id,
   chunk_index)` is `UNIQUE`; `status_vocabulary(language, phrase)` is `UNIQUE`.
+- **`cta_events`** (migration 026, ADR 011) — write-mostly telemetry sink for the project
+  detail page's non-modal upsell CTA card; one row per `impression` (page load) or `click`
+  (signup link followed) beacon, `event_type` constrained by a `CHECK` to that fixed pair.
+  `ON DELETE CASCADE` on `project_id`, since an event is meaningless once its project no
+  longer exists. Has no downstream reader in this pass — it exists for future
+  analysis, not a live feature.

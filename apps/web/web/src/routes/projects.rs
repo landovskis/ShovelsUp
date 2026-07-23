@@ -22,6 +22,7 @@ use crate::{
 /// a short search-result label.
 mod core {
     use chrono::{DateTime, Utc};
+    use uuid::Uuid;
 
     /// Synthesizes a one-sentence project description from a project's most
     /// recent mention's extracted fields. There is no free-text
@@ -174,6 +175,58 @@ mod core {
     /// value doesn't produce a doubled `//projects/...` path.
     pub fn canonical_url(base_url: &str, project_id: uuid::Uuid) -> String {
         format!("{}/projects/{project_id}", base_url.trim_end_matches('/'))
+    }
+
+    /// IMP-REQ-014-04: builds the CTA card's `/signup` deep link from the
+    /// already-parsed, server-validated project id (a `Uuid`, never the raw
+    /// `:id` path segment or any query string) — TC-014-3's exact concern
+    /// is that a hostile query param on the *detail-page* request (e.g. a
+    /// forwarded `?ref=` campaign marker) must never be reflected into this
+    /// href. Pure string composition: no DB/HTTP/env access. The `project`
+    /// query param lets the (not-yet-built) `/signup` flow know which
+    /// project prompted the signup, without ever touching anything the
+    /// visitor's own request controlled.
+    pub fn build_signup_deep_link(project_id: Uuid) -> String {
+        format!("/signup?project={project_id}")
+    }
+
+    /// IMP-REQ-014-03: best-effort cross-site abuse reduction for
+    /// `POST /api/v1/cta-events`. This is NOT a security boundary — both
+    /// `Origin` and `Referer` are attacker-controlled headers on requests
+    /// from outside a real browser, and a browser itself may omit both on
+    /// some requests. When either header is present, its host must match
+    /// `allowed_host` or the request is rejected; when BOTH are absent, the
+    /// request is allowed through rather than rejected on a signal this
+    /// check has no basis to evaluate (e.g. this repo's own integration
+    /// tests exercise the route directly via `tower::ServiceExt::oneshot`
+    /// with no simulated browser context, sending neither header).
+    pub fn origin_check_passes(
+        origin_header: Option<&str>,
+        referer_header: Option<&str>,
+        allowed_host: &str,
+    ) -> bool {
+        match origin_header.or(referer_header) {
+            None => true,
+            Some(value) => host_matches(value, allowed_host),
+        }
+    }
+
+    fn host_matches(url_or_origin: &str, allowed_host: &str) -> bool {
+        url::Url::parse(url_or_origin)
+            .ok()
+            .and_then(|parsed| parsed.host_str().map(str::to_string))
+            .map(|host| host.eq_ignore_ascii_case(allowed_host))
+            .unwrap_or(false)
+    }
+
+    /// IMP-REQ-014-01/-02: the small, fixed vocabulary of telemetry events
+    /// the CTA card's own JS emits (mirrors the `cta_events.event_type`
+    /// CHECK constraint in migration `026_cta_events.sql`) — validated here
+    /// before ever reaching the DB, so an unrecognized event type is
+    /// rejected with a clear `400` from the handler rather than surfacing a
+    /// raw DB constraint-violation error.
+    pub fn is_known_cta_event_type(event_type: &str) -> bool {
+        matches!(event_type, "impression" | "click")
     }
 
     fn is_reliable_citation_url(url: &str) -> bool {
@@ -364,6 +417,79 @@ mod core {
                 canonical_url("https://shovelsup.example/", id),
                 format!("https://shovelsup.example/projects/{id}")
             );
+        }
+
+        // -- build_signup_deep_link / origin_check_passes / is_known_cta_event_type (IMP-REQ-014-04/-03/-01) --
+
+        #[test]
+        fn build_signup_deep_link_reflects_only_the_validated_project_id() {
+            let id = uuid::Uuid::nil();
+            assert_eq!(
+                build_signup_deep_link(id),
+                format!("/signup?project={id}")
+            );
+        }
+
+        #[test]
+        fn origin_check_passes_when_both_headers_absent() {
+            assert!(origin_check_passes(None, None, "shovelsup.example"));
+        }
+
+        #[test]
+        fn origin_check_passes_when_origin_host_matches() {
+            assert!(origin_check_passes(
+                Some("https://shovelsup.example"),
+                None,
+                "shovelsup.example"
+            ));
+        }
+
+        #[test]
+        fn origin_check_fails_when_origin_host_does_not_match() {
+            assert!(!origin_check_passes(
+                Some("https://evil.example"),
+                None,
+                "shovelsup.example"
+            ));
+        }
+
+        #[test]
+        fn origin_check_falls_back_to_referer_when_origin_absent() {
+            assert!(origin_check_passes(
+                None,
+                Some("https://shovelsup.example/projects/123"),
+                "shovelsup.example"
+            ));
+        }
+
+        #[test]
+        fn origin_check_fails_when_referer_host_does_not_match() {
+            assert!(!origin_check_passes(
+                None,
+                Some("https://evil.example/steal"),
+                "shovelsup.example"
+            ));
+        }
+
+        #[test]
+        fn origin_check_fails_on_malformed_header_value() {
+            assert!(!origin_check_passes(
+                Some("not a url"),
+                None,
+                "shovelsup.example"
+            ));
+        }
+
+        #[test]
+        fn is_known_cta_event_type_accepts_impression_and_click() {
+            assert!(is_known_cta_event_type("impression"));
+            assert!(is_known_cta_event_type("click"));
+        }
+
+        #[test]
+        fn is_known_cta_event_type_rejects_unknown_values() {
+            assert!(!is_known_cta_event_type("bogus"));
+            assert!(!is_known_cta_event_type(""));
         }
 
         #[test]
@@ -679,6 +805,36 @@ fn not_found_labels(lang: &str) -> NotFoundLabels {
     }
 }
 
+/// IMP-REQ-014-06: EN/FR copy for the project-detail page's non-modal
+/// "Get alerts — sign up" upsell CTA card, mirroring `not_found_labels`'s
+/// plain lang-keyed literal-struct pattern (no I/O).
+struct CtaLabels {
+    heading: &'static str,
+    body: &'static str,
+    signup_label: &'static str,
+    collapse_label: &'static str,
+    expand_label: &'static str,
+}
+
+fn cta_labels(lang: &str) -> CtaLabels {
+    match lang {
+        "fr" => CtaLabels {
+            heading: "Recevez des alertes",
+            body: "Inscrivez-vous pour recevoir des alertes sur les prochaines décisions du conseil concernant ce projet.",
+            signup_label: "S’inscrire",
+            collapse_label: "Réduire",
+            expand_label: "Développer",
+        },
+        _ => CtaLabels {
+            heading: "Get alerts",
+            body: "Sign up to get alerts about future council decisions on this project.",
+            signup_label: "Sign up",
+            collapse_label: "Collapse",
+            expand_label: "Expand",
+        },
+    }
+}
+
 fn timeline_labels(lang: &str) -> TimelineLabels {
     match lang {
         "fr" => TimelineLabels {
@@ -919,6 +1075,17 @@ pub async fn get_project_detail_page(
         .unwrap_or_else(|_| "https://shovelsup.example".to_string());
     let canonical_url = core::canonical_url(&base_url, id);
 
+    // IMP-REQ-014-05/-06/-07: this app has no auth at all (REQ-010), so
+    // every `GET /projects/:id` view reaching this point is by construction
+    // an anonymous visitor — the CTA card therefore renders unconditionally
+    // whenever the page itself renders successfully (never omitted for an
+    // "authenticated" branch, since no such branch exists in this app
+    // today). `cta_signup_url` is built from the already-parsed, validated
+    // `id` — never from `raw_id`/`params`/any request header — so no raw
+    // request input can leak into the CTA's signup link (TC-014-3).
+    let cta_labels = cta_labels(lang);
+    let cta_signup_url = core::build_signup_deep_link(id);
+
     let detail_context = ProjectDetailContext {
         description,
         confidence_level: project_row.confidence_level,
@@ -961,8 +1128,92 @@ pub async fn get_project_detail_page(
             canonical_url => detail_context.canonical_url,
             copy_link_label => labels.copy_link_label,
             copy_link_copied_label => labels.copy_link_copied_label,
+            project_id => id.to_string(),
+            cta_heading => cta_labels.heading,
+            cta_body => cta_labels.body,
+            cta_signup_url => cta_signup_url,
+            cta_signup_label => cta_labels.signup_label,
+            cta_collapse_label => cta_labels.collapse_label,
+            cta_expand_label => cta_labels.expand_label,
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok((StatusCode::OK, Html(html)).into_response())
+}
+
+/// Request body for `POST /api/v1/cta-events` (IMP-REQ-014-02): the CTA
+/// card's own JS (IMP-REQ-014-09) fires one of these per fire-and-forget
+/// `navigator.sendBeacon` call — `event` is validated against
+/// `core::is_known_cta_event_type`'s fixed vocabulary before ever reaching
+/// the DB.
+#[derive(Debug, Deserialize)]
+pub struct CtaEventRequest {
+    pub project_id: Uuid,
+    pub event: String,
+}
+
+/// POST /api/v1/cta-events (IMP-REQ-014-02/-03). Fully public, unauthenticated
+/// endpoint (REQ-010's "no account required" guarantee — `public_router`
+/// registers this route with no auth layer, same as every other route
+/// there) that records one fire-and-forget telemetry beacon from the
+/// project-detail page's non-modal CTA card. Returns `202 Accepted`: the
+/// caller is `navigator.sendBeacon`/`fetch(..., {keepalive:true})`, which
+/// never reads or acts on the response body — 202 ("accepted for
+/// processing") is the correct semantic here, not `200`/`204`, which would
+/// imply a stronger completion guarantee than "the write was attempted"
+/// this handler actually gives once past the `?` on the `INSERT`.
+///
+/// IMP-REQ-014-03: `core::origin_check_passes` is a best-effort abuse
+/// reduction signal, not a security boundary (see that function's doc
+/// comment) — actual rate limiting is layered on this route at the router
+/// level (`middleware::rate_limit::rate_limit_cta_events` in `lib.rs`), not
+/// here.
+///
+/// TC-014-5: this route/handler is entirely independent of
+/// `get_project_detail_page` — a failure here (origin-check rejection,
+/// unknown event type, DB error) returns a 4xx/5xx from THIS handler alone
+/// and never touches the detail page's own rendering, which is a
+/// structurally separate Axum route registration.
+pub async fn post_cta_event(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CtaEventRequest>,
+) -> Result<StatusCode, StatusCode> {
+    // IMP-REQ-014-03: the same `PUBLIC_BASE_URL` configuration
+    // `core::canonical_url` uses (IMP-REQ-013-06) is the source of the
+    // "expected" host for the origin/referer check — never the request's
+    // own `Host`/`X-Forwarded-Host` header, for the same spoofability reason
+    // TC-013-2 already established for the canonical URL.
+    let base_url = std::env::var("PUBLIC_BASE_URL")
+        .unwrap_or_else(|_| "https://shovelsup.example".to_string());
+    let allowed_host = url::Url::parse(&base_url)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(str::to_string))
+        .unwrap_or_else(|| "shovelsup.example".to_string());
+
+    let origin = headers
+        .get(axum::http::header::ORIGIN)
+        .and_then(|v| v.to_str().ok());
+    let referer = headers
+        .get(axum::http::header::REFERER)
+        .and_then(|v| v.to_str().ok());
+
+    if !core::origin_check_passes(origin, referer, &allowed_host) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    if !core::is_known_cta_event_type(&payload.event) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    sqlx::query!(
+        "INSERT INTO cta_events (project_id, event_type) VALUES ($1, $2)",
+        payload.project_id,
+        payload.event,
+    )
+    .execute(&state.db)
+    .await
+    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+
+    Ok(StatusCode::ACCEPTED)
 }

@@ -1093,6 +1093,99 @@ shovels-header {
     color: var(--color-text-muted);
 }
 
+/* IMP-REQ-014-07/-08: non-modal, collapsible "Get alerts" upsell CTA card
+   on the project detail page. Deliberately NOT `position: fixed` (TC-014-2
+   requires it to be a plain in-page section, never a modal/overlay — a
+   fixed position could visually cover other content at narrow viewports,
+   which is exactly the kind of blocking behavior this card must avoid).
+   Text/background pairing deliberately avoids the white-on-primary
+   combination `accessibility.spec.ts` already flags as a pre-existing
+   contrast failure elsewhere on this site (`.search-filter-submit`,
+   3.79:1) — dark `--color-text` on `--color-surface` here instead, which
+   comfortably clears WCAG AA at this font size. */
+.cta-upsell {
+    max-width: 720px;
+    margin: 1.25rem 0 2rem;
+    padding: 1.25rem 1.5rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-left: 4px solid var(--color-primary);
+    border-radius: var(--radius);
+}
+
+.cta-upsell-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.cta-upsell-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--color-text);
+}
+
+#cta-collapse-toggle {
+    flex-shrink: 0;
+    padding: 0.4rem 0.85rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+#cta-collapse-toggle:hover,
+#cta-collapse-toggle:focus-visible {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+#cta-upsell-body {
+    margin-top: 0.75rem;
+}
+
+#cta-upsell-body p {
+    max-width: 60ch;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+}
+
+#cta-signup-link {
+    display: inline-block;
+    margin-top: 0.5rem;
+    padding: 0.55rem 1.1rem;
+    border: 2px solid var(--color-primary);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-weight: 700;
+    text-decoration: none;
+}
+
+#cta-signup-link:hover,
+#cta-signup-link:focus-visible {
+    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+    .cta-upsell {
+        padding: 1rem;
+    }
+
+    .cta-upsell-header {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+}
+
 /* IMP-REQ-011-07: whole-page 404/400 error state
    (`project_detail.html`'s `page_error` branch) — still extends
    `base.html`/`.site-main`, so this only needs to style the message text,

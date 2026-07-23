@@ -12,7 +12,7 @@ System_Boundary(shovelsup, "ShovelsUp") {
 
     Container(pipeline, "shovelsup-pipeline", "Rust library crate", "Ingestion pipeline: fetcher, parser (text/OCR), LLM extractor, status normalizer, resolver, scheduler. NOT a separate deployable — linked directly into the shovelsup-web binary and driven by an in-process tokio::spawn interval loop started in web's main.rs (ADR 006), ticking hourly. No standalone process or API of its own.")
 
-    ContainerDb(postgres, "Postgres 16", "Relational database", "Schema owner for all durable state: municipalities, source_documents, document_chunks, project_mentions, projects, project_timeline_events, public_search_documents, review_candidates, audit_events, category_taxonomy, status_vocabulary, fetch_jobs. Migrations embedded into the web binary via sqlx::migrate! and run automatically on startup.")
+    ContainerDb(postgres, "Postgres 16", "Relational database", "Schema owner for all durable state: municipalities, source_documents, document_chunks, project_mentions, projects, project_timeline_events, public_search_documents, review_candidates, audit_events, category_taxonomy, status_vocabulary, fetch_jobs, cta_events. Migrations embedded into the web binary via sqlx::migrate! and run automatically on startup.")
 
     ContainerDb(redis, "Redis 7", "In-memory store", "Backs the per-IP fixed-window rate limiter (ADR 007) on the public search endpoints. No other current use.")
 }

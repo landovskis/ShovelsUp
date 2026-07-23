@@ -260,11 +260,12 @@ async fn tc_014_5_telemetry_endpoint_failure_does_not_affect_detail_page(pool: P
         .unwrap();
     assert_eq!(
         cta_event_response.status(),
-        StatusCode::FORBIDDEN,
-        "no /api/v1/cta-events route is registered yet (IMP-014-04/-10's job); \
-         today this falls through to the pre-existing admin_routes \
-         merge-order quirk documented above (403, not a plain 404) — \
-         update this expectation once the real route lands"
+        StatusCode::ACCEPTED,
+        "IMP-REQ-014-02/-10 landed the real /api/v1/cta-events route: a \
+         well-formed telemetry event with no Origin/Referer header (as this \
+         request sends, matching the fallback branch of \
+         core::origin_check_passes) is accepted and recorded, returning 202 \
+         Accepted for this fire-and-forget beacon"
     );
 
     let detail_response = app

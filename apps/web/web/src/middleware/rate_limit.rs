@@ -11,6 +11,13 @@ use redis::AsyncCommands;
 use crate::AppState;
 
 const DEFAULT_RATE_LIMIT_RPM: u32 = 60;
+/// IMP-REQ-014-03: default requests/minute/IP for `POST /api/v1/cta-events`,
+/// overridable via `RATE_LIMIT_CTA_EVENTS_RPM`. Lower than search's default
+/// (60) since a single project-detail page view should fire at most a
+/// couple of these beacons (one impression, maybe one click) — a much
+/// lower legitimate ceiling than a search UI a visitor might page through
+/// dozens of times per minute.
+const DEFAULT_CTA_EVENTS_RATE_LIMIT_RPM: u32 = 20;
 
 /// Per-IP rate limiting for the public search endpoints (IMP-REQ-008-05),
 /// default 60 requests/minute/IP via `RATE_LIMIT_SEARCH_RPM` (Autonomous
@@ -56,12 +63,51 @@ pub async fn rate_limit_search(
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_RATE_LIMIT_RPM);
 
+    enforce_rate_limit(&state, connect_info, "search", limit).await?;
+    Ok(next.run(req).await)
+}
+
+/// IMP-REQ-014-03: per-IP rate limiting for `POST /api/v1/cta-events`,
+/// generalized from `rate_limit_search` (same fixed-60s-window Redis
+/// `INCR`/`EXPIRE` algorithm, same `ConnectInfo`-only IP keying — see
+/// `rate_limit_search`'s doc comment for the full rationale, unchanged
+/// here) rather than a second, duplicated implementation. Kept as its own
+/// exported middleware fn (not a single parameterized one wired directly
+/// into the router) since `axum_middleware::from_fn_with_state` requires a
+/// concrete async fn matching a fixed extractor signature per call site.
+pub async fn rate_limit_cta_events(
+    State(state): State<AppState>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
+    req: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let limit: u32 = std::env::var("RATE_LIMIT_CTA_EVENTS_RPM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_CTA_EVENTS_RATE_LIMIT_RPM);
+
+    enforce_rate_limit(&state, connect_info, "cta-events", limit).await?;
+    Ok(next.run(req).await)
+}
+
+/// Shared fixed-60s-window Redis counter logic behind both
+/// `rate_limit_search` and `rate_limit_cta_events`. `bucket` namespaces the
+/// Redis key (`rate_limit:{bucket}:{ip}`) so the two routes' budgets never
+/// interfere with each other, matching `rate_limit_search`'s pre-existing
+/// `rate_limit:search:{ip}` key shape exactly (this refactor changes no
+/// observable behavior for the search routes).
+async fn enforce_rate_limit(
+    state: &AppState,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
+    bucket: &str,
+    limit: u32,
+) -> Result<(), StatusCode> {
     let client_key = match connect_info {
         Some(ConnectInfo(peer)) => rate_limit_key(peer),
         None => "unknown".to_string(),
     };
 
-    let redis_key = format!("rate_limit:search:{client_key}");
+    let redis_key = format!("rate_limit:{bucket}:{client_key}");
     let mut redis = state.redis.clone();
 
     let count: u32 = redis
@@ -82,7 +128,7 @@ pub async fn rate_limit_search(
         return Err(StatusCode::TOO_MANY_REQUESTS);
     }
 
-    Ok(next.run(req).await)
+    Ok(())
 }
 
 /// Derives the Redis rate-limit key from the connection's peer address.

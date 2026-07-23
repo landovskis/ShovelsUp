@@ -56,8 +56,26 @@ pub fn public_router(state: AppState) -> Router<AppState> {
             get(routes::search::search_projects),
         )
         .layer(axum_middleware::from_fn_with_state(
-            state,
+            state.clone(),
             middleware::rate_limit::rate_limit_search,
+        ));
+
+    // IMP-REQ-014-02/-03: `POST /api/v1/cta-events` is a public, unauthenticated
+    // telemetry endpoint (fired from an anonymous visitor's browser via
+    // `navigator.sendBeacon`) — it belongs here, not in
+    // `authenticated_router()`. Its own rate limiter
+    // (`rate_limit_cta_events`) reuses the same fixed-window Redis
+    // algorithm as the search routes above, in its own `Router` sub-group
+    // exactly like `rate_limited_search_routes`, so its budget is tracked
+    // independently under its own key namespace.
+    let rate_limited_cta_event_routes = Router::new()
+        .route(
+            "/api/v1/cta-events",
+            post(routes::projects::post_cta_event),
+        )
+        .layer(axum_middleware::from_fn_with_state(
+            state,
+            middleware::rate_limit::rate_limit_cta_events,
         ));
 
     Router::new()
@@ -72,6 +90,7 @@ pub fn public_router(state: AppState) -> Router<AppState> {
         )
         .route("/categories", get(routes::search::list_categories))
         .merge(rate_limited_search_routes)
+        .merge(rate_limited_cta_event_routes)
 }
 
 /// Authenticated (admin-only) routes (IMP-REQ-010-02). Every route
