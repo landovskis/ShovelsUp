@@ -1,0 +1,42 @@
+@startuml c4-container
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Container Diagram — ShovelsUp (apps/web)
+
+Person(resident, "Resident / Journalist", "Anonymous public user. No account required (REQ-010).")
+Person(operator, "Admin operator", "Reviews ambiguous extraction results, reprocesses failed jobs. Requires credentials (require_admin middleware).")
+System_Ext(council, "Montreal City Council", "Publishes agenda/minutes documents on public web pages.")
+
+System_Boundary(shovelsup, "ShovelsUp") {
+    Container(web, "shovelsup-web", "Rust, Axum, Minijinja", "HTTP server. Serves the public search/project-detail pages (public_router) and the admin review/reprocess UI (authenticated_router, behind require_admin). Single deployable binary.")
+
+    Container(pipeline, "shovelsup-pipeline", "Rust library crate", "Ingestion pipeline: fetcher, parser (text/OCR), LLM extractor, status normalizer, resolver, scheduler. NOT a separate deployable — linked directly into the shovelsup-web binary and driven by an in-process tokio::spawn interval loop started in web's main.rs (ADR 006), ticking hourly. No standalone process or API of its own.")
+
+    ContainerDb(postgres, "Postgres 16", "Relational database", "Schema owner for all durable state: municipalities, source_documents, document_chunks, project_mentions, projects, project_timeline_events, public_search_documents, review_candidates, audit_events, category_taxonomy, status_vocabulary, fetch_jobs. Migrations embedded into the web binary via sqlx::migrate! and run automatically on startup.")
+
+    ContainerDb(redis, "Redis 7", "In-memory store", "Backs the per-IP fixed-window rate limiter (ADR 007) on the public search endpoints. No other current use.")
+}
+
+Container_Ext(e2e, "Playwright E2E harness", "TypeScript, Node.js", "Dev/CI-time only, not a production container. Standalone project at apps/web/e2e (ADR 009). Drives a real headless Chromium against an already-running shovelsup-web instance to exercise browser-dependent behavior (layout, focus management) that oneshot HTTP tests can't reach.")
+
+Rel(resident, web, "Searches, views project pages", "HTTPS")
+Rel(operator, web, "Reviews candidates, reprocesses jobs", "HTTPS + admin credential")
+Rel(pipeline, council, "Fetches agenda/minutes documents", "HTTPS (scrape)")
+Rel(web, pipeline, "Calls Scheduler::enqueue_due_fetches / worker::run_due_fetch_jobs directly (in-process function calls)")
+Rel(web, postgres, "Reads/writes via SQLx (PgPool)", "SQL/TCP")
+Rel(pipeline, postgres, "Reads/writes via SQLx (PgPool)", "SQL/TCP")
+Rel(web, redis, "INCR/EXPIRE rate-limit counters", "Redis protocol")
+Rel(e2e, web, "Drives the running server as a real browser", "HTTPS")
+
+note right of shovelsup
+  Android (apps/android) and iOS (apps/ios) are excluded above:
+  both are scaffolding only as of this writing. Android has a
+  default Compose MainActivity/HomeScreen/theme (~50 lines, no
+  networking or API client). iOS has a default SwiftUI
+  ContentView + Color+Brand + Localizable.xcstrings (~25 lines,
+  no networking). Neither calls shovelsup-web's API today; add
+  them as real containers once they have actual client code.
+end note
+
+SHOW_LEGEND()
+@enduml

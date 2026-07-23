@@ -1,0 +1,16 @@
+@startuml c4-context
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title System Context — ShovelsUp
+
+Person(resident, "Resident / Journalist", "Anonymous public user. Searches and browses construction/development decisions. No account required (REQ-010).")
+
+System_Ext(council, "Montreal City Council", "Publishes meeting agendas and minutes (PDF/HTML) on ville.montreal.qc.ca and related domains. Source of truth for what gets ingested; ShovelsUp has no write access or API relationship with it — documents are fetched from public pages.")
+
+System(shovelsup, "ShovelsUp", "Construction permit tracking platform. Ingests municipal council agendas/minutes, extracts project mentions, resolves them into tracked projects, and surfaces them via public search and a project detail page.")
+
+Rel(resident, shovelsup, "Searches for projects, views project detail pages", "HTTPS")
+Rel(shovelsup, council, "Fetches published agenda/minutes documents", "HTTPS (scrape)")
+
+SHOW_LEGEND()
+@enduml
