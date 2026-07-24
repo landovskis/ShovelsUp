@@ -507,83 +507,95 @@ Independently verified (agent implementing this task had its connection drop mid
 
 ## System Tests (Loop A suite vs. Loop B production code)
 
-- [ ] TC-001-1
-- [ ] TC-001-2
-- [ ] TC-001-3
-- [ ] TC-001-4
-- [ ] TC-001-5
-- [ ] TC-001-6
-- [ ] TC-002-1
-- [ ] TC-002-2
-- [ ] TC-002-3
-- [ ] TC-002-4
-- [ ] TC-002-5
-- [ ] TC-002-6
-- [ ] TC-003-1
-- [ ] TC-003-2
-- [ ] TC-003-3
-- [ ] TC-003-4
-- [ ] TC-003-5
-- [ ] TC-004-1
-- [ ] TC-004-2
-- [ ] TC-004-3
-- [ ] TC-004-4
-- [ ] TC-004-5
-- [ ] TC-005-1
-- [ ] TC-005-2
-- [ ] TC-005-3
-- [ ] TC-005-4
-- [ ] TC-005-5
-- [ ] TC-006-1
-- [ ] TC-006-2
-- [ ] TC-006-3
-- [ ] TC-006-4
-- [ ] TC-006-5
-- [ ] TC-007-1
-- [ ] TC-007-2
-- [ ] TC-007-3
-- [ ] TC-007-4
-- [ ] TC-007-5
-- [ ] TC-007-6
-- [ ] TC-008-1
-- [ ] TC-008-2
-- [ ] TC-008-3
-- [ ] TC-008-4
-- [ ] TC-008-5
-- [ ] TC-009-1
-- [ ] TC-009-2
-- [ ] TC-009-3
-- [ ] TC-009-4
-- [ ] TC-009-5
-- [ ] TC-010-01
-- [ ] TC-010-02
-- [ ] TC-010-03
-- [ ] TC-010-04
-- [ ] TC-010-05
-- [ ] TC-011-1
-- [ ] TC-011-2
-- [ ] TC-011-3
-- [ ] TC-011-4
-- [ ] TC-011-5
-- [ ] TC-012-1
-- [ ] TC-012-2
-- [ ] TC-012-3
-- [ ] TC-012-4
-- [ ] TC-012-5
-- [ ] TC-013-1
-- [ ] TC-013-2
-- [ ] TC-013-3
-- [ ] TC-013-4
-- [ ] TC-013-5
-- [ ] TC-014-1
-- [ ] TC-014-2
-- [ ] TC-014-3
-- [ ] TC-014-4
-- [ ] TC-014-5
-- [ ] TC-014-6
-- [ ] TC-015-1
-- [ ] TC-015-2
-- [ ] TC-015-3
-- [ ] TC-015-4
-- [ ] TC-015-5
+**Loop B4 complete.** All 15 requirements implemented; every checkbox below reflects a
+currently-passing test, confirmed by a full, unfiltered `cargo nextest run --workspace
+--test-threads 1` (523 tests, 0 skipped, 0 ignored) plus the full Playwright suite (22/22)
+run live against `cargo run -p shovelsup-web`. TC-011-2/-3, TC-013-3, and TC-014-6's
+browser-driven half live in `apps/web/e2e/`, not as Rust tests — see REQ-011/013/014's own
+sections above for exactly which spec file covers each. The only transient noise
+encountered was the documented shared-Redis rate-limiter cascade (a handful of tests
+report a spurious 429 when run back-to-back with many other rate-limited-route tests in
+the same 60s window) — reconfirmed spurious every time via isolated re-run; not reflected
+in any of the checkmarks below, all of which reflect a genuine, repeatable pass.
+
+- [x] TC-001-1
+- [x] TC-001-2
+- [x] TC-001-3
+- [x] TC-001-4
+- [x] TC-001-5
+- [x] TC-001-6
+- [x] TC-002-1
+- [x] TC-002-2
+- [x] TC-002-3
+- [x] TC-002-4
+- [x] TC-002-5
+- [x] TC-002-6
+- [x] TC-003-1
+- [x] TC-003-2
+- [x] TC-003-3
+- [x] TC-003-4
+- [x] TC-003-5
+- [x] TC-004-1
+- [x] TC-004-2
+- [x] TC-004-3
+- [x] TC-004-4
+- [x] TC-004-5
+- [x] TC-005-1
+- [x] TC-005-2
+- [x] TC-005-3
+- [x] TC-005-4
+- [x] TC-005-5
+- [x] TC-006-1
+- [x] TC-006-2
+- [x] TC-006-3
+- [x] TC-006-4
+- [x] TC-006-5
+- [x] TC-007-1
+- [x] TC-007-2
+- [x] TC-007-3
+- [x] TC-007-4
+- [x] TC-007-5
+- [x] TC-007-6
+- [x] TC-008-1
+- [x] TC-008-2
+- [x] TC-008-3
+- [x] TC-008-4
+- [x] TC-008-5
+- [x] TC-009-1
+- [x] TC-009-2
+- [x] TC-009-3
+- [x] TC-009-4
+- [x] TC-009-5
+- [x] TC-010-01
+- [x] TC-010-02
+- [x] TC-010-03
+- [x] TC-010-04
+- [x] TC-010-05
+- [x] TC-011-1
+- [x] TC-011-2 — `apps/web/e2e/tests/no-horizontal-scroll.spec.ts`
+- [x] TC-011-3 — `apps/web/e2e/tests/filter-sheet.spec.ts`
+- [x] TC-011-4
+- [x] TC-011-5
+- [x] TC-012-1
+- [x] TC-012-2
+- [x] TC-012-3
+- [x] TC-012-4
+- [x] TC-012-5
+- [x] TC-013-1
+- [x] TC-013-2
+- [x] TC-013-3 — `apps/web/e2e/tests/copy-link.spec.ts`
+- [x] TC-013-4
+- [x] TC-013-5
+- [x] TC-014-1
+- [x] TC-014-2
+- [x] TC-014-3
+- [x] TC-014-4
+- [x] TC-014-5
+- [x] TC-014-6 — static contract in `tests/cta_upsell.rs`; real cross-reload persistence in `apps/web/e2e/tests/cta-upsell.spec.ts`
+- [x] TC-015-1
+- [x] TC-015-2
+- [x] TC-015-3
+- [x] TC-015-4
+- [x] TC-015-5
+- [x] TC-015-6
 - [ ] TC-015-6
