@@ -1,8 +1,8 @@
 # Entity-Relationship Diagram — ShovelsUp (apps/web)
 
-Reflects the schema as of migration `026_cta_events.sql` (the latest applied migration at
-time of writing). Reconstructed by reading every file in `apps/web/web/migrations/` — not
-inferred from application code.
+Reflects the schema as of migration `027_public_search_detection_indicator.sql` (the latest
+applied migration at time of writing). Reconstructed by reading every file in
+`apps/web/web/migrations/` — not inferred from application code.
 
 No pre-existing ERD convention was found elsewhere in `docs/`; this uses Mermaid
 `erDiagram` syntax, which GitHub renders natively with no external tooling.
@@ -173,6 +173,8 @@ erDiagram
         TSVECTOR search_vector_en "GENERATED STORED"
         TIMESTAMPTZ first_surfaced_at
         TIMESTAMPTZ latest_meeting_date
+        TIMESTAMPTZ first_detected_at
+        BIGINT source_count
         TIMESTAMPTZ updated_at
     }
 
@@ -220,6 +222,18 @@ erDiagram
   `first_surfaced_at` is set once on first insert and never touched again by later
   refreshes. `latest_meeting_date` is `MAX(project_timeline_events.event_date)` for the
   project, indexed `DESC NULLS LAST` to serve `sort=date` directly.
+- **`public_search_documents.first_detected_at`/`source_count`** (migration 027) — the
+  "Detected N day(s) ago from M council source(s)" confidence indicator's backing fields.
+  `first_detected_at` is set once on first insert (same "frozen" semantics as
+  `first_surfaced_at`, kept as a genuinely distinct column rather than a reuse of it — see
+  migration 027's own doc comment for why: one is a presentation/index concept, the other a
+  provenance/confidence concept, and they only coincide today because there's a single
+  ingestion path into this table). `source_count` is
+  `COUNT(DISTINCT document_chunks.source_document_id)` across every `project_mentions` row
+  resolved to the project, re-derived on every refresh (not frozen). Both `NULL` for a row
+  that predates this migration and hasn't been refreshed since; the indicator omits itself
+  entirely (never a partial sentence) whenever either is missing or `source_count` is
+  non-positive.
 - **`public_search_documents.search_vector_fr`/`search_vector_en`** — Postgres
   `GENERATED ALWAYS ... STORED` `tsvector` columns built from
   `civic_address_normalized || municipality_name`, kept in sync automatically by Postgres

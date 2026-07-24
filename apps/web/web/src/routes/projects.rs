@@ -219,6 +219,54 @@ mod core {
             .unwrap_or(false)
     }
 
+    /// IMP-REQ-015-07: the project-detail page's own copy of
+    /// `routes::search::core::format_detection_sentence` (this codebase's
+    /// established convention for a small pure function needed identically
+    /// in two route modules — see `locale.rs`'s own doc comment for when a
+    /// genuinely shared module is warranted instead; this one-function
+    /// duplication doesn't rise to that). Same contract exactly: `None`
+    /// whenever either input is `None` or `source_count` is non-positive
+    /// (TC-015-5), calendar-day difference, "today"/singular/plural EN+FR
+    /// phrasing (TC-015-2/-3/-4/-6's search-card equivalents).
+    pub fn format_detection_sentence(
+        lang: &str,
+        first_detected_at: Option<DateTime<Utc>>,
+        source_count: Option<i64>,
+        now: DateTime<Utc>,
+    ) -> Option<String> {
+        let first_detected_at = first_detected_at?;
+        let source_count = source_count?;
+        if source_count <= 0 {
+            return None;
+        }
+
+        let days_ago = (now.date_naive() - first_detected_at.date_naive())
+            .num_days()
+            .max(0);
+        let is_fr = lang == "fr";
+
+        let days_part = match (is_fr, days_ago) {
+            (true, 0) => "aujourd'hui".to_string(),
+            (true, 1) => "il y a 1 jour".to_string(),
+            (true, n) => format!("il y a {n} jours"),
+            (false, 0) => "today".to_string(),
+            (false, 1) => "1 day ago".to_string(),
+            (false, n) => format!("{n} days ago"),
+        };
+        let source_part = match (is_fr, source_count) {
+            (true, 1) => "1 source municipale".to_string(),
+            (true, n) => format!("{n} sources municipales"),
+            (false, 1) => "1 council source".to_string(),
+            (false, n) => format!("{n} council sources"),
+        };
+
+        Some(if is_fr {
+            format!("Détecté {days_part} depuis {source_part}")
+        } else {
+            format!("Detected {days_part} from {source_part}")
+        })
+    }
+
     /// IMP-REQ-014-01/-02: the small, fixed vocabulary of telemetry events
     /// the CTA card's own JS emits (mirrors the `cta_events.event_type`
     /// CHECK constraint in migration `026_cta_events.sql`) — validated here
@@ -427,6 +475,60 @@ mod core {
             assert_eq!(
                 build_signup_deep_link(id),
                 format!("/signup?project={id}")
+            );
+        }
+
+        #[test]
+        fn format_detection_sentence_none_when_first_detected_at_missing() {
+            let now = Utc::now();
+            assert_eq!(format_detection_sentence("en", None, Some(2), now), None);
+        }
+
+        #[test]
+        fn format_detection_sentence_none_when_source_count_missing() {
+            let now = Utc::now();
+            assert_eq!(
+                format_detection_sentence("en", Some(now), None, now),
+                None
+            );
+        }
+
+        #[test]
+        fn format_detection_sentence_none_when_source_count_non_positive() {
+            let now = Utc::now();
+            assert_eq!(format_detection_sentence("en", Some(now), Some(0), now), None);
+        }
+
+        #[test]
+        fn format_detection_sentence_one_day_is_singular_not_plural() {
+            let now = Utc::now();
+            let one_day_ago = now - chrono::Duration::days(1);
+            let sentence = format_detection_sentence("en", Some(one_day_ago), Some(1), now);
+            assert_eq!(
+                sentence,
+                Some("Detected 1 day ago from 1 council source".to_string())
+            );
+        }
+
+        #[test]
+        fn format_detection_sentence_multiple_days_is_plural() {
+            let now = Utc::now();
+            let five_days_ago = now - chrono::Duration::days(5);
+            let sentence = format_detection_sentence("en", Some(five_days_ago), Some(2), now);
+            assert_eq!(
+                sentence,
+                Some("Detected 5 days ago from 2 council sources".to_string())
+            );
+        }
+
+        #[test]
+        fn format_detection_sentence_french_localization() {
+            let now = Utc::now();
+            let five_days_ago = now - chrono::Duration::days(5);
+            let sentence = format_detection_sentence("fr", Some(five_days_ago), Some(2), now);
+            assert_eq!(
+                sentence,
+                Some("Détecté il y a 5 jours depuis 2 sources municipales".to_string())
             );
         }
 
@@ -749,10 +851,10 @@ struct ProjectDetailContext {
     // URL, and rendered as `project_detail.html`'s `<link rel="canonical">`
     // and Open Graph `og:url` tags (TC-013-2).
     canonical_url: Option<String>,
-    #[allow(dead_code)]
-    first_detected_at: Option<chrono::DateTime<chrono::Utc>>,
-    #[allow(dead_code)]
-    source_count: Option<i64>,
+    // IMP-REQ-015-07/-12: "Detected N day(s) ago from M council source(s)",
+    // via `core::format_detection_sentence` — `None` whenever either
+    // underlying `public_search_documents` column is missing (TC-015-5).
+    detection_sentence: Option<String>,
 }
 
 struct TimelineLabels {
@@ -985,8 +1087,20 @@ pub async fn get_project_detail_page(
     // its own (now superseded) page at all — checked before any other
     // lookup, exactly like TC-013-1 expects. `Location` is a relative path
     // (`/projects/{id}`); TC-013-1 asserts this exact relative form.
+    // IMP-REQ-015-07: `first_detected_at`/`source_count` are read from
+    // `public_search_documents` (LEFT JOIN, since a project may not yet be
+    // materialized there — a genuinely missing row behaves identically to
+    // an existing row with both columns `NULL`: the indicator omits itself
+    // entirely, TC-015-5), the same denormalized columns the search-card
+    // half (`SearchResult`, `routes/search.rs`) reads.
     let project_row = match sqlx::query!(
-        "SELECT id, confidence_level, merged_into_id FROM projects WHERE id = $1",
+        r#"
+        SELECT p.id, p.confidence_level, p.merged_into_id,
+               psd.first_detected_at, psd.source_count
+        FROM projects p
+        LEFT JOIN public_search_documents psd ON psd.project_id = p.id
+        WHERE p.id = $1
+        "#,
         id
     )
     .fetch_optional(&state.db)
@@ -1086,6 +1200,16 @@ pub async fn get_project_detail_page(
     let cta_labels = cta_labels(lang);
     let cta_signup_url = core::build_signup_deep_link(id);
 
+    // IMP-REQ-015-07: computed here in the shell, where `lang` and a single
+    // shared `now` are both known — mirrors `get_search_page`'s own
+    // placement of this same derivation (see `routes/search.rs`).
+    let detection_sentence = core::format_detection_sentence(
+        lang,
+        project_row.first_detected_at,
+        project_row.source_count,
+        Utc::now(),
+    );
+
     let detail_context = ProjectDetailContext {
         description,
         confidence_level: project_row.confidence_level,
@@ -1097,8 +1221,7 @@ pub async fn get_project_detail_page(
         citation_municipality_name: citation_view.municipality_name,
         citation_document_retrieved_fallback: citation_view.document_retrieved_fallback,
         canonical_url: Some(canonical_url),
-        first_detected_at: None,
-        source_count: None,
+        detection_sentence,
     };
 
     let html = tmpl
@@ -1126,6 +1249,7 @@ pub async fn get_project_detail_page(
             citation_document_retrieved_fallback => detail_context.citation_document_retrieved_fallback,
             document_retrieved_fallback_label => labels.document_retrieved_fallback_label,
             canonical_url => detail_context.canonical_url,
+            detection_sentence => detail_context.detection_sentence,
             copy_link_label => labels.copy_link_label,
             copy_link_copied_label => labels.copy_link_copied_label,
             project_id => id.to_string(),

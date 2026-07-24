@@ -28,6 +28,25 @@ use sqlx::PgPool;
 /// so a project with no timeline events yet still gets a row, with
 /// `latest_meeting_date` left `NULL` (TC-009-3: `sort=date` sorts those
 /// last, `NULLS LAST`, rather than excluding them).
+///
+/// `source_count` (IMP-REQ-015-01/-04, migration 027) is
+/// `COUNT(DISTINCT document_chunks.source_document_id)` across every
+/// `project_mentions` row resolved to the project, via a third
+/// `LEFT JOIN LATERAL` — `document_chunks.source_document_id` is the
+/// cleanest available "distinct council source" identifier (a fallback to
+/// `COUNT(DISTINCT document_chunk_id)` is only needed if that column didn't
+/// exist, which it does since migration 001). `LEFT` so a project with no
+/// mentions somehow left dangling still gets a row, with `source_count`
+/// left `NULL` rather than `0` (the indicator, IMP-REQ-015-06/-07, treats
+/// "unknown" and "zero" the same way: omit the sentence entirely, TC-015-5).
+///
+/// `first_detected_at` (IMP-REQ-015-02, migration 027) is set to `now()`
+/// only on first INSERT and — exactly like `first_surfaced_at`
+/// (IMP-REQ-004-02) — deliberately absent from the `ON CONFLICT DO UPDATE
+/// SET` list below, so it is frozen at first-detection time forever after,
+/// unaffected by any later refresh. See migration 027's own doc comment for
+/// why this is a distinct column from `first_surfaced_at` rather than a
+/// reuse of it under a second meaning.
 pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Error> {
     // IMP-REQ-003-04: `source_language` (migration 018) needs the same
     // ongoing maintenance on every insert/update this job already gives
@@ -50,7 +69,7 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
     let result = sqlx::query!(
         r#"
         INSERT INTO public_search_documents
-            (project_id, civic_address_normalized, municipality_name, municipality_slug, project_type, normalized_status, source_language, category_code, latest_meeting_date, first_surfaced_at, updated_at)
+            (project_id, civic_address_normalized, municipality_name, municipality_slug, project_type, normalized_status, source_language, category_code, latest_meeting_date, source_count, first_surfaced_at, first_detected_at, updated_at)
         SELECT
             p.id,
             p.civic_address_normalized,
@@ -61,6 +80,8 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
             latest.language,
             p.category_code,
             timeline.latest_meeting_date,
+            sources.source_count,
+            now(),
             now(),
             now()
         FROM projects p
@@ -79,6 +100,12 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
             FROM project_timeline_events pte
             WHERE pte.project_id = p.id
         ) timeline ON true
+        LEFT JOIN LATERAL (
+            SELECT COUNT(DISTINCT dc.source_document_id) AS source_count
+            FROM project_mentions pm
+            JOIN document_chunks dc ON dc.id = pm.document_chunk_id
+            WHERE pm.project_id = p.id
+        ) sources ON true
         WHERE p.civic_address_normalized IS NOT NULL
         ON CONFLICT (project_id) DO UPDATE SET
             civic_address_normalized = EXCLUDED.civic_address_normalized,
@@ -89,6 +116,7 @@ pub async fn refresh_public_search_index(pool: &PgPool) -> Result<u64, sqlx::Err
             source_language = EXCLUDED.source_language,
             category_code = EXCLUDED.category_code,
             latest_meeting_date = EXCLUDED.latest_meeting_date,
+            source_count = EXCLUDED.source_count,
             updated_at = now()
         "#
     )

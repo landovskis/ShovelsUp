@@ -21,6 +21,10 @@
 <section class="project-detail" aria-labelledby="project-title">
     <h1 id="project-title">{% if project is defined and project.title is defined %}{{ project.title }}{% else %}{{ page_title | default("Project details", true) }}{% endif %}</h1>
 
+    {% if detection_sentence is defined and detection_sentence %}
+    <p class="project-detection">{{ detection_sentence }}</p>
+    {% endif %}
+
     {% if canonical_url is defined and canonical_url %}
     <div class="copy-link-row">
         <button

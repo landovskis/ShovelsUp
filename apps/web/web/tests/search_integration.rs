@@ -2865,6 +2865,21 @@ async fn tc_015_1_search_card_shows_days_and_source_count(pool: PgPool) {
 
     refresh_public_search_index(&pool).await.unwrap();
 
+    // `first_detected_at` is set to `now()` only on first INSERT (mirroring
+    // `first_surfaced_at`'s own precedent) and is never touched by a later
+    // refresh, so a freshly-seeded-and-refreshed row always reads "today" —
+    // backdate it directly, the same technique `tc_009_3`/`tc_009_4` use for
+    // `latest_meeting_date`, to actually exercise the "N days ago" (N=5)
+    // rendering path this test is named for.
+    sqlx::query(
+        "UPDATE public_search_documents SET first_detected_at = $1 WHERE project_id = $2",
+    )
+    .bind(chrono::Utc::now() - chrono::Duration::days(5))
+    .bind(project_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
     let app = app(test_state(pool).await);
     let response = app
         .oneshot(
@@ -2900,7 +2915,9 @@ async fn tc_015_1_search_card_shows_days_and_source_count(pool: PgPool) {
 /// TC-015-1: the indicator never renders.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_015_3_day_count_boundary_singular_and_today(pool: PgPool) {
-    seed_searchable_project(&pool, "2 rue frontiere un jour", "Ville de Frontierejour Un").await;
+    let one_day_project =
+        seed_searchable_project(&pool, "2 rue frontiere un jour", "Ville de Frontierejour Un")
+            .await;
     seed_searchable_project(
         &pool,
         "3 rue frontiere aujourdhui",
@@ -2908,6 +2925,19 @@ async fn tc_015_3_day_count_boundary_singular_and_today(pool: PgPool) {
     )
     .await;
     refresh_public_search_index(&pool).await.unwrap();
+
+    // Backdate by exactly 1 day (see TC-015-1's own comment on why this is
+    // necessary: `first_detected_at` is frozen at `now()` on first insert).
+    // The "today" project is left alone — a fresh insert already reads 0
+    // days ago, which is exactly the case it's meant to exercise.
+    sqlx::query(
+        "UPDATE public_search_documents SET first_detected_at = $1 WHERE project_id = $2",
+    )
+    .bind(chrono::Utc::now() - chrono::Duration::days(1))
+    .bind(one_day_project)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let app = app(test_state(pool).await);
 
@@ -3064,8 +3094,24 @@ async fn tc_015_4_source_count_pluralization(pool: PgPool) {
 /// partial/broken fragment or a literal "None") rather than a vacuous no-op.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_015_5_missing_field_omits_entire_indicator(pool: PgPool) {
-    seed_searchable_project(&pool, "6 rue indicateur absent", "Ville de Indicateurabsent").await;
+    let project_id =
+        seed_searchable_project(&pool, "6 rue indicateur absent", "Ville de Indicateurabsent")
+            .await;
     refresh_public_search_index(&pool).await.unwrap();
+
+    // A normally-seeded-and-refreshed project always gets both fields
+    // populated (this is exactly what TC-015-1/-3/-4/-6 rely on), so this
+    // test directly nulls `first_detected_at` to simulate the one real
+    // scenario migration 027's own doc comment describes as producing a
+    // `NULL` here: a row that existed before this migration/materializer
+    // logic ran on it at least once, and hasn't been refreshed since.
+    sqlx::query(
+        "UPDATE public_search_documents SET first_detected_at = NULL WHERE project_id = $1",
+    )
+    .bind(project_id)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let app = app(test_state(pool).await);
     let response = app
@@ -3111,8 +3157,21 @@ async fn tc_015_5_missing_field_omits_entire_indicator(pool: PgPool) {
 /// never renders in either language.
 #[sqlx::test(migrations = "./migrations")]
 async fn tc_015_6_indicator_localized_en_fr(pool: PgPool) {
-    seed_searchable_project(&pool, "7 rue localisation", "Ville de Localisation").await;
+    let project_id =
+        seed_searchable_project(&pool, "7 rue localisation", "Ville de Localisation").await;
     refresh_public_search_index(&pool).await.unwrap();
+
+    // Backdate by 2 days so the EN assertion's plural "days ago" phrasing
+    // (as opposed to "today") is actually exercised — see TC-015-1's own
+    // comment on why this is necessary.
+    sqlx::query(
+        "UPDATE public_search_documents SET first_detected_at = $1 WHERE project_id = $2",
+    )
+    .bind(chrono::Utc::now() - chrono::Duration::days(2))
+    .bind(project_id)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let app = app(test_state(pool).await);
 

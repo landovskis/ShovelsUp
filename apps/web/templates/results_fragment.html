@@ -18,6 +18,9 @@
         {% if result.latest_meeting_date %}
         <span class="search-result-meeting-date">{{ meeting_date_label | default("Meeting:", true) }} {{ result.latest_meeting_date }}</span>
         {% endif %}
+        {% if result.detection_sentence %}
+        <p class="search-result-detection">{{ result.detection_sentence }}</p>
+        {% endif %}
     </li>
     {% endfor %}
 </ul>

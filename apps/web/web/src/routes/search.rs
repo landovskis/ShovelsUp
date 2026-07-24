@@ -944,6 +944,71 @@ mod core {
         }
     }
 
+    /// IMP-REQ-015-03: pure formatting of the "confidence indicator"
+    /// sentence ("Detected N day(s) ago from M council source(s)") shown on
+    /// a search result card (IMP-REQ-015-06/-11) and mirrored on the
+    /// project-detail page (`projects::core::format_detection_sentence`).
+    ///
+    /// Returns `None` — omitting the sentence entirely, not a partial
+    /// fragment (TC-015-5) — whenever `first_detected_at` is `None`,
+    /// `source_count` is `None`, or `source_count` is non-positive (treated
+    /// the same as "unknown": there is no meaningful "detected from 0
+    /// sources" sentence to show).
+    ///
+    /// Day count is a *calendar-day* difference (`.date_naive()` on both
+    /// sides, matching this codebase's existing UTC-midnight-boundary
+    /// convention — see `tc_007_6_date_from_boundary_is_inclusive`), not a
+    /// 24-hour-bucket difference: `0` renders the explicit word "today"
+    /// (TC-015-3), `1` the singular "1 day ago" (never "1 days ago"), and
+    /// any larger value the plural "N days ago". `source_count` is
+    /// singular/plural the same way: "1 council source" vs. "N council
+    /// sources" (TC-015-4). A `first_detected_at` in the future (clock skew
+    /// or a data anomaly) clamps to `0` ("today") rather than producing a
+    /// nonsensical negative day count.
+    ///
+    /// Pure data-in/data-out: `now` is passed in by the caller (read once
+    /// via `Utc::now()` in the shell) rather than read internally, so this
+    /// function needs no clock access of its own and is fully
+    /// unit-testable (IMP-REQ-015-08).
+    pub fn format_detection_sentence(
+        lang: &str,
+        first_detected_at: Option<DateTime<Utc>>,
+        source_count: Option<i64>,
+        now: DateTime<Utc>,
+    ) -> Option<String> {
+        let first_detected_at = first_detected_at?;
+        let source_count = source_count?;
+        if source_count <= 0 {
+            return None;
+        }
+
+        let days_ago = (now.date_naive() - first_detected_at.date_naive())
+            .num_days()
+            .max(0);
+        let is_fr = lang == "fr";
+
+        let days_part = match (is_fr, days_ago) {
+            (true, 0) => "aujourd'hui".to_string(),
+            (true, 1) => "il y a 1 jour".to_string(),
+            (true, n) => format!("il y a {n} jours"),
+            (false, 0) => "today".to_string(),
+            (false, 1) => "1 day ago".to_string(),
+            (false, n) => format!("{n} days ago"),
+        };
+        let source_part = match (is_fr, source_count) {
+            (true, 1) => "1 source municipale".to_string(),
+            (true, n) => format!("{n} sources municipales"),
+            (false, 1) => "1 council source".to_string(),
+            (false, n) => format!("{n} council sources"),
+        };
+
+        Some(if is_fr {
+            format!("Détecté {days_part} depuis {source_part}")
+        } else {
+            format!("Detected {days_part} from {source_part}")
+        })
+    }
+
     /// IMP-REQ-011-08: pure decision of whether a request's fault-injection
     /// signals — a `force_fault` query param or `X-Force-Fault` header,
     /// both checked against the literal value `"503"` — request an injected
@@ -2350,6 +2415,86 @@ mod core {
             );
         }
 
+        // -- format_detection_sentence (IMP-REQ-015-03/-08) --
+
+        #[test]
+        fn format_detection_sentence_none_when_first_detected_at_missing() {
+            let now = Utc::now();
+            assert_eq!(format_detection_sentence("en", None, Some(2), now), None);
+        }
+
+        #[test]
+        fn format_detection_sentence_none_when_source_count_missing() {
+            let now = Utc::now();
+            assert_eq!(
+                format_detection_sentence("en", Some(now), None, now),
+                None
+            );
+        }
+
+        #[test]
+        fn format_detection_sentence_none_when_source_count_non_positive() {
+            let now = Utc::now();
+            assert_eq!(format_detection_sentence("en", Some(now), Some(0), now), None);
+            assert_eq!(
+                format_detection_sentence("en", Some(now), Some(-1), now),
+                None
+            );
+        }
+
+        #[test]
+        fn format_detection_sentence_zero_days_renders_today() {
+            let now = Utc::now();
+            assert_eq!(
+                format_detection_sentence("en", Some(now), Some(1), now),
+                Some("Detected today from 1 council source".to_string())
+            );
+        }
+
+        #[test]
+        fn format_detection_sentence_one_day_is_singular_not_plural() {
+            let now = Utc::now();
+            let one_day_ago = now - chrono::Duration::days(1);
+            let sentence = format_detection_sentence("en", Some(one_day_ago), Some(1), now);
+            assert_eq!(
+                sentence,
+                Some("Detected 1 day ago from 1 council source".to_string())
+            );
+        }
+
+        #[test]
+        fn format_detection_sentence_multiple_days_is_plural() {
+            let now = Utc::now();
+            let five_days_ago = now - chrono::Duration::days(5);
+            let sentence = format_detection_sentence("en", Some(five_days_ago), Some(2), now);
+            assert_eq!(
+                sentence,
+                Some("Detected 5 days ago from 2 council sources".to_string())
+            );
+        }
+
+        #[test]
+        fn format_detection_sentence_future_first_detected_at_clamps_to_today() {
+            let now = Utc::now();
+            let in_the_future = now + chrono::Duration::days(3);
+            let sentence = format_detection_sentence("en", Some(in_the_future), Some(1), now);
+            assert_eq!(
+                sentence,
+                Some("Detected today from 1 council source".to_string())
+            );
+        }
+
+        #[test]
+        fn format_detection_sentence_french_localization() {
+            let now = Utc::now();
+            let five_days_ago = now - chrono::Duration::days(5);
+            let sentence = format_detection_sentence("fr", Some(five_days_ago), Some(2), now);
+            assert_eq!(
+                sentence,
+                Some("Détecté il y a 5 jours depuis 2 sources municipales".to_string())
+            );
+        }
+
         // -- should_force_fault (IMP-REQ-011-08) --
 
         #[test]
@@ -2468,15 +2613,16 @@ pub struct SearchResult {
     // type, e.g. "Demolition — 123 Main St") via
     // `core::synthesize_display_name`, populated by `run_search`.
     pub display_name: Option<String>,
-    // Loop A stub: populated by IMP-REQ-015-02/03/04 migration+materializer.
-    // `public_search_documents` has neither `first_detected_at` nor
-    // `source_count` columns yet — that migration is this requirement's own
-    // job, out of scope for this Loop A pass. Once both land, the
-    // "Detected N days ago from M council source(s)" indicator
-    // (IMP-REQ-015-06/-11) is derived from these two fields together and
-    // omitted entirely when either is `None` (TC-015-5).
+    // IMP-REQ-015-02/04: populated from `public_search_documents`, kept in
+    // sync by the refresh job's materializer alongside `latest_meeting_date`.
     pub first_detected_at: Option<chrono::DateTime<chrono::Utc>>,
     pub source_count: Option<i64>,
+    // IMP-REQ-015-06/-11: "Detected N day(s) ago from M council source(s)",
+    // derived from `first_detected_at`/`source_count` via
+    // `core::format_detection_sentence` once `lang`/`now` are known (in the
+    // route shell, not here) — `None` whenever either underlying field is
+    // `None` (TC-015-5), never a partial fragment.
+    pub detection_sentence: Option<String>,
     // IMP-REQ-009-06: mirrors `public_search_documents.latest_meeting_date`
     // (migration 024) — the most recent council meeting date this project
     // has been discussed at, `None` for a project with no timeline events
@@ -2694,7 +2840,7 @@ async fn run_search(
     let rows = match sort_order {
         core::SortOrder::Relevance => sqlx::query!(
             r#"
-            SELECT project_id, civic_address_normalized, municipality_name, project_type, normalized_status, source_language, latest_meeting_date
+            SELECT project_id, civic_address_normalized, municipality_name, project_type, normalized_status, source_language, latest_meeting_date, first_detected_at, source_count
             FROM public_search_documents
             WHERE (
                 civic_address_normalized ILIKE $1
@@ -2735,14 +2881,15 @@ async fn run_search(
             project_type: row.project_type,
             normalized_status: row.normalized_status,
             source_language: row.source_language,
-            first_detected_at: None,
-            source_count: None,
+            first_detected_at: row.first_detected_at,
+            source_count: row.source_count,
+            detection_sentence: None,
             latest_meeting_date: row.latest_meeting_date,
         })
         .collect(),
         core::SortOrder::Date => sqlx::query!(
             r#"
-            SELECT project_id, civic_address_normalized, municipality_name, project_type, normalized_status, source_language, latest_meeting_date
+            SELECT project_id, civic_address_normalized, municipality_name, project_type, normalized_status, source_language, latest_meeting_date, first_detected_at, source_count
             FROM public_search_documents
             WHERE (
                 civic_address_normalized ILIKE $1
@@ -2783,8 +2930,9 @@ async fn run_search(
             project_type: row.project_type,
             normalized_status: row.normalized_status,
             source_language: row.source_language,
-            first_detected_at: None,
-            source_count: None,
+            first_detected_at: row.first_detected_at,
+            source_count: row.source_count,
+            detection_sentence: None,
             latest_meeting_date: row.latest_meeting_date,
         })
         .collect(),
@@ -3147,11 +3295,26 @@ pub async fn get_search_page(
     // slice. `pagination` itself is threaded into the template context below
     // so the results fragment can render real "Next"/"Previous" pagination
     // controls (`has_more`/`page`) rather than discarding it.
-    let (search_results, search_error, pagination) = match search_outcome {
+    let (mut search_results, search_error, pagination) = match search_outcome {
         Some(Ok((results, pagination))) => (results, false, Some(pagination)),
         Some(Err(_)) => (Vec::new(), true, None),
         None => (Vec::new(), false, None),
     };
+
+    // IMP-REQ-015-06/-11: derive each result's "Detected N day(s) ago from M
+    // council source(s)" sentence here in the shell, where `lang` and a
+    // single shared `now` are both known — `run_search` itself has neither,
+    // by design (IMP-REQ-015-03's pure function takes both as arguments
+    // rather than reading a clock).
+    let detection_now = chrono::Utc::now();
+    for result in &mut search_results {
+        result.detection_sentence = core::format_detection_sentence(
+            lang,
+            result.first_detected_at,
+            result.source_count,
+            detection_now,
+        );
+    }
 
     // IMP-REQ-002-06: populates the search form's municipality `<select>`
     // from the live `municipalities` table (not a hardcoded list, same

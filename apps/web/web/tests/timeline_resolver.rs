@@ -26,6 +26,7 @@ use axum::http::{Request, StatusCode};
 use minijinja::{path_loader, Environment};
 use serde_json::Value;
 use shovelsup_pipeline::resolver::resolve_mention;
+use shovelsup_web::jobs::public_search_refresh::refresh_public_search_index;
 use shovelsup_web::{app, AppState};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
@@ -1407,6 +1408,21 @@ async fn tc_015_2_project_detail_page_shows_days_and_source_count(pool: PgPool) 
             .await;
     let mention_id =
         insert_mention(&pool, chunk_id_one, "700 rue detection detail", "residential").await;
+    // `insert_mention` deliberately leaves `project_mentions.project_id`
+    // unset (it's meant to feed `resolve_mention` elsewhere in this file) —
+    // link it directly here, since this test wants an already-resolved
+    // mention, not to exercise the resolver itself. Without this,
+    // `refresh_public_search_index`'s `source_count` subquery (which joins
+    // on `pm.project_id = p.id`) finds zero matching rows regardless of how
+    // many mentions exist.
+    sqlx::query!(
+        "UPDATE project_mentions SET project_id = $1 WHERE id = $2",
+        project_id,
+        mention_id
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     seed_timeline_event(
         &pool,
         project_id,
@@ -1417,12 +1433,71 @@ async fn tc_015_2_project_detail_page_shows_days_and_source_count(pool: PgPool) 
     .await;
 
     // Second distinct source document, feeding the same project via a
-    // second project_mention — the future "distinct council source" signal
-    // that would drive source_count = 2 once IMP-REQ-015 lands.
-    let chunk_id_two =
-        seed_document_chunk_with_source_url(&pool, "https://test-city.example/detail-doc-two")
-            .await;
-    insert_mention(&pool, chunk_id_two, "700 rue detection detail", "residential").await;
+    // second project_mention — the "distinct council source" signal that
+    // drives source_count = 2. Written inline rather than via
+    // `seed_document_chunk_with_source_url` (which hardcodes the
+    // 'Test City'/'test-city' municipality — calling it twice in the same
+    // test's own isolated DB collides on that unique name/slug, unlike
+    // every other caller of that helper in this file, which only ever call
+    // it once per test) — uses its own distinct, uniquely-suffixed
+    // municipality instead, the same technique
+    // `search_integration.rs`'s `tc_015_1`/`tc_015_4` use for their own
+    // second-source fixtures.
+    let suffix = Uuid::new_v4();
+    let municipality_id_two = sqlx::query_scalar!(
+        "INSERT INTO municipalities (name, slug, domain_allowlist) VALUES ($1, $2, ARRAY[$3]) RETURNING id",
+        format!("Second Detail Source Municipality {suffix}"),
+        format!("slug-{suffix}"),
+        format!("{suffix}.example"),
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let doc_id_two = sqlx::query_scalar!(
+        "INSERT INTO source_documents (municipality_id, source_url, checksum, content, content_type) \
+         VALUES ($1, $2, 'chk-detail-two', ''::bytea, 'text/html') RETURNING id",
+        municipality_id_two,
+        format!("https://{suffix}.example/detail-doc-two"),
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let chunk_id_two = sqlx::query_scalar!(
+        "INSERT INTO document_chunks (source_document_id, chunk_index, content) \
+         VALUES ($1, 0, 'second detail chunk text') RETURNING id",
+        doc_id_two
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mention_id_two =
+        insert_mention(&pool, chunk_id_two, "700 rue detection detail", "residential").await;
+    sqlx::query!(
+        "UPDATE project_mentions SET project_id = $1 WHERE id = $2",
+        project_id,
+        mention_id_two
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    refresh_public_search_index(&pool).await.unwrap();
+
+    // `first_detected_at` is set to `now()` only on first INSERT (mirroring
+    // `first_surfaced_at`'s own precedent) and is never touched by a later
+    // refresh, so a freshly-refreshed row always reads "today" — backdate
+    // it directly, the same technique the search-card half of this
+    // requirement (`tc_015_1_search_card_shows_days_and_source_count` in
+    // `search_integration.rs`) uses, to actually exercise the "N days ago"
+    // (N=5) rendering path this test is named for.
+    sqlx::query(
+        "UPDATE public_search_documents SET first_detected_at = $1 WHERE project_id = $2",
+    )
+    .bind(chrono::Utc::now() - chrono::Duration::days(5))
+    .bind(project_id)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let app = app(test_state(pool).await);
     let response = app

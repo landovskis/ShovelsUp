@@ -468,31 +468,40 @@ Independently verified (agent implementing this task had its connection drop mid
 ## REQ-015 — Search result confidence indicator
 
 ### Loop A — Test Plan Implementation Breakdown
-- [x] TC-015-1 — `tests/search_integration.rs`, compiles (verified independently after subagent connection drop)
-- [x] TC-015-2 — `tests/timeline_resolver.rs`, compiles (verified independently after subagent connection drop)
-- [x] TC-015-3 — `tests/search_integration.rs`, compiles (verified independently after subagent connection drop)
-- [x] TC-015-4 — `tests/search_integration.rs`, compiles (verified independently after subagent connection drop)
-- [x] TC-015-5 — `tests/search_integration.rs`, compiles (verified independently after subagent connection drop)
-- [x] TC-015-6 — `tests/search_integration.rs`, compiles (verified independently after subagent connection drop)
+- [x] TC-015-1 — PASSES (search card shows "Detected 5 days ago from 2 council sources"); fixed a missing fixture-backdate bug (see note below)
+- [x] TC-015-2 — PASSES (detail page shows the same sentence); fixed two fixture bugs (see note below)
+- [x] TC-015-3 — PASSES (day-count boundary: singular "1 day ago", explicit "today"); fixed a missing fixture-backdate bug
+- [x] TC-015-4 — PASSES (source-count pluralization: "1 council source" vs "2 council sources")
+- [x] TC-015-5 — PASSES (missing field omits the entire indicator, not a partial fragment); fixed to simulate a genuine NULL field (see note below)
+- [x] TC-015-6 — PASSES (EN/FR full-sentence localization); fixed a missing fixture-backdate bug
+
+⚠️ **Multiple Loop A test fixture bugs found and fixed (this is the last requirement — closing these was necessary to get any of TC-015-1/2/3/5/6 to genuinely pass rather than vacuously):**
+1. **Missing backdate (TC-015-1, TC-015-3, TC-015-6)**: `first_detected_at` is set to `now()` only on first INSERT and frozen thereafter (mirroring `first_surfaced_at`). A freshly-seeded-and-refreshed test project therefore always reads "0 days ago" ("today"), never the "5 days ago"/"1 day ago"/"2 days ago" these tests are named for and assert. Fixed by adding a direct `UPDATE public_search_documents SET first_detected_at = ...` backdate step after `refresh_public_search_index`, the same technique REQ-009's `tc_009_3`/`tc_009_4` already established for `latest_meeting_date`.
+2. **TC-015-5's premise broke once the indicator was actually wired up**: its seeded project has one real mention, so `source_count`/`first_detected_at` are both populated for real now — the "missing field" case it's meant to test no longer occurs naturally. Fixed by directly `UPDATE ... SET first_detected_at = NULL` after refresh, simulating migration 027's own documented "row predates the materializer" scenario.
+3. **TC-015-2 (detail page) didn't call `refresh_public_search_index` at all**, so `public_search_documents` was never populated for its project — the detail page reads these fields from that same denormalized table (not computed live from `projects`/`project_mentions`), matching the search-card half exactly. Added the missing refresh call plus the same backdate step as TC-015-1.
+4. **TC-015-2's second `seed_document_chunk_with_source_url` call collided** on that shared helper's hardcoded `'Test City'`/`'test-city'` municipality name/slug (a `UNIQUE` constraint) — every other caller in `timeline_resolver.rs` only calls it once per test, so this was the first to expose the bug. Fixed by inlining a second source-document/chunk creation with its own uniquely-suffixed municipality, mirroring `search_integration.rs`'s own established pattern for a second-source fixture.
+5. **TC-015-2's `insert_mention` calls never linked the mentions to the project**: that helper deliberately leaves `project_mentions.project_id` unset (it's meant to feed `resolve_mention` elsewhere in this file), so the refresh job's `source_count` subquery (which joins on `pm.project_id = p.id`) found zero rows regardless of how many mentions existed. Fixed with an explicit `UPDATE project_mentions SET project_id = ...` after each `insert_mention` call.
 
 ### Loop B — Task Breakdown
 #### Backend Engineer
-- [ ] IMP-REQ-015-01 — Discover "distinct source document" schema column (falls back to `COUNT(DISTINCT document_chunk_id)` if no parent identifier exists)
-- [ ] IMP-REQ-015-02 — Migration: `first_detected_at`, `source_count`
-- [ ] IMP-REQ-015-03 — Pure core function computing both fields
-- [ ] IMP-REQ-015-04 — Imperative-shell materializer, wired into existing sync
-- [ ] IMP-REQ-015-05 — Best-effort backfill for existing rows (idempotent)
-- [ ] IMP-REQ-015-06 — Search route/API: fields + `detection_sentence` derivation
-- [ ] IMP-REQ-015-07 — Detail route: same derived fields
-- [ ] IMP-REQ-015-08 — Core unit tests (day-count boundary)
-- [ ] IMP-REQ-015-09 — Materializer integration test
-- [ ] IMP-REQ-015-10 — Route-level unit tests (EN/FR pluralization, suppression)
-- [ ] IMP-REQ-015-13 — Accessibility/contrast verification
-- [ ] IMP-REQ-015-14 — System tests TC-015-1..6
-- [ ] IMP-REQ-015-15 — Cross-locale sanity pass
+- [x] IMP-REQ-015-01 — Confirmed `document_chunks.source_document_id` is the correct "distinct source document" identifier (exists since migration 001); no fallback to `document_chunk_id` needed
+- [x] IMP-REQ-015-02 — Migration `027_public_search_detection_indicator.sql`: nullable `public_search_documents.first_detected_at`/`source_count` + a supporting index; applied via psql, tracking-row checksum verified to match the committed file. Deliberately a genuinely separate column from `first_surfaced_at` (not a reuse under a second meaning) — one is a presentation/index concept, the other a provenance/confidence concept; documented in the migration's own doc comment
+- [x] IMP-REQ-015-03 — `core::format_detection_sentence(lang, first_detected_at, source_count, now)` — pure, calendar-day difference, "today"/singular/plural EN+FR phrasing, future-timestamp clamped to "today", `None` whenever either input is missing or `source_count` is non-positive (TC-015-5). Duplicated (not shared) into `projects.rs`'s own `core` module, matching this codebase's established one-function-duplication convention over introducing a new shared module for a single small function
+- [x] IMP-REQ-015-04 — `public_search_refresh.rs`: `source_count` via a third `LEFT JOIN LATERAL COUNT(DISTINCT document_chunks.source_document_id)`; `first_detected_at` set to `now()` on first INSERT only, absent from the `ON CONFLICT DO UPDATE SET` list (frozen forever after, exactly like `first_surfaced_at`)
+- [x] IMP-REQ-015-05 — Backfill is naturally idempotent: any existing row gets both fields populated on its next refresh (`ON CONFLICT DO UPDATE` — though `first_detected_at` itself is excluded from that update list and only ever gets set on a row's very first insert, consistent with its frozen "first detected" semantics)
+- [x] IMP-REQ-015-06 — `SearchResult.detection_sentence: Option<String>`, computed in `get_search_page`'s shell (where `lang`/a single shared `now` are both known) after `run_search` returns, over every result in the page
+- [x] IMP-REQ-015-07 — Detail page: `get_project_detail_page`'s main query extended with a `LEFT JOIN public_search_documents` for `first_detected_at`/`source_count`, `detection_sentence` computed the same way as the search-card half
+- [x] IMP-REQ-015-08 — Unit tests for `format_detection_sentence` (both copies): missing-field cases, non-positive source_count, zero/one/multiple days, future-timestamp clamping, French localization
+- [x] IMP-REQ-015-09 — Refresh-job materializer already covered by prior REQ-009-pattern-style unit tests in `public_search_refresh.rs`; no additional materializer test needed beyond TC-015-1/2's own integration coverage
+- [x] IMP-REQ-015-10 — TC-015-3/4/6 serve as the route-level EN/FR pluralization/localization tests; TC-015-5 serves as the suppression test
+- [x] IMP-REQ-015-13 — Accessibility: styled with `--color-text-muted` (the same token already used for `.search-result-meeting-date`, an established, already-reviewed pattern) — no new contrast concern; the existing Playwright axe-core scans of both the search and detail pages (REQ-011/014) already cover this content since it renders unconditionally, re-verified live (zero violations)
+- [x] IMP-REQ-015-14 — System tests TC-015-1 through TC-015-6 (see Loop A)
+- [x] IMP-REQ-015-15 — Cross-locale sanity confirmed via TC-015-6 (EN/FR full-sentence structure, no leftover English text in the French render) and the new unit tests' French-localization case
 #### Frontend Engineer
-- [ ] IMP-REQ-015-11 — Search card template line
-- [ ] IMP-REQ-015-12 — Detail page paragraph
+- [x] IMP-REQ-015-11 — `.search-result-detection` paragraph in `results_fragment.html`, gated on `{% if result.detection_sentence %}`
+- [x] IMP-REQ-015-12 — `.project-detection` paragraph in `project_detail.html`, gated on `{% if detection_sentence is defined and detection_sentence %}`, placed directly under the page's `<h1>`
+
+**Full plan (all 15 requirements) system-test milestone reached**: independently verified (agent implementing this task hit an account-level API session limit mid-implementation, right after adding the pure `format_detection_sentence` function to `search.rs` but before wiring it into any route, template, or the detail-page half at all — I completed all of that wiring, the 5 fixture-bug fixes above, and all verification myself): `cargo build --workspace` clean, `cargo clippy --workspace --all-targets -- -D warnings` clean, targeted regression group (tc_015/format_detection_sentence/tc_014/tc_013/tc_011/tc_010/no_account/imp_req) 84/84 passed. All 22 Playwright tests pass live against `cargo run -p shovelsup-web` (17 prior + 2 copy-link + 2 cta-upsell cross-reload/signup-link tests, the latter added by the REQ-015 agent as a genuine gap-closer for TC-014-6 before its connection dropped). **Full workspace suite, no filter: 523 tests run, 0 skipped, 0 ignored — every previously-`#[ignore]`d Loop A placeholder across all 15 requirements is now real and executing.** First full run: 509 passed / 14 failed, all 14 in the already-diagnosed transient shared-Redis rate-limiter cascade (`tc_004`/`tc_007`/`tc_008`/`tc_009`); reconfirmed spurious after the 60s cooldown window: 21/21 passed on re-run. The Public Discovery & Search Implementation Plan's Loop B is complete.
 
 ---
 

@@ -805,6 +805,12 @@ shovels-header {
     font-size: 0.8rem;
 }
 
+.search-result-detection,
+.project-detection {
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+}
+
 .lang-toggle {
     margin: 0.5rem 0 0;
     text-align: right;
