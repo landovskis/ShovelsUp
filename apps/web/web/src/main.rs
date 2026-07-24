@@ -10,6 +10,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use shovelsup_web::jobs::public_search_refresh::refresh_public_search_index;
 use shovelsup_web::AppState;
 
 #[tokio::main]
@@ -64,6 +65,17 @@ async fn main() {
             match worker::run_due_fetch_jobs(&pipeline_db, &ocr, &llm).await {
                 Ok(summary) => tracing::info!(?summary, "pipeline tick complete"),
                 Err(e) => tracing::error!(error = %e, "run_due_fetch_jobs failed"),
+            }
+            // Re-materialize `public_search_documents` from `projects` right
+            // after the fetch/extraction pipeline runs, in the same tick —
+            // this is exactly when new/updated projects exist that the
+            // public search index needs to pick up. Previously this job
+            // existed (with its own test coverage) but was never actually
+            // invoked outside of tests, so the public search index never
+            // populated in a real deployment.
+            match refresh_public_search_index(&pipeline_db).await {
+                Ok(rows) => tracing::info!(rows, "public search index refresh complete"),
+                Err(e) => tracing::error!(error = %e, "refresh_public_search_index failed"),
             }
         }
     });

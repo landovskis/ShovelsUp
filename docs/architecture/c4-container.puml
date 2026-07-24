@@ -8,7 +8,7 @@ Person(operator, "Admin operator", "Reviews ambiguous extraction results, reproc
 System_Ext(council, "Montreal City Council", "Publishes agenda/minutes documents on public web pages.")
 
 System_Boundary(shovelsup, "ShovelsUp") {
-    Container(web, "shovelsup-web", "Rust, Axum, Minijinja", "HTTP server. Serves the public search/project-detail pages (public_router) and the admin review/reprocess UI (authenticated_router, behind require_admin). Single deployable binary.")
+    Container(web, "shovelsup-web", "Rust, Axum, Minijinja", "HTTP server. Serves the public search/project-detail pages (public_router) and the admin review/reprocess UI (authenticated_router, behind require_admin). Also runs the public_search_documents refresh job (ADR 012) in the same hourly tick as the fetch pipeline. Single deployable binary.")
 
     Container(pipeline, "shovelsup-pipeline", "Rust library crate", "Ingestion pipeline: fetcher, parser (text/OCR), LLM extractor, status normalizer, resolver, scheduler. NOT a separate deployable — linked directly into the shovelsup-web binary and driven by an in-process tokio::spawn interval loop started in web's main.rs (ADR 006), ticking hourly. No standalone process or API of its own.")
 
