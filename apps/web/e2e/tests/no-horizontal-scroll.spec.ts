@@ -27,11 +27,11 @@ test('home page has no horizontal scroll at 320px', async ({ page }) => {
 });
 
 test('search page (no query) has no horizontal scroll at 320px', async ({ page }) => {
-  await assertNoHorizontalScroll(page, '/search');
+  await assertNoHorizontalScroll(page, '/projects');
 });
 
 test('search results page has no horizontal scroll at 320px', async ({ page }) => {
-  await assertNoHorizontalScroll(page, '/search?q=e2e+harness');
+  await assertNoHorizontalScroll(page, '/projects?q=e2e+harness');
 });
 
 test('project detail page has no horizontal scroll at 320px', async ({ page }) => {

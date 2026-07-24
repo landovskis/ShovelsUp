@@ -65,7 +65,7 @@ async fn seed_project(pool: &PgPool, address: &str) -> Uuid {
     .unwrap()
 }
 
-/// TC-011-1: rendered HTML for `GET /search` includes a
+/// TC-011-1: rendered HTML for `GET /projects` includes a
 /// `<meta name="viewport" content="width=device-width, initial-scale=1">`
 /// tag (or equivalent) so mobile browsers don't apply desktop-width
 /// zoomed-out layout. `base.html` (extended by `search.html`) already
@@ -77,7 +77,7 @@ async fn tc_011_1_search_page_has_viewport_meta_tag(pool: PgPool) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search")
+                .uri("/projects")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -93,7 +93,7 @@ async fn tc_011_1_search_page_has_viewport_meta_tag(pool: PgPool) {
 
     assert!(
         html.contains(r#"name="viewport""#),
-        "expected a viewport meta tag in /search's rendered HTML, got: {html}"
+        "expected a viewport meta tag in /projects's rendered HTML, got: {html}"
     );
     assert!(
         html.contains("width=device-width"),
@@ -212,11 +212,11 @@ async fn tc_011_4_3_bad_request_error_page_should_use_responsive_shell(pool: PgP
 }
 
 /// TC-011-5: a test-only fault-injection hook (IMP-REQ-011-08) lets a test
-/// force a 503 on `/search` to verify its error state renders through the
+/// force a 503 on `/projects` to verify its error state renders through the
 /// responsive shell, without needing a real DB outage (unlike
 /// `pool.close()`, which works but can't be scoped to a single request/test
 /// alongside other assertions in the same suite). `core::should_force_fault`
-/// (`web/src/routes/search.rs`) recognizes either an `X-Force-Fault: 503`
+/// (`web/src/routes/projects.rs`) recognizes either an `X-Force-Fault: 503`
 /// header or a `force_fault=503` query param (either alone is sufficient);
 /// `get_search_page` honors it only in debug builds (`cfg(debug_assertions)`)
 /// — a release build never even contains the code path that reads these
@@ -231,7 +231,7 @@ async fn tc_011_5_fault_injection_hook_forces_503_through_responsive_shell(pool:
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=test&force_fault=503")
+                .uri("/projects?q=test&force_fault=503")
                 .header("x-force-fault", "503")
                 .body(Body::empty())
                 .unwrap(),

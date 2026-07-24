@@ -29,7 +29,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 /// Builds a unique loopback `SocketAddr` per call so any test below that
-/// exercises a rate-limited path (`/search`, `/api/v1/projects/search`)
+/// exercises a rate-limited path (`/projects`, `/api/v1/projects/search`)
 /// gets its own Redis rate-limit bucket via `MockConnectInfo`, rather than
 /// sharing the fallback `"unknown"` bucket every plain (non-`ConnectInfo`)
 /// `oneshot()` call in this crate's OTHER test files lands in. Mirrors
@@ -76,7 +76,7 @@ async fn seed_project(pool: &PgPool, address: &str) -> Uuid {
     .unwrap()
 }
 
-/// Asserts no AUTH-shaped `Set-Cookie` header is present. `GET /search`
+/// Asserts no AUTH-shaped `Set-Cookie` header is present. `GET /projects`
 /// legitimately sets a `lang=...` cookie (IMP-REQ-003-08, UI-locale
 /// persistence — not an auth mechanism), so a blanket "no Set-Cookie at
 /// all" assertion is no longer correct for that route; this narrows the
@@ -93,8 +93,8 @@ fn assert_no_auth_cookie_set(headers: &axum::http::HeaderMap, context: &str) {
     }
 }
 
-/// TC-010-01: the full anonymous journey — `GET /search`, `GET
-/// /search?q=...`, `GET /projects/{id}` — all succeed with no auth
+/// TC-010-01: the full anonymous journey — `GET /projects`, `GET
+/// /projects?q=...`, `GET /projects/{id}` — all succeed with no auth
 /// challenge (no 401/403), no `Set-Cookie` auth-challenge header, and no
 /// `Location` redirect to a login page, all without sending any
 /// session/auth cookie in the request.
@@ -103,12 +103,12 @@ async fn tc_010_01_full_anonymous_journey_succeeds_without_auth_challenge(pool: 
     let project_id = seed_project(&pool, "1 anonymous journey ave").await;
     let app = app(test_state(pool).await);
 
-    // Step 1: bare /search form load, no query.
+    // Step 1: bare /projects form load, no query.
     let search_form_response = app
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search")
+                .uri("/projects")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -117,19 +117,19 @@ async fn tc_010_01_full_anonymous_journey_succeeds_without_auth_challenge(pool: 
     assert_eq!(search_form_response.status(), StatusCode::OK);
     assert_no_auth_cookie_set(
         search_form_response.headers(),
-        "GET /search must not set any auth-challenge cookie for an anonymous request",
+        "GET /projects must not set any auth-challenge cookie for an anonymous request",
     );
     assert!(
         search_form_response.headers().get("location").is_none(),
-        "GET /search must not redirect an anonymous request to a login page"
+        "GET /projects must not redirect an anonymous request to a login page"
     );
 
-    // Step 2: /search?q=... results.
+    // Step 2: /projects?q=... results.
     let search_results_response = app
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=anonymous+journey")
+                .uri("/projects?q=anonymous+journey")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -138,7 +138,7 @@ async fn tc_010_01_full_anonymous_journey_succeeds_without_auth_challenge(pool: 
     assert_eq!(search_results_response.status(), StatusCode::OK);
     assert_no_auth_cookie_set(
         search_results_response.headers(),
-        "GET /search?q=... must not set any auth-challenge cookie for an anonymous request",
+        "GET /projects?q=... must not set any auth-challenge cookie for an anonymous request",
     );
     assert!(search_results_response.headers().get("location").is_none());
 
@@ -237,7 +237,7 @@ async fn tc_010_04_public_routes_never_return_auth_challenge_status(pool: PgPool
 
     let public_paths = vec![
         "/".to_string(),
-        "/search".to_string(),
+        "/projects".to_string(),
         "/api/v1/projects/search?q=test".to_string(),
         format!("/projects/{project_id}"),
         format!("/api/v1/projects/{project_id}/timeline"),
@@ -367,7 +367,7 @@ async fn tc_010_08_public_router_has_no_auth_layer(pool: PgPool) {
 
     let public_paths = vec![
         "/".to_string(),
-        "/search".to_string(),
+        "/projects".to_string(),
         "/api/v1/projects/search?q=test".to_string(),
         "/categories".to_string(),
         format!("/projects/{project_id}"),

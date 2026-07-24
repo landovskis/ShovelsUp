@@ -58,8 +58,7 @@ pub async fn index(
             decision_label: "Dernière décision",
             decision_value: "Avis favorable",
             coverage_label: "19 arrondissements suivis",
-            nav_permits: "Permis",
-            nav_council: "Conseil",
+            nav_projects: "Projets",
         },
         _ => HomeCopy {
             eyebrow: "Montreal construction, out in the open",
@@ -82,8 +81,7 @@ pub async fn index(
             decision_label: "Latest decision",
             decision_value: "Favourable notice",
             coverage_label: "Tracking 19 boroughs",
-            nav_permits: "Permits",
-            nav_council: "Council",
+            nav_projects: "Projects",
         },
     };
 
@@ -116,8 +114,7 @@ pub async fn index(
             decision_label => copy.decision_label,
             decision_value => copy.decision_value,
             coverage_label => copy.coverage_label,
-            nav_permits => copy.nav_permits,
-            nav_council => copy.nav_council,
+            nav_projects => copy.nav_projects,
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -145,6 +142,5 @@ struct HomeCopy {
     decision_label: &'static str,
     decision_value: &'static str,
     coverage_label: &'static str,
-    nav_permits: &'static str,
-    nav_council: &'static str,
+    nav_projects: &'static str,
 }

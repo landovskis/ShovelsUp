@@ -14,7 +14,7 @@ test.use({ viewport: { width: 320, height: 640 } });
 // page really does render French label text through the responsive
 // markup at a mobile viewport, not just that the label constants differ.
 test('French search page renders French filter-sheet labels at 320px', async ({ page }) => {
-  await page.goto('/search?lang=fr');
+  await page.goto('/projects?lang=fr');
   await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
 
   const trigger = page.locator('#filter-sheet-trigger');
@@ -29,7 +29,7 @@ test('French search page renders French filter-sheet labels at 320px', async ({ 
 });
 
 test('English search page renders English filter-sheet labels at 320px', async ({ page }) => {
-  await page.goto('/search?lang=en');
+  await page.goto('/projects?lang=en');
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
 
   const trigger = page.locator('#filter-sheet-trigger');
@@ -47,7 +47,7 @@ test('English search page renders English filter-sheet labels at 320px', async (
 // mobile viewport (320px) — a no-results search and the fault-injected 503
 // (IMP-REQ-011-08) both still carry the responsive shell and readable copy.
 test('zero-results empty state is readable and shell-wrapped at 320px', async ({ page }) => {
-  await page.goto('/search?q=no-such-project-should-ever-match-this-literal-string');
+  await page.goto('/projects?q=no-such-project-should-ever-match-this-literal-string');
   await expect(page.locator('.search-empty')).toBeVisible();
   const { scrollWidth, clientWidth } = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
@@ -57,7 +57,7 @@ test('zero-results empty state is readable and shell-wrapped at 320px', async ({
 });
 
 test('fault-injected 503 search error state is shell-wrapped and readable at 320px', async ({ page }) => {
-  const response = await page.goto('/search?q=fault&force_fault=503');
+  const response = await page.goto('/projects?q=fault&force_fault=503');
   expect(response?.status()).toBe(503);
   await expect(page.locator('.search-error')).toBeVisible();
 });

@@ -864,8 +864,7 @@ struct TimelineLabels {
     retry_label: &'static str,
     timeline_empty_message: &'static str,
     status_update_fallback: &'static str,
-    nav_permits: &'static str,
-    nav_council: &'static str,
+    nav_projects: &'static str,
     confidence_notice_label: &'static str,
     confidence_unassessed_fallback: &'static str,
     source_document_link_label: &'static str,
@@ -946,8 +945,7 @@ fn timeline_labels(lang: &str) -> TimelineLabels {
             retry_label: "Réessayer",
             timeline_empty_message: "Aucun événement n’a encore été enregistré pour ce projet.",
             status_update_fallback: "Mise à jour enregistrée",
-            nav_permits: "Permis",
-            nav_council: "Conseil",
+            nav_projects: "Projets",
             confidence_notice_label: "Niveau de confiance : ",
             confidence_unassessed_fallback: "pas encore évalué",
             source_document_link_label: "Voir le document source",
@@ -963,8 +961,7 @@ fn timeline_labels(lang: &str) -> TimelineLabels {
             retry_label: "Retry timeline",
             timeline_empty_message: "No timeline events have been recorded for this project yet.",
             status_update_fallback: "Update recorded",
-            nav_permits: "Permits",
-            nav_council: "Council",
+            nav_projects: "Projects",
             confidence_notice_label: "Confidence level: ",
             confidence_unassessed_fallback: "not yet assessed",
             source_document_link_label: "View source document",
@@ -1032,8 +1029,7 @@ pub async fn get_project_detail_page(
         let html = tmpl
             .render(context! {
                 lang => lang,
-                nav_permits => labels.nav_permits,
-                nav_council => labels.nav_council,
+                nav_projects => labels.nav_projects,
                 page_title => labels.page_title,
                 timeline_title => labels.timeline_title,
                 timeline_error => true,
@@ -1055,8 +1051,7 @@ pub async fn get_project_detail_page(
             let html = tmpl
                 .render(context! {
                     lang => lang,
-                    nav_permits => labels.nav_permits,
-                    nav_council => labels.nav_council,
+                    nav_projects => labels.nav_projects,
                     page_title => labels.page_title,
                     page_error => true,
                     page_error_title => title,
@@ -1227,8 +1222,7 @@ pub async fn get_project_detail_page(
     let html = tmpl
         .render(context! {
             lang => lang,
-            nav_permits => labels.nav_permits,
-            nav_council => labels.nav_council,
+            nav_projects => labels.nav_projects,
             page_title => labels.page_title,
             timeline_title => labels.timeline_title,
             timeline_empty_message => labels.timeline_empty_message,

@@ -527,7 +527,7 @@ async fn imp_req_001_05_forged_x_forwarded_for_does_not_frame_another_ip(pool: P
     );
 }
 
-/// TC-001-6: `GET /search` with `Accept-Language: fr` renders French labels
+/// TC-001-6: `GET /projects` with `Accept-Language: fr` renders French labels
 /// and result content, and the server-rendered page never contains a
 /// client-side modal/dialog element — this is a plain no-JS page regardless
 /// of locale.
@@ -540,7 +540,7 @@ async fn tc_001_6_french_locale_no_modal(pool: PgPool) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=principale")
+                .uri("/projects?q=principale")
                 .header("accept-language", "fr")
                 .body(Body::empty())
                 .unwrap(),
@@ -922,7 +922,7 @@ async fn tc_003_2_explicit_lang_param_overrides_cookie_and_header(pool: PgPool) 
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=saint-denis&lang=fr")
+                .uri("/projects?q=saint-denis&lang=fr")
                 .header("accept-language", "en")
                 .header("cookie", "lang=en")
                 .body(Body::empty())
@@ -959,7 +959,7 @@ async fn tc_003_3_lang_cookie_overrides_accept_language_header(pool: PgPool) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=ontario")
+                .uri("/projects?q=ontario")
                 .header("accept-language", "en")
                 .header("cookie", "lang=fr")
                 .body(Body::empty())
@@ -994,7 +994,7 @@ async fn tc_003_4_no_param_or_cookie_falls_back_to_accept_language(pool: PgPool)
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=ren%C3%A9")
+                .uri("/projects?q=ren%C3%A9")
                 .header("accept-language", "fr")
                 .body(Body::empty())
                 .unwrap(),
@@ -1036,7 +1036,7 @@ async fn tc_003_5_per_result_source_language_badge_independent_of_ui_lang(pool: 
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=parc")
+                .uri("/projects?q=parc")
                 .header("accept-language", "fr")
                 .body(Body::empty())
                 .unwrap(),
@@ -1115,7 +1115,7 @@ async fn tc_004_1_json_api_returns_paginated_envelope(pool: PgPool) {
     );
 }
 
-/// TC-004-2: an HTMX request (`HX-Request: true`) to `GET /search` receives
+/// TC-004-2: an HTMX request (`HX-Request: true`) to `GET /projects` receives
 /// only the results fragment (no `<html>`/`<head>` page chrome), while a
 /// plain browser request (no `HX-Request` header) still receives the full
 /// page. This is IMP-REQ-004-05's real behavior, wired in `get_search_page`
@@ -1137,7 +1137,7 @@ async fn tc_004_2_htmx_request_returns_fragment_not_full_page(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=fragment")
+                .uri("/projects?q=fragment")
                 .header("HX-Request", "true")
                 .body(Body::empty())
                 .unwrap(),
@@ -1167,7 +1167,7 @@ async fn tc_004_2_htmx_request_returns_fragment_not_full_page(pool: PgPool) {
     let full_page_response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=fragment")
+                .uri("/projects?q=fragment")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1882,7 +1882,7 @@ async fn imp_req_008_07_category_chip_row_renders_all_five_categories_with_label
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search")
+                .uri("/projects")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1939,7 +1939,7 @@ async fn imp_req_008_07_category_chip_row_renders_all_five_categories_with_label
     );
 }
 
-/// IMP-REQ-008-08: `GET /search`'s own category-chip-row query (distinct
+/// IMP-REQ-008-08: `GET /projects`'s own category-chip-row query (distinct
 /// from the `GET /categories` facet endpoint TC-008-5 covers) must degrade
 /// gracefully on failure — the same precedent the municipality `<select>`'s
 /// own query already follows (see the doc comment on `get_search_page`'s
@@ -1958,7 +1958,7 @@ async fn imp_req_008_08_search_page_degrades_gracefully_on_categories_query_fail
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search")
+                .uri("/projects")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2007,7 +2007,7 @@ async fn imp_req_008_14_selected_category_is_accessible_and_chips_preserve_other
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=demolition&municipality_slug=montreal&category=commercial")
+                .uri("/projects?q=demolition&municipality_slug=montreal&category=commercial")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2037,7 +2037,7 @@ async fn imp_req_008_14_selected_category_is_accessible_and_chips_preserve_other
     );
     assert!(
         html.contains(
-            r#"class="category-chip category-chip-selected" aria-current="true" hx-get="&#x2f;search?q=demolition&amp;municipality_slug=montreal&amp;category=commercial&amp;lang=en"#
+            r#"class="category-chip category-chip-selected" aria-current="true" hx-get="&#x2f;projects?q=demolition&amp;municipality_slug=montreal&amp;category=commercial&amp;lang=en"#
         ),
         "expected the selected commercial chip to carry both the \
          category-chip-selected class AND aria-current=\"true\" (not a \
@@ -2050,7 +2050,7 @@ async fn imp_req_008_14_selected_category_is_accessible_and_chips_preserve_other
     for code in ["residential", "institutional", "infrastructure", "other"] {
         assert!(
             html.contains(&format!(
-                "&#x2f;search?q=demolition&amp;municipality_slug=montreal&amp;category={code}&amp;lang=en"
+                "&#x2f;projects?q=demolition&amp;municipality_slug=montreal&amp;category={code}&amp;lang=en"
             )),
             "expected the {code:?} chip's href to preserve q/municipality_slug \
              while switching to category={code}, got: {html}"
@@ -2060,7 +2060,7 @@ async fn imp_req_008_14_selected_category_is_accessible_and_chips_preserve_other
     // The "All categories" chip must NOT be marked as the current selection.
     assert!(
         !html.contains(
-            r#"class="category-chip category-chip-selected" aria-current="true" hx-get="&#x2f;search?q=demolition&amp;municipality_slug=montreal&amp;lang=en"#
+            r#"class="category-chip category-chip-selected" aria-current="true" hx-get="&#x2f;projects?q=demolition&amp;municipality_slug=montreal&amp;lang=en"#
         ),
         "the 'All categories' chip must not be marked current when a \
          specific category is selected, got: {html}"
@@ -2076,7 +2076,7 @@ async fn imp_req_008_10_category_chip_labels_are_localized_in_french(pool: PgPoo
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?lang=fr")
+                .uri("/projects?lang=fr")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2399,7 +2399,7 @@ async fn tc_009_5_invalid_sort_value_rejected_before_query(pool: PgPool) {
 /// Target markup contract (documented here for Loop B to implement):
 /// `<h2 class="search-empty-heading">` + `<p class="search-empty-body">`,
 /// alongside (not replacing) today's `<p class="search-empty">`. Currently
-/// fails: `templates/search.html`'s empty branch only renders
+/// fails: `templates/projects.html`'s empty branch only renders
 /// `<p class="search-empty">{{ empty_message }}</p>` — no heading element,
 /// no separate body element exist yet.
 #[sqlx::test(migrations = "./migrations")]
@@ -2411,7 +2411,7 @@ async fn tc_012_1_zero_results_renders_headline_and_body(pool: PgPool) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=zzz-no-such-project-012")
+                .uri("/projects?q=zzz-no-such-project-012")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2456,7 +2456,7 @@ async fn tc_012_2_zero_results_french_locale_is_fully_french(pool: PgPool) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=zzz-aucun-projet-012")
+                .uri("/projects?q=zzz-aucun-projet-012")
                 .header("accept-language", "fr")
                 .body(Body::empty())
                 .unwrap(),
@@ -2520,7 +2520,7 @@ async fn tc_012_3_exactly_four_refinement_suggestions(pool: PgPool) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=zzz-no-such-project-012c")
+                .uri("/projects?q=zzz-no-such-project-012c")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2541,7 +2541,7 @@ async fn tc_012_3_exactly_four_refinement_suggestions(pool: PgPool) {
     );
 }
 
-/// TC-012-4: two action links ("clear filters" -> `/search`, "browse all
+/// TC-012-4: two action links ("clear filters" -> `/projects`, "browse all
 /// projects" -> `/`) are rendered, and both hrefs resolve to working routes
 /// (not dead links) when followed. Currently fails: no
 /// `search-empty-action` links exist yet.
@@ -2555,7 +2555,7 @@ async fn tc_012_4_two_action_links_resolve_to_working_routes(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=zzz-no-such-project-012d")
+                .uri("/projects?q=zzz-no-such-project-012d")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2575,8 +2575,8 @@ async fn tc_012_4_two_action_links_resolve_to_working_routes(pool: PgPool) {
         "expected exactly 2 action links, got {action_link_count} in: {html}"
     );
     assert!(
-        html.contains("class=\"search-empty-action\" href=\"/search\""),
-        "expected a 'clear filters' action link targeting /search, got: {html}"
+        html.contains("class=\"search-empty-action\" href=\"/projects\""),
+        "expected a 'clear filters' action link targeting /projects, got: {html}"
     );
     assert!(
         html.contains("class=\"search-empty-action\" href=\"/\""),
@@ -2588,7 +2588,7 @@ async fn tc_012_4_two_action_links_resolve_to_working_routes(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search")
+                .uri("/projects")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2596,7 +2596,7 @@ async fn tc_012_4_two_action_links_resolve_to_working_routes(pool: PgPool) {
         .unwrap();
     assert!(
         clear_filters_response.status().is_success(),
-        "the 'clear filters' target /search must resolve successfully, got: {}",
+        "the 'clear filters' target /projects must resolve successfully, got: {}",
         clear_filters_response.status()
     );
 
@@ -2612,7 +2612,7 @@ async fn tc_012_4_two_action_links_resolve_to_working_routes(pool: PgPool) {
 }
 
 /// TC-012-5: the empty state and the error state are structurally mutually
-/// exclusive — a DB-failure response on `/search` must show the error
+/// exclusive — a DB-failure response on `/projects` must show the error
 /// markup and never the "no results" empty-state copy at the same time.
 /// This documents that `get_search_page`'s `match search_outcome` already
 /// makes `search_results`/`search_error` mutually exclusive branches
@@ -2630,7 +2630,7 @@ async fn tc_012_5_error_state_and_empty_state_are_mutually_exclusive(pool: PgPoo
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=whatever-012e")
+                .uri("/projects?q=whatever-012e")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2640,7 +2640,7 @@ async fn tc_012_5_error_state_and_empty_state_are_mutually_exclusive(pool: PgPoo
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "a DB failure on /search must still render the page (with an error banner), not a raw HTTP error"
+        "a DB failure on /projects must still render the page (with an error banner), not a raw HTTP error"
     );
     let body = http_body_util::BodyExt::collect(response.into_body())
         .await
@@ -2685,7 +2685,7 @@ async fn imp_req_001_06_empty_state_shows_guidance_line(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=zzz-no-such-project-00106")
+                .uri("/projects?q=zzz-no-such-project-00106")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2710,7 +2710,7 @@ async fn imp_req_001_06_empty_state_shows_guidance_line(pool: PgPool) {
     let fr_response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=zzz-aucun-projet-00106")
+                .uri("/projects?q=zzz-aucun-projet-00106")
                 .header("accept-language", "fr")
                 .body(Body::empty())
                 .unwrap(),
@@ -2758,7 +2758,7 @@ async fn imp_req_001_07_lang_badge_omitted_when_source_language_unknown(pool: Pg
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=badge+test+00107")
+                .uri("/projects?q=badge+test+00107")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2797,7 +2797,7 @@ async fn imp_req_001_07_lang_badge_omitted_when_source_language_unknown(pool: Pg
 // `source_count` columns yet — that migration is IMP-REQ-015-02/03/04's job,
 // out of scope for this pass. `SearchResult::first_detected_at`/`source_count`
 // are Loop A stubs hard-coded to `None` in `run_search` (see `search.rs`), and
-// `templates/search.html` has no rendering for the indicator at all yet. So
+// `templates/projects.html` has no rendering for the indicator at all yet. So
 // every test below that asserts the indicator IS rendered (TC-015-1/-3/-4/-6)
 // is EXPECTED TO FAIL today, each for that same documented reason. TC-015-5
 // (missing field(s) omit the whole sentence) legitimately PASSES today, since
@@ -2884,7 +2884,7 @@ async fn tc_015_1_search_card_shows_days_and_source_count(pool: PgPool) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=detection+alpha")
+                .uri("/projects?q=detection+alpha")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2945,7 +2945,7 @@ async fn tc_015_3_day_count_boundary_singular_and_today(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=frontiere+un+jour")
+                .uri("/projects?q=frontiere+un+jour")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2970,7 +2970,7 @@ async fn tc_015_3_day_count_boundary_singular_and_today(pool: PgPool) {
     let response_today = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=frontiere+aujourdhui")
+                .uri("/projects?q=frontiere+aujourdhui")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3048,7 +3048,7 @@ async fn tc_015_4_source_count_pluralization(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=source+unique")
+                .uri("/projects?q=source+unique")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3068,7 +3068,7 @@ async fn tc_015_4_source_count_pluralization(pool: PgPool) {
     let response_plural = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=deux+sources")
+                .uri("/projects?q=deux+sources")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3117,7 +3117,7 @@ async fn tc_015_5_missing_field_omits_entire_indicator(pool: PgPool) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=indicateur+absent")
+                .uri("/projects?q=indicateur+absent")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3179,7 +3179,7 @@ async fn tc_015_6_indicator_localized_en_fr(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=localisation")
+                .uri("/projects?q=localisation")
                 .header("accept-language", "en")
                 .body(Body::empty())
                 .unwrap(),
@@ -3200,7 +3200,7 @@ async fn tc_015_6_indicator_localized_en_fr(pool: PgPool) {
     let response_fr = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=localisation")
+                .uri("/projects?q=localisation")
                 .header("accept-language", "fr")
                 .body(Body::empty())
                 .unwrap(),
@@ -3243,7 +3243,7 @@ async fn imp_req_001_08_result_count_header_pluralization(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=singulier+compte")
+                .uri("/projects?q=singulier+compte")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3265,7 +3265,7 @@ async fn imp_req_001_08_result_count_header_pluralization(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=pluriel+compte")
+                .uri("/projects?q=pluriel+compte")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3287,7 +3287,7 @@ async fn imp_req_001_08_result_count_header_pluralization(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=singulier+compte")
+                .uri("/projects?q=singulier+compte")
                 .header("accept-language", "fr")
                 .body(Body::empty())
                 .unwrap(),
@@ -3309,7 +3309,7 @@ async fn imp_req_001_08_result_count_header_pluralization(pool: PgPool) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=pluriel+compte")
+                .uri("/projects?q=pluriel+compte")
                 .header("accept-language", "fr")
                 .body(Body::empty())
                 .unwrap(),
@@ -3345,7 +3345,7 @@ async fn imp_req_001_08_zero_results_omits_count_header(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=zzz-no-such-project-00108z")
+                .uri("/projects?q=zzz-no-such-project-00108z")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3369,7 +3369,7 @@ async fn imp_req_001_08_zero_results_omits_count_header(pool: PgPool) {
     let fr_response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=zzz-no-such-project-00108z")
+                .uri("/projects?q=zzz-no-such-project-00108z")
                 .header("accept-language", "fr")
                 .body(Body::empty())
                 .unwrap(),
@@ -3410,7 +3410,7 @@ async fn imp_req_001_08_db_error_omits_count_header(pool: PgPool) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=whatever-00108e")
+                .uri("/projects?q=whatever-00108e")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3420,7 +3420,7 @@ async fn imp_req_001_08_db_error_omits_count_header(pool: PgPool) {
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "a DB failure on /search must still render the page with an error banner"
+        "a DB failure on /projects must still render the page with an error banner"
     );
     let body = http_body_util::BodyExt::collect(response.into_body())
         .await
@@ -3471,7 +3471,7 @@ async fn imp_req_001_08_count_label_reflects_per_page_truncated_count(pool: PgPo
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=troncature&per_page=2")
+                .uri("/projects?q=troncature&per_page=2")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3500,7 +3500,7 @@ async fn imp_req_001_08_count_label_reflects_per_page_truncated_count(pool: PgPo
 /// IMP-REQ-001-10: manual WCAG AA review of `search.html` (form, results
 /// list, error state, lang badges — the markup added by
 /// IMP-REQ-001-06/07/08). Renders the template directly (rather than going
-/// through `/search` + `run_search`) so the assertions exercise the actual
+/// through `/projects` + `run_search`) so the assertions exercise the actual
 /// markup contract in isolation from unrelated, already-documented data-layer
 /// gaps (e.g. `SearchResult.source_language` being a stub the DB path doesn't
 /// populate yet, per TC-003-5 above). Asserts:
@@ -3523,8 +3523,7 @@ fn imp_req_001_10_search_page_meets_basic_accessibility_requirements() {
     let html = tmpl
         .render(context! {
             lang => "en",
-            nav_permits => "Permits",
-            nav_council => "Council",
+            nav_projects => "Projects",
             page_title => "Search projects",
             heading => "Search for a project",
             search_label => "Civic address or municipality",
@@ -3574,8 +3573,7 @@ fn imp_req_001_10_search_page_meets_basic_accessibility_requirements() {
     let error_html = tmpl
         .render(context! {
             lang => "en",
-            nav_permits => "Permits",
-            nav_council => "Council",
+            nav_projects => "Projects",
             page_title => "Search projects",
             heading => "Search for a project",
             search_label => "Civic address or municipality",
@@ -3611,8 +3609,7 @@ fn imp_req_002_10_municipality_select_meets_basic_accessibility_requirements() {
     let html = tmpl
         .render(context! {
             lang => "en",
-            nav_permits => "Permits",
-            nav_council => "Council",
+            nav_projects => "Projects",
             page_title => "Search projects",
             heading => "Search for a project",
             search_label => "Civic address or municipality",
@@ -3665,7 +3662,7 @@ async fn imp_req_002_06_search_form_has_municipality_select_with_preserved_selec
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search")
+                .uri("/projects")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3707,7 +3704,7 @@ async fn imp_req_002_06_search_form_has_municipality_select_with_preserved_selec
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?municipality_slug=montreal")
+                .uri("/projects?municipality_slug=montreal")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3758,7 +3755,7 @@ async fn imp_req_002_07_search_form_has_responsive_filter_bar_wrapper(pool: PgPo
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search")
+                .uri("/projects")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3772,7 +3769,7 @@ async fn imp_req_002_07_search_form_has_responsive_filter_bar_wrapper(pool: PgPo
     let html = String::from_utf8(body.to_vec()).unwrap();
 
     assert!(
-        html.contains(r#"<form role="search" method="get" action="/search" class="search-filter-bar">"#),
+        html.contains(r#"<form role="search" method="get" action="/projects" class="search-filter-bar">"#),
         "expected the search form itself to carry the search-filter-bar wrapper class, got: {html}"
     );
     assert_eq!(
@@ -3809,7 +3806,7 @@ async fn imp_req_002_08_municipality_scoped_empty_state_names_the_municipality(p
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=unique002+08&municipality_slug=montreal")
+                .uri("/projects?q=unique002+08&municipality_slug=montreal")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3835,7 +3832,7 @@ async fn imp_req_002_08_municipality_scoped_empty_state_names_the_municipality(p
     let fr_response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=unique002+08&municipality_slug=montreal")
+                .uri("/projects?q=unique002+08&municipality_slug=montreal")
                 .header("accept-language", "fr")
                 .body(Body::empty())
                 .unwrap(),
@@ -3875,7 +3872,7 @@ async fn imp_req_002_08_generic_empty_message_unaffected_when_no_municipality_fi
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=zzz-no-such-project-00208")
+                .uri("/projects?q=zzz-no-such-project-00208")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3901,7 +3898,7 @@ async fn imp_req_002_08_generic_empty_message_unaffected_when_no_municipality_fi
 }
 
 /// IMP-REQ-002-08: documents the current (intentional) behavior of the
-/// server-rendered `/search` page when `municipality_slug` is syntactically
+/// server-rendered `/projects` page when `municipality_slug` is syntactically
 /// valid but doesn't match any row in `municipalities`. `run_search` (used
 /// by both the JSON API and this page) rejects it with
 /// `StatusCode::BAD_REQUEST`, but `get_search_page` never propagates that
@@ -3919,7 +3916,7 @@ async fn imp_req_002_08_invalid_municipality_slug_renders_friendly_error_not_bar
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=test&municipality_slug=nonexistent-city-00208")
+                .uri("/projects?q=test&municipality_slug=nonexistent-city-00208")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3976,7 +3973,7 @@ async fn imp_req_003_06_mixed_language_result_set_shows_correct_badges_per_row(p
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=bilingue")
+                .uri("/projects?q=bilingue")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4050,7 +4047,7 @@ async fn imp_req_003_07_search_results_have_responsive_wrapper_classes(pool: PgP
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=responsive")
+                .uri("/projects?q=responsive")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4106,7 +4103,7 @@ async fn imp_req_003_08_lang_toggle_link_renders_correct_target_and_href(pool: P
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=toggle&municipality_slug=montreal")
+                .uri("/projects?q=toggle&municipality_slug=montreal")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4133,7 +4130,7 @@ async fn imp_req_003_08_lang_toggle_link_renders_correct_target_and_href(pool: P
     // a literal unescaped URL.
     assert!(
         en_html.contains(
-            r#"href="&#x2f;search?q=toggle&amp;municipality_slug=montreal&amp;lang=fr""#
+            r#"href="&#x2f;projects?q=toggle&amp;municipality_slug=montreal&amp;lang=fr""#
         ),
         "the English page's toggle link must target ?lang=fr while preserving \
          q and municipality_slug, got: {en_html}"
@@ -4144,7 +4141,7 @@ async fn imp_req_003_08_lang_toggle_link_renders_correct_target_and_href(pool: P
     let fr_response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=toggle&municipality_slug=montreal&lang=fr")
+                .uri("/projects?q=toggle&municipality_slug=montreal&lang=fr")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4167,7 +4164,7 @@ async fn imp_req_003_08_lang_toggle_link_renders_correct_target_and_href(pool: P
     );
     assert!(
         fr_html.contains(
-            r#"href="&#x2f;search?q=toggle&amp;municipality_slug=montreal&amp;lang=en""#
+            r#"href="&#x2f;projects?q=toggle&amp;municipality_slug=montreal&amp;lang=en""#
         ),
         "the French page's toggle link must target ?lang=en while preserving \
          q and municipality_slug, got: {fr_html}"
@@ -4196,7 +4193,7 @@ async fn imp_req_003_08_lang_param_sets_cookie_and_cookie_persists_across_reques
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=cookie&lang=fr")
+                .uri("/projects?q=cookie&lang=fr")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4220,7 +4217,7 @@ async fn imp_req_003_08_lang_param_sets_cookie_and_cookie_persists_across_reques
     let second_response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=cookie")
+                .uri("/projects?q=cookie")
                 .header("cookie", "lang=fr")
                 .body(Body::empty())
                 .unwrap(),
@@ -4258,8 +4255,7 @@ fn imp_req_003_11_lang_badge_and_toggle_meet_basic_accessibility_requirements() 
 
     let base_ctx = serde_json::json!({
         "lang": "en",
-        "nav_permits": "Permits",
-        "nav_council": "Council",
+        "nav_projects": "Projects",
         "page_title": "Search projects",
         "heading": "Search for a project",
         "search_label": "Civic address or municipality",
@@ -4290,7 +4286,7 @@ fn imp_req_003_11_lang_badge_and_toggle_meet_basic_accessibility_requirements() 
 
     // --- English page: toggle names the target language, "Français" -------
     let mut en_ctx = base_ctx.clone();
-    en_ctx["lang_toggle_href"] = serde_json::json!("/search?lang=fr");
+    en_ctx["lang_toggle_href"] = serde_json::json!("/projects?lang=fr");
     en_ctx["lang_toggle_label"] = serde_json::json!("Français");
     let en_html = tmpl
         .render(minijinja::value::Value::from_serialize(&en_ctx))
@@ -4300,7 +4296,7 @@ fn imp_req_003_11_lang_badge_and_toggle_meet_basic_accessibility_requirements() 
 
     // --- French page: toggle names the target language, "English" ---------
     let mut fr_ctx = base_ctx;
-    fr_ctx["lang_toggle_href"] = serde_json::json!("/search?lang=en");
+    fr_ctx["lang_toggle_href"] = serde_json::json!("/projects?lang=en");
     fr_ctx["lang_toggle_label"] = serde_json::json!("English");
     let fr_html = tmpl
         .render(minijinja::value::Value::from_serialize(&fr_ctx))
@@ -4369,7 +4365,7 @@ fn assert_lang_badges_and_toggle_are_accessible(html: &str, expected_toggle_text
     );
 }
 
-/// IMP-REQ-004-06: `GET /search`'s results fragment must render real
+/// IMP-REQ-004-06: `GET /projects`'s results fragment must render real
 /// pagination controls derived from the actual `PaginationInfo` — a "Next"
 /// link present only when a further page remains, absent on the last page,
 /// and a "Previous" link present from page 2 onward — plus each result row
@@ -4391,7 +4387,7 @@ async fn imp_req_004_06_pagination_controls_reflect_has_more_and_page(pool: PgPo
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=pagination&per_page=2")
+                .uri("/projects?q=pagination&per_page=2")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4425,7 +4421,7 @@ async fn imp_req_004_06_pagination_controls_reflect_has_more_and_page(pool: PgPo
     let page_2_response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=pagination&per_page=2&page=2")
+                .uri("/projects?q=pagination&per_page=2&page=2")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4478,7 +4474,7 @@ async fn imp_req_004_07_next_link_carries_htmx_infinite_scroll_attributes_alongs
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=infinite&per_page=2")
+                .uri("/projects?q=infinite&per_page=2")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4504,7 +4500,7 @@ async fn imp_req_004_07_next_link_carries_htmx_infinite_scroll_attributes_alongs
     // Minijinja HTML-escapes attribute values by default (`/` -> `&#x2f;`,
     // `&` -> `&amp;`), so the expected href/hx-get value is the escaped form,
     // not the raw URL.
-    let expected_href_escaped = "&#x2f;search?q=infinite&amp;page=2&amp;lang=en";
+    let expected_href_escaped = "&#x2f;projects?q=infinite&amp;page=2&amp;lang=en";
     assert!(
         next_link_tag.contains(&format!("href=\"{expected_href_escaped}\"")),
         "the plain href fallback must still be present on the Next link \
@@ -4544,7 +4540,7 @@ async fn imp_req_004_08_status_indicator_carries_status_specific_class(pool: PgP
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=indicator")
+                .uri("/projects?q=indicator")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4592,7 +4588,7 @@ async fn imp_req_004_11_pagination_and_status_preserve_accessible_semantics(pool
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=a11y&per_page=2")
+                .uri("/projects?q=a11y&per_page=2")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4642,7 +4638,7 @@ async fn imp_req_004_11_pagination_and_status_preserve_accessible_semantics(pool
     let page_2_response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=a11y&per_page=2&page=2")
+                .uri("/projects?q=a11y&per_page=2&page=2")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4691,7 +4687,7 @@ async fn imp_req_007_09_10_date_preset_control_reflects_query_string_state(pool:
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search")
+                .uri("/projects")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4729,7 +4725,7 @@ async fn imp_req_007_09_10_date_preset_control_reflects_query_string_state(pool:
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?date_preset=last_7_days")
+                .uri("/projects?date_preset=last_7_days")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4752,7 +4748,7 @@ async fn imp_req_007_09_10_date_preset_control_reflects_query_string_state(pool:
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?date_from=2026-06-01&date_to=2026-06-30")
+                .uri("/projects?date_from=2026-06-01&date_to=2026-06-30")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4803,7 +4799,7 @@ async fn imp_req_007_10_11_applied_filter_chip_appears_and_clears_only_date_para
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=chip")
+                .uri("/projects?q=chip")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4827,7 +4823,7 @@ async fn imp_req_007_10_11_applied_filter_chip_appears_and_clears_only_date_para
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=chip&municipality_slug=montreal&date_preset=last_7_days&lang=en")
+                .uri("/projects?q=chip&municipality_slug=montreal&date_preset=last_7_days&lang=en")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -4898,8 +4894,7 @@ fn imp_req_007_11_date_filter_controls_meet_basic_accessibility_requirements() {
     let html = tmpl
         .render(context! {
             lang => "en",
-            nav_permits => "Permits",
-            nav_council => "Council",
+            nav_projects => "Projects",
             page_title => "Search projects",
             heading => "Search for a project",
             search_label => "Civic address or municipality",
@@ -4924,7 +4919,7 @@ fn imp_req_007_11_date_filter_controls_meet_basic_accessibility_requirements() {
             date_from_value => "2026-06-01",
             date_to_value => "2026-06-30",
             date_filter_chip_label => "From 2026-06-01 to 2026-06-30",
-            clear_date_filter_href => "/search?lang=en",
+            clear_date_filter_href => "/projects?lang=en",
         })
         .unwrap();
 
@@ -4975,7 +4970,7 @@ async fn imp_req_007_13_date_filter_ui_is_fully_bilingual(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/search?q=bilingue&date_preset=last_7_days&lang=en")
+                .uri("/projects?q=bilingue&date_preset=last_7_days&lang=en")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -5003,7 +4998,7 @@ async fn imp_req_007_13_date_filter_ui_is_fully_bilingual(pool: PgPool) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/search?q=bilingue&date_preset=last_7_days&lang=fr")
+                .uri("/projects?q=bilingue&date_preset=last_7_days&lang=fr")
                 .body(Body::empty())
                 .unwrap(),
         )

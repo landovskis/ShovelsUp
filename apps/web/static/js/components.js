@@ -14,15 +14,10 @@ class ShovelsHeader extends HTMLElement {
         const nav = document.createElement('nav');
         nav.className = 'site-nav';
 
-        for (const [label, href] of [
-            [this.dataset.permits || 'Permits', '/permits'],
-            [this.dataset.council || 'Council', '/council'],
-        ]) {
-            const a = document.createElement('a');
-            a.href = href;
-            a.textContent = label;
-            nav.appendChild(a);
-        }
+        const projectsLink = document.createElement('a');
+        projectsLink.href = '/projects';
+        projectsLink.textContent = this.dataset.projects || 'Projects';
+        nav.appendChild(projectsLink);
 
         header.appendChild(brand);
         header.appendChild(nav);

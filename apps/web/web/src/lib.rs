@@ -37,7 +37,7 @@ pub struct AppState {
 /// NEVER have `middleware::admin_auth::require_admin` (or any other
 /// auth-challenge-issuing layer) applied to it, anywhere, by construction.
 /// Rate limiting (`rate_limit_search`, IMP-REQ-008-05/IMP-REQ-010-07) is
-/// layered on the `/search`/`/api/v1/projects/search` pair only, matching
+/// layered on the `/projects`/`/api/v1/projects/search` pair only, matching
 /// the pre-split scope exactly — it degrades silently to a plain 429 with
 /// no interactive challenge, so it does not compromise this function's "no
 /// account required" guarantee.
@@ -50,7 +50,7 @@ pub struct AppState {
 /// function's own construction never pulls in that layer.
 pub fn public_router(state: AppState) -> Router<AppState> {
     let rate_limited_search_routes = Router::new()
-        .route("/search", get(routes::search::get_search_page))
+        .route("/projects", get(routes::search::get_search_page))
         .route(
             "/api/v1/projects/search",
             get(routes::search::search_projects),

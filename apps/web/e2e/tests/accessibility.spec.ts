@@ -28,7 +28,7 @@ test.use({ viewport: { width: 320, height: 640 } });
 const PRE_EXISTING_CONTRAST_EXCLUSIONS = ['#lang-toggle-link', '.search-filter-submit'];
 
 test('search page has no detectable accessibility violations at 320px', async ({ page }) => {
-  await page.goto('/search?q=e2e+harness');
+  await page.goto('/projects?q=e2e+harness');
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
     .exclude(PRE_EXISTING_CONTRAST_EXCLUSIONS[0])
@@ -38,7 +38,7 @@ test('search page has no detectable accessibility violations at 320px', async ({
 });
 
 test('open filter sheet has no detectable accessibility violations at 320px', async ({ page }) => {
-  await page.goto('/search?q=e2e+harness');
+  await page.goto('/projects?q=e2e+harness');
   await page.locator('#filter-sheet-trigger').click();
   await expect(page.locator('#filter-sheet')).toBeVisible();
 

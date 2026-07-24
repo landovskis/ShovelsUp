@@ -164,8 +164,7 @@ struct QueueLabels {
     reject_label: &'static str,
     overdue_label: &'static str,
     stale_conflict_message: &'static str,
-    nav_permits: &'static str,
-    nav_council: &'static str,
+    nav_projects: &'static str,
 }
 
 fn queue_labels(lang: &str) -> QueueLabels {
@@ -182,8 +181,7 @@ fn queue_labels(lang: &str) -> QueueLabels {
             overdue_label: "En retard",
             stale_conflict_message:
                 "Ce candidat a changé depuis son chargement. Actualisez et réessayez.",
-            nav_permits: "Permis",
-            nav_council: "Conseil",
+            nav_projects: "Projets",
         },
         _ => QueueLabels {
             page_title: "Review queue",
@@ -197,8 +195,7 @@ fn queue_labels(lang: &str) -> QueueLabels {
             overdue_label: "Overdue",
             stale_conflict_message:
                 "This candidate has changed since it was loaded. Refresh and try again.",
-            nav_permits: "Permits",
-            nav_council: "Council",
+            nav_projects: "Projects",
         },
     }
 }
@@ -234,8 +231,7 @@ pub async fn get_review_queue_page(
     let html = tmpl
         .render(context! {
             lang => lang,
-            nav_permits => labels.nav_permits,
-            nav_council => labels.nav_council,
+            nav_projects => labels.nav_projects,
             page_title => labels.page_title,
             heading => labels.heading,
             tab_open => labels.tab_open,

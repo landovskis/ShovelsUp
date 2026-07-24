@@ -1382,7 +1382,7 @@ async fn tc_006_6_citation_link_text_is_meaningful_and_unreliable_is_not_a_link(
 // REQ-015 Loop A (detail-page half): search-result confidence indicator
 // ("Detected N days ago from M council source(s)"), also required on the
 // project-detail page per TC-015-2 (not just the search card — see
-// `tests/search_integration.rs`'s `tc_015_*` tests for the search-card
+// `tests/projects_integration.rs`'s `tc_015_*` tests for the search-card
 // halves of TC-015-1/-3/-4/-5/-6).
 //
 // `public_search_documents` has neither `first_detected_at` nor

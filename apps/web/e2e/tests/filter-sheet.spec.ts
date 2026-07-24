@@ -6,14 +6,14 @@ import { test, expect } from '@playwright/test';
 // fantoccini sketch that was left in `web/tests/responsive_e2e.rs` (now
 // removed — see that file's updated doc comment); the selectors below
 // (`#filter-sheet-trigger`, `#filter-sheet`, `#filter-sheet-close`) match
-// the real markup added to `templates/search.html` by IMP-REQ-011-04, not
+// the real markup added to `templates/projects.html` by IMP-REQ-011-04, not
 // invented placeholders.
 test.use({ viewport: { width: 320, height: 640 } });
 
 test('filter sheet opens, does not block the rest of the page, and returns focus to its trigger on close', async ({
   page,
 }) => {
-  await page.goto('/search?q=filter+sheet');
+  await page.goto('/projects?q=filter+sheet');
 
   const trigger = page.locator('#filter-sheet-trigger');
   const sheet = page.locator('#filter-sheet');
@@ -43,7 +43,7 @@ test('filter sheet opens, does not block the rest of the page, and returns focus
 
 test('filter sheet trigger is not shown at desktop widths (filters render inline)', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/search?q=filter+sheet');
+  await page.goto('/projects?q=filter+sheet');
 
   await expect(page.locator('#filter-sheet-trigger')).toBeHidden();
   // The filter form itself is always in the DOM and visible at desktop

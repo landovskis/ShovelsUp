@@ -507,7 +507,7 @@ mod core {
     }
 
     /// Builds the `href` for the search page's EN/FR language-toggle link
-    /// (IMP-REQ-003-08): always `/search` with `lang` set to the OTHER
+    /// (IMP-REQ-003-08): always `/projects` with `lang` set to the OTHER
     /// language than `current_lang` (the toggle's target), plus whichever of
     /// this page's two user-editable filter params — `q` and
     /// `municipality_slug` — are actually present, so following the link
@@ -541,7 +541,7 @@ mod core {
         }
         pairs.push(format!("lang={target_lang}"));
 
-        format!("/search?{}", pairs.join("&"))
+        format!("/projects?{}", pairs.join("&"))
     }
 
     /// Which of the three date-filter UI presets (IMP-REQ-007-09) is
@@ -647,7 +647,7 @@ mod core {
     }
 
     /// Builds the `href` for the applied date-filter chip's "x" clear link
-    /// (IMP-REQ-007-10): always `/search` with the current `lang` plus
+    /// (IMP-REQ-007-10): always `/projects` with the current `lang` plus
     /// whichever of `q`/`municipality_slug` are actually present — the same
     /// param-preservation pattern as `build_lang_toggle_href`/
     /// `build_pagination_href` — but with NO `date_preset`/`date_from`/
@@ -673,12 +673,12 @@ mod core {
         }
         pairs.push(format!("lang={lang}"));
 
-        format!("/search?{}", pairs.join("&"))
+        format!("/projects?{}", pairs.join("&"))
     }
 
     /// Builds the `href` for the search-results pagination "Next"/"Previous"
     /// links (IMP-REQ-004-06), following the same param-preservation pattern
-    /// as `build_lang_toggle_href` (IMP-REQ-003-08): always `/search` with
+    /// as `build_lang_toggle_href` (IMP-REQ-003-08): always `/projects` with
     /// `page` set to `target_page`, plus whichever of `q`/`municipality_slug`
     /// are actually present, plus the current `lang` (so paging forward/back
     /// doesn't lose the page's rendering language). Unlike
@@ -708,7 +708,7 @@ mod core {
         pairs.push(format!("page={target_page}"));
         pairs.push(format!("lang={lang}"));
 
-        format!("/search?{}", pairs.join("&"))
+        format!("/projects?{}", pairs.join("&"))
     }
 
     /// Bundles the raw filter params that every "preserve the user's other
@@ -743,7 +743,7 @@ mod core {
     }
 
     /// Builds the `href` for a category filter chip (IMP-REQ-008-07): always
-    /// `/search` with `category` set to `category` (omitted entirely for the
+    /// `/projects` with `category` set to `category` (omitted entirely for the
     /// "All categories" chip, i.e. `category = None`), plus whichever of
     /// `q`/`municipality_slug`/`date_preset`/`date_from`/`date_to` in `ctx`
     /// are actually present, plus the current `lang` — so clicking a chip
@@ -785,11 +785,11 @@ mod core {
         }
         pairs.push(format!("lang={}", ctx.lang));
 
-        format!("/search?{}", pairs.join("&"))
+        format!("/projects?{}", pairs.join("&"))
     }
 
     /// Builds the `href` for the sort-toggle button/link pair
-    /// (IMP-REQ-009-08): always `/search` with `sort` set to
+    /// (IMP-REQ-009-08): always `/projects` with `sort` set to
     /// `target_sort`'s literal query value (omitted entirely for
     /// `SortOrder::Relevance`, mirroring `build_category_filter_href`'s own
     /// "omit the param for the default state" convention for its "All
@@ -835,7 +835,7 @@ mod core {
         }
         pairs.push(format!("lang={}", ctx.lang));
 
-        format!("/search?{}", pairs.join("&"))
+        format!("/projects?{}", pairs.join("&"))
     }
 
     /// Maps a category taxonomy code to its localized display label
@@ -1573,7 +1573,7 @@ mod core {
             let ctx = no_filters_ctx("en");
             assert_eq!(
                 build_sort_toggle_href(ctx, SortOrder::Relevance),
-                "/search?lang=en"
+                "/projects?lang=en"
             );
         }
 
@@ -1582,7 +1582,7 @@ mod core {
             let ctx = no_filters_ctx("en");
             assert_eq!(
                 build_sort_toggle_href(ctx, SortOrder::Date),
-                "/search?sort=date&lang=en"
+                "/projects?sort=date&lang=en"
             );
         }
 
@@ -1600,7 +1600,7 @@ mod core {
             };
             assert_eq!(
                 build_sort_toggle_href(ctx, SortOrder::Date),
-                "/search?q=saint-denis&municipality_slug=montreal&sort=date&lang=fr"
+                "/projects?q=saint-denis&municipality_slug=montreal&sort=date&lang=fr"
             );
         }
 
@@ -1618,7 +1618,7 @@ mod core {
             };
             assert_eq!(
                 build_sort_toggle_href(ctx, SortOrder::Date),
-                "/search?category=residential&sort=date&lang=en"
+                "/projects?category=residential&sort=date&lang=en"
             );
         }
 
@@ -1636,7 +1636,7 @@ mod core {
             };
             assert_eq!(
                 build_sort_toggle_href(ctx, SortOrder::Relevance),
-                "/search?q=rue%20saint-denis&lang=en"
+                "/projects?q=rue%20saint-denis&lang=en"
             );
         }
 
@@ -1654,7 +1654,7 @@ mod core {
             };
             assert_eq!(
                 build_category_filter_href(ctx, Some("residential")),
-                "/search?category=residential&sort=date&lang=en"
+                "/projects?category=residential&sort=date&lang=en"
             );
         }
 
@@ -1823,12 +1823,12 @@ mod core {
 
         #[test]
         fn build_lang_toggle_href_targets_french_from_english_page_with_no_filters() {
-            assert_eq!(build_lang_toggle_href("en", "", None), "/search?lang=fr");
+            assert_eq!(build_lang_toggle_href("en", "", None), "/projects?lang=fr");
         }
 
         #[test]
         fn build_lang_toggle_href_targets_english_from_french_page_with_no_filters() {
-            assert_eq!(build_lang_toggle_href("fr", "", None), "/search?lang=en");
+            assert_eq!(build_lang_toggle_href("fr", "", None), "/projects?lang=en");
         }
 
         /// Any current lang other than exactly `"fr"` is treated as English,
@@ -1836,23 +1836,23 @@ mod core {
         /// `format_result_count_label`/`format_municipality_empty_message`.
         #[test]
         fn build_lang_toggle_href_treats_unrecognized_current_lang_as_english() {
-            assert_eq!(build_lang_toggle_href("xx", "", None), "/search?lang=fr");
+            assert_eq!(build_lang_toggle_href("xx", "", None), "/projects?lang=fr");
         }
 
         #[test]
         fn build_lang_toggle_href_preserves_present_query_and_municipality_slug() {
             assert_eq!(
                 build_lang_toggle_href("en", "saint-denis", Some("montreal")),
-                "/search?q=saint-denis&municipality_slug=montreal&lang=fr"
+                "/projects?q=saint-denis&municipality_slug=montreal&lang=fr"
             );
         }
 
         #[test]
         fn build_lang_toggle_href_omits_empty_query_and_absent_municipality_slug() {
-            assert_eq!(build_lang_toggle_href("en", "", None), "/search?lang=fr");
+            assert_eq!(build_lang_toggle_href("en", "", None), "/projects?lang=fr");
             assert_eq!(
                 build_lang_toggle_href("en", "", Some("")),
-                "/search?lang=fr"
+                "/projects?lang=fr"
             );
         }
 
@@ -1860,7 +1860,7 @@ mod core {
         fn build_lang_toggle_href_percent_encodes_the_preserved_query_value() {
             assert_eq!(
                 build_lang_toggle_href("en", "rue saint-denis", None),
-                "/search?q=rue%20saint-denis&lang=fr"
+                "/projects?q=rue%20saint-denis&lang=fr"
             );
         }
 
@@ -1868,7 +1868,7 @@ mod core {
         fn build_pagination_href_next_page_with_no_filters() {
             assert_eq!(
                 build_pagination_href("en", "", None, 2),
-                "/search?page=2&lang=en"
+                "/projects?page=2&lang=en"
             );
         }
 
@@ -1876,7 +1876,7 @@ mod core {
         fn build_pagination_href_preserves_query_and_municipality_slug() {
             assert_eq!(
                 build_pagination_href("fr", "saint-denis", Some("montreal"), 3),
-                "/search?q=saint-denis&municipality_slug=montreal&page=3&lang=fr"
+                "/projects?q=saint-denis&municipality_slug=montreal&page=3&lang=fr"
             );
         }
 
@@ -1884,7 +1884,7 @@ mod core {
         fn build_pagination_href_omits_empty_query_and_absent_municipality_slug() {
             assert_eq!(
                 build_pagination_href("en", "", Some(""), 1),
-                "/search?page=1&lang=en"
+                "/projects?page=1&lang=en"
             );
         }
 
@@ -1892,7 +1892,7 @@ mod core {
         fn build_pagination_href_percent_encodes_the_preserved_query_value() {
             assert_eq!(
                 build_pagination_href("en", "rue saint-denis", None, 2),
-                "/search?q=rue%20saint-denis&page=2&lang=en"
+                "/projects?q=rue%20saint-denis&page=2&lang=en"
             );
         }
 
@@ -2026,7 +2026,7 @@ mod core {
         fn build_clear_date_filter_href_with_no_other_filters() {
             assert_eq!(
                 build_clear_date_filter_href("en", "", None),
-                "/search?lang=en"
+                "/projects?lang=en"
             );
         }
 
@@ -2034,7 +2034,7 @@ mod core {
         fn build_clear_date_filter_href_preserves_query_and_municipality_slug() {
             assert_eq!(
                 build_clear_date_filter_href("fr", "saint-denis", Some("montreal")),
-                "/search?q=saint-denis&municipality_slug=montreal&lang=fr"
+                "/projects?q=saint-denis&municipality_slug=montreal&lang=fr"
             );
         }
 
@@ -2042,7 +2042,7 @@ mod core {
         fn build_clear_date_filter_href_percent_encodes_the_preserved_query_value() {
             assert_eq!(
                 build_clear_date_filter_href("en", "rue saint-denis", None),
-                "/search?q=rue%20saint-denis&lang=en"
+                "/projects?q=rue%20saint-denis&lang=en"
             );
         }
 
@@ -2068,7 +2068,7 @@ mod core {
             // param must be omitted entirely, not sent as an empty string.
             assert_eq!(
                 build_category_filter_href(no_filters_ctx("en"), None),
-                "/search?lang=en"
+                "/projects?lang=en"
             );
         }
 
@@ -2076,7 +2076,7 @@ mod core {
         fn build_category_filter_href_no_filters_specific_category() {
             assert_eq!(
                 build_category_filter_href(no_filters_ctx("en"), Some("residential")),
-                "/search?category=residential&lang=en"
+                "/projects?category=residential&lang=en"
             );
         }
 
@@ -2094,7 +2094,7 @@ mod core {
             };
             assert_eq!(
                 build_category_filter_href(ctx, Some("commercial")),
-                "/search?q=saint-denis&municipality_slug=montreal&category=commercial&lang=fr"
+                "/projects?q=saint-denis&municipality_slug=montreal&category=commercial&lang=fr"
             );
         }
 
@@ -2112,7 +2112,7 @@ mod core {
             };
             assert_eq!(
                 build_category_filter_href(ctx, Some("other")),
-                "/search?date_preset=last_7_days&category=other&lang=en"
+                "/projects?date_preset=last_7_days&category=other&lang=en"
             );
         }
 
@@ -2130,7 +2130,7 @@ mod core {
             };
             assert_eq!(
                 build_category_filter_href(ctx, None),
-                "/search?date_from=2026-01-01&date_to=2026-01-31&lang=en"
+                "/projects?date_from=2026-01-01&date_to=2026-01-31&lang=en"
             );
         }
 
@@ -2148,7 +2148,7 @@ mod core {
             };
             assert_eq!(
                 build_category_filter_href(ctx, Some("residential")),
-                "/search?category=residential&lang=en"
+                "/projects?category=residential&lang=en"
             );
         }
 
@@ -2171,7 +2171,7 @@ mod core {
             };
             assert_eq!(
                 build_category_filter_href(ctx, None),
-                "/search?lang=en"
+                "/projects?lang=en"
             );
         }
 
@@ -2189,7 +2189,7 @@ mod core {
             };
             assert_eq!(
                 build_category_filter_href(ctx, None),
-                "/search?q=rue%20saint-denis&lang=en"
+                "/projects?q=rue%20saint-denis&lang=en"
             );
         }
 
@@ -3014,8 +3014,7 @@ struct SearchLabels {
     // `search-empty-body` / `search-empty-suggestion` /
     // `search-empty-action` element classes).
     empty_guidance: &'static str,
-    nav_permits: &'static str,
-    nav_council: &'static str,
+    nav_projects: &'static str,
     municipality_select_label: &'static str,
     municipality_all_option: &'static str,
     // IMP-REQ-003-08: the EN/FR toggle link's own text — the TARGET
@@ -3068,7 +3067,7 @@ struct SearchLabels {
     // and body (rendered alongside, not replacing, the existing
     // `empty_message`/`empty_guidance` pair above), exactly four
     // refinement suggestions, and the two empty-state action links' own
-    // visible text. The action links' `href`s ("/search", "/") are
+    // visible text. The action links' `href`s ("/projects", "/") are
     // language-independent literals, so they live directly in
     // `templates/empty_state.html` rather than as `SearchLabels` fields.
     empty_state_heading: &'static str,
@@ -3087,8 +3086,7 @@ fn search_labels(lang: &str) -> SearchLabels {
             submit_label: "Rechercher",
             empty_message: "Aucun projet ne correspond à votre recherche.",
             empty_guidance: "Essayez une recherche plus large : utilisez un mot-clé plus général ou vérifiez l'orthographe de l'adresse ou de la municipalité.",
-            nav_permits: "Permis",
-            nav_council: "Conseil",
+            nav_projects: "Projets",
             municipality_select_label: "Municipalité",
             municipality_all_option: "Toutes les municipalités",
             lang_toggle_label: "English",
@@ -3128,8 +3126,7 @@ fn search_labels(lang: &str) -> SearchLabels {
             submit_label: "Search",
             empty_message: "No projects match your search.",
             empty_guidance: "Try broadening your search: use a more general keyword, or double-check the spelling of the address or municipality.",
-            nav_permits: "Permits",
-            nav_council: "Council",
+            nav_projects: "Projects",
             municipality_select_label: "Municipality",
             municipality_all_option: "All municipalities",
             lang_toggle_label: "Français",
@@ -3165,7 +3162,7 @@ fn search_labels(lang: &str) -> SearchLabels {
     }
 }
 
-/// GET /search — server-rendered public search page (IMP-REQ-008-04),
+/// GET /projects — server-rendered public search page (IMP-REQ-008-04),
 /// EN/FR via `Accept-Language` matching the rest of the app's convention.
 /// With no `q` param (first page load), renders the bare form. With `q`
 /// present, runs the search server-side and renders results/empty/error
@@ -3189,7 +3186,7 @@ pub async fn get_search_page(
     let labels = search_labels(lang);
 
     // IMP-REQ-011-08: test-only fault-injection hook (TC-011-5). Lets a
-    // test force `/search` to render its error state — through the same
+    // test force `/projects` to render its error state — through the same
     // responsive shell as every other page (TC-011-4) — without needing a
     // real DB outage (unlike `pool.close()`, which can't be scoped to a
     // single request/test alongside other assertions in the same suite).
@@ -3218,8 +3215,7 @@ pub async fn get_search_page(
         let html = tmpl
             .render(context! {
                 lang => lang,
-                nav_permits => labels.nav_permits,
-                nav_council => labels.nav_council,
+                nav_projects => labels.nav_projects,
                 page_title => labels.page_title,
                 heading => labels.heading,
                 search_label => labels.search_label,
@@ -3507,8 +3503,7 @@ pub async fn get_search_page(
     let html = tmpl
         .render(context! {
             lang => lang,
-            nav_permits => labels.nav_permits,
-            nav_council => labels.nav_council,
+            nav_projects => labels.nav_projects,
             page_title => labels.page_title,
             heading => labels.heading,
             search_label => labels.search_label,
@@ -3619,15 +3614,14 @@ mod search_labels_tests {
         // `SearchLabels` field has a genuinely distinct EN/FR wording.
         let identical_by_design: &[&str] = &[];
 
-        let pairs: [(&str, &str, &str); 35] = [
+        let pairs: [(&str, &str, &str); 34] = [
             ("page_title", en.page_title, fr.page_title),
             ("heading", en.heading, fr.heading),
             ("search_label", en.search_label, fr.search_label),
             ("submit_label", en.submit_label, fr.submit_label),
             ("empty_message", en.empty_message, fr.empty_message),
             ("empty_guidance", en.empty_guidance, fr.empty_guidance),
-            ("nav_permits", en.nav_permits, fr.nav_permits),
-            ("nav_council", en.nav_council, fr.nav_council),
+            ("nav_projects", en.nav_projects, fr.nav_projects),
             (
                 "municipality_select_label",
                 en.municipality_select_label,
