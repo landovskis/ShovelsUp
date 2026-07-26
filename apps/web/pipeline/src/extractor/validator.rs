@@ -60,6 +60,54 @@ const PHYSICAL_WORK_KEYWORDS_FR: &[&str] = &[
     "conversion de",
 ];
 
+/// Keywords for the narrower infrastructure-land-acquisition qualification
+/// path (see `is_infrastructure_land_acquisition`): a land purchase the
+/// city makes specifically to enable a known future infrastructure
+/// project (e.g. a road reconfiguration), which has no described physical
+/// construction yet and so never matches `PHYSICAL_WORK_KEYWORDS_*` above.
+const INFRASTRUCTURE_LAND_KEYWORDS_EN: &[&str] = &[
+    "land acquisition",
+    "acquire the land",
+    "acquire a parcel",
+    "purchase of land for",
+    "infrastructure reconfiguration",
+    "road reconfiguration",
+];
+
+const INFRASTRUCTURE_LAND_KEYWORDS_FR: &[&str] = &[
+    "acquérir un terrain",
+    "acquisition d'un terrain",
+    "réaménagement d'infrastructures",
+    "réaménagement d'infrastructures routières",
+    "aux fins de réaménagement",
+];
+
+/// Narrower, separate qualification path from `validate_physical_work`:
+/// requires BOTH a land-acquisition keyword match AND an LLM-reported
+/// `project_type` of `"infrastructure"` (case-insensitive). Neither signal
+/// alone is sufficient — an infrastructure-tagged item with no
+/// land-acquisition language, or land-acquisition language on a
+/// non-infrastructure item (e.g. a housing land sale), does not qualify
+/// through this path.
+pub fn is_infrastructure_land_acquisition(
+    chunk_text: &str,
+    language: &str,
+    project_type: Option<&str>,
+) -> bool {
+    let is_infrastructure_type = project_type
+        .map(|t| t.eq_ignore_ascii_case("infrastructure"))
+        .unwrap_or(false);
+    if !is_infrastructure_type {
+        return false;
+    }
+    let lower = chunk_text.to_lowercase();
+    let keywords = match language {
+        "fr" => INFRASTRUCTURE_LAND_KEYWORDS_FR,
+        _ => INFRASTRUCTURE_LAND_KEYWORDS_EN,
+    };
+    keywords.iter().any(|kw| lower.contains(kw))
+}
+
 /// `language` is `"fr"` or defaults to English for anything else, matching
 /// `extract_entities`'s prompt-routing convention.
 pub fn validate_physical_work(chunk_text: &str, language: &str, llm_claimed: bool) -> bool {
@@ -132,5 +180,64 @@ mod tests {
         let text = "Le point 3 a été discuté et renvoyé au personnel pour examen plus approfondi.";
         assert!(!validate_physical_work(text, "fr", false));
         assert!(validate_physical_work(text, "fr", true));
+    }
+
+    #[test]
+    fn infrastructure_land_acquisition_matches_french_keyword_and_type() {
+        let text = "Approuver le projet d'addenda ... la Ville s'est engagée à acquérir un terrain, pour les fins de réaménagement d'infrastructures routières, situé à l'intersection de l'avenue Saint-Pierre et de la rue Notre-Dame.";
+        assert!(is_infrastructure_land_acquisition(
+            text,
+            "fr",
+            Some("infrastructure")
+        ));
+    }
+
+    #[test]
+    fn infrastructure_land_acquisition_matches_english_keyword_and_type() {
+        let text = "The City will acquire the land for infrastructure reconfiguration at the corner of Elm and Main.";
+        assert!(is_infrastructure_land_acquisition(
+            text,
+            "en",
+            Some("infrastructure")
+        ));
+    }
+
+    #[test]
+    fn infrastructure_land_acquisition_rejects_keyword_with_wrong_project_type() {
+        let text = "La Ville vend un immeuble à des fins d'habitation, à la Coopérative d'habitation Monde-Uni.";
+        // "vend" isn't a land-acquisition keyword either, but even paired
+        // with an infrastructure type this housing-sale text has no
+        // land-acquisition keyword match at all.
+        assert!(!is_infrastructure_land_acquisition(
+            text,
+            "fr",
+            Some("infrastructure")
+        ));
+    }
+
+    #[test]
+    fn infrastructure_land_acquisition_rejects_keyword_with_non_infrastructure_type() {
+        let text = "La Ville s'est engagée à acquérir un terrain à des fins d'habitation.";
+        assert!(!is_infrastructure_land_acquisition(
+            text,
+            "fr",
+            Some("residential")
+        ));
+    }
+
+    #[test]
+    fn infrastructure_land_acquisition_rejects_when_project_type_is_none() {
+        let text = "La Ville s'est engagée à acquérir un terrain pour les fins de réaménagement d'infrastructures routières.";
+        assert!(!is_infrastructure_land_acquisition(text, "fr", None));
+    }
+
+    #[test]
+    fn infrastructure_land_acquisition_type_match_is_case_insensitive() {
+        let text = "The City will acquire the land for infrastructure reconfiguration.";
+        assert!(is_infrastructure_land_acquisition(
+            text,
+            "en",
+            Some("Infrastructure")
+        ));
     }
 }
