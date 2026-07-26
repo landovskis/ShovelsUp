@@ -283,7 +283,9 @@ mod core {
                 let has_query_string = parsed.query().is_some();
                 let has_session_segment = parsed
                     .path_segments()
-                    .map(|mut segments| segments.any(|segment| segment.eq_ignore_ascii_case("session")))
+                    .map(|mut segments| {
+                        segments.any(|segment| segment.eq_ignore_ascii_case("session"))
+                    })
                     .unwrap_or(false);
                 !has_query_string && !has_session_segment
             }
@@ -472,10 +474,7 @@ mod core {
         #[test]
         fn build_signup_deep_link_reflects_only_the_validated_project_id() {
             let id = uuid::Uuid::nil();
-            assert_eq!(
-                build_signup_deep_link(id),
-                format!("/signup?project={id}")
-            );
+            assert_eq!(build_signup_deep_link(id), format!("/signup?project={id}"));
         }
 
         #[test]
@@ -487,16 +486,16 @@ mod core {
         #[test]
         fn format_detection_sentence_none_when_source_count_missing() {
             let now = Utc::now();
-            assert_eq!(
-                format_detection_sentence("en", Some(now), None, now),
-                None
-            );
+            assert_eq!(format_detection_sentence("en", Some(now), None, now), None);
         }
 
         #[test]
         fn format_detection_sentence_none_when_source_count_non_positive() {
             let now = Utc::now();
-            assert_eq!(format_detection_sentence("en", Some(now), Some(0), now), None);
+            assert_eq!(
+                format_detection_sentence("en", Some(now), Some(0), now),
+                None
+            );
         }
 
         #[test]
@@ -699,7 +698,6 @@ struct Project {
     approval_status_raw: Option<String>,
     source_url: Option<String>,
     language: Option<String>,
-    category_code: Option<String>,
     category_label_en: Option<String>,
     category_label_fr: Option<String>,
     confidence_level: Option<String>,
@@ -708,7 +706,10 @@ struct Project {
     source_count: Option<i64>,
 }
 
-async fn fetch_project(db: &sqlx::PgPool, project_id: Uuid) -> Result<Option<Project>, sqlx::Error> {
+async fn fetch_project(
+    db: &sqlx::PgPool,
+    project_id: Uuid,
+) -> Result<Option<Project>, sqlx::Error> {
     sqlx::query_as!(
         Project,
         r#"
@@ -726,7 +727,6 @@ async fn fetch_project(db: &sqlx::PgPool, project_id: Uuid) -> Result<Option<Pro
             m.approval_status_raw AS "approval_status_raw?",
             m.source_url AS "source_url?",
             m.language AS "language?",
-            p.category_code,
             ct.label_en AS "category_label_en?",
             ct.label_fr AS "category_label_fr?",
             p.confidence_level,
@@ -758,12 +758,13 @@ async fn fetch_project(db: &sqlx::PgPool, project_id: Uuid) -> Result<Option<Pro
 }
 
 /// IMP-REQ-006-05: the project's primary (most recent) source document's
-/// citation-relevant data. Mirrors `fetch_project`'s lateral-join mention
-/// resolution pattern exactly (`project_timeline_events` -> `project_mentions` ->
+/// citation-relevant data. Mirrors `fetch_project`'s mention-resolution join
+/// **path** (`project_timeline_events` -> `project_mentions` ->
 /// `document_chunks` -> `source_documents`, "latest" = `ORDER BY
-/// pte.created_at DESC LIMIT 1`) plus one further join to `municipalities`
-/// for the citation text's municipality name. `None` means the project has
-/// no associated source document at all (TC-006-4).
+/// pte.created_at DESC LIMIT 1`) — but as a plain non-lateral join chain,
+/// not `fetch_project`'s `LEFT JOIN LATERAL` — plus one further join to
+/// `municipalities` for the citation text's municipality name. `None` means
+/// the project has no associated source document at all (TC-006-4).
 struct PrimaryCitationRow {
     source_url: String,
     meeting_date: Option<DateTime<Utc>>,
@@ -860,16 +861,16 @@ async fn fetch_primary_citation(
 /// (TC-014-6). The telemetry POST (TC-014-5) must remain a fully separate
 /// route/handler so its failures never affect this page's own rendering.
 ///
-/// REQ-015 scaffolding stub: `first_detected_at`/`source_count` are the
-/// additional fields TC-015-2 asserts against (the detail-page half of the
-/// "Detected N days ago from M council source(s)" indicator; see
-/// `SearchResult::first_detected_at`/`source_count` in `routes/search.rs`
-/// for the search-card half). Same backing gap: `public_search_documents`
-/// has neither column yet (IMP-REQ-015-02/03/04's migration+materializer),
-/// so `get_project_detail_page` has no query populating these, and
-/// `project_detail.html` has no rendering for them at all — IMP-REQ-015-07
-/// must query them and IMP-REQ-015-12 must thread them into the template,
-/// rendering the indicator only when both are `Some` (TC-015-5).
+/// REQ-015 (IMP-REQ-015-02/03/04/07/12, done): `first_detected_at`/
+/// `source_count` are the additional fields TC-015-2 asserts against (the
+/// detail-page half of the "Detected N days ago from M council source(s)"
+/// indicator; see `SearchResult::first_detected_at`/`source_count` in
+/// `routes/search.rs` for the search-card half). Migration 027 added both
+/// columns to `public_search_documents`; `fetch_project` queries them
+/// (`LEFT JOIN public_search_documents`), and `get_project_detail_page`
+/// threads them through `core::format_detection_sentence` into
+/// `project_detail.html`'s rendered `detection_sentence`, shown only when
+/// both are `Some` (TC-015-5).
 struct ProjectDetailContext {
     // Added per docs/superpowers/specs/2026-07-26-project-detail-completeness-design.md:
     // the "Project details" section. `civic_address`/`project_type` prefer
@@ -1007,7 +1008,7 @@ struct ProjectFieldLabels {
     project_name_label: &'static str,
     civic_address_label: &'static str,
     project_type_label: &'static str,
-    category_label: &'static str,
+    category_heading_label: &'static str,
     reference_number_label: &'static str,
     scale_units_label: &'static str,
     scale_gfa_label: &'static str,
@@ -1020,7 +1021,7 @@ fn project_field_labels(lang: &str) -> ProjectFieldLabels {
             project_name_label: "Nom du projet : ",
             civic_address_label: "Adresse : ",
             project_type_label: "Type de projet : ",
-            category_label: "Catégorie : ",
+            category_heading_label: "Catégorie : ",
             reference_number_label: "Numéro de référence : ",
             scale_units_label: "Unités : ",
             scale_gfa_label: "Superficie de plancher (m²) : ",
@@ -1030,7 +1031,7 @@ fn project_field_labels(lang: &str) -> ProjectFieldLabels {
             project_name_label: "Project name: ",
             civic_address_label: "Address: ",
             project_type_label: "Project type: ",
-            category_label: "Category: ",
+            category_heading_label: "Category: ",
             reference_number_label: "Reference number: ",
             scale_units_label: "Units: ",
             scale_gfa_label: "Floor area (m²): ",
@@ -1269,10 +1270,15 @@ pub async fn get_project_detail_page(
     // comment); production always uses `state.db` here since the override
     // is always `None`.
     let citation_pool = state.citation_db_override.as_ref().unwrap_or(&state.db);
-    let citation_row = fetch_primary_citation(citation_pool, id).await.ok().flatten();
+    let citation_row = fetch_primary_citation(citation_pool, id)
+        .await
+        .ok()
+        .flatten();
     let citation_view = core::resolve_citation_view(
         citation_row.as_ref().map(|row| row.source_url.as_str()),
-        citation_row.as_ref().map(|row| row.municipality_name.as_str()),
+        citation_row
+            .as_ref()
+            .map(|row| row.municipality_name.as_str()),
         citation_row.as_ref().and_then(|row| row.meeting_date),
     );
 
@@ -1363,7 +1369,7 @@ pub async fn get_project_detail_page(
             project_type_label => field_labels.project_type_label,
             project_name_label => field_labels.project_name_label,
             category_label => detail_context.category_label,
-            category_label_heading => field_labels.category_label,
+            category_label_heading => field_labels.category_heading_label,
             reference_number => detail_context.reference_number,
             reference_number_label => field_labels.reference_number_label,
             scale_units => detail_context.scale_units,
