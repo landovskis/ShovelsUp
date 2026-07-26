@@ -55,11 +55,27 @@ pub async fn extract_entities(
     }
 
     let physical_work = validator::validate_physical_work(chunk_text, language, raw.physical_work);
-    if !physical_work {
+    let qualification_path = if physical_work {
+        Some(QualificationPath::PhysicalWork)
+    } else if validator::is_infrastructure_land_acquisition(
+        chunk_text,
+        language,
+        raw.project_type.as_deref(),
+    ) {
+        Some(QualificationPath::InfrastructureLandAcquisition)
+    } else {
+        None
+    };
+    let Some(qualification_path) = qualification_path else {
         return Ok(None);
-    }
+    };
 
-    if !scale::has_scale_indicator(raw.scale_units, raw.scale_gfa_sqm, raw.scale_storeys) {
+    // Scale gate applies only to the physical-work path — infrastructure
+    // land-acquisition items are pre-construction and have no building
+    // GFA/units/storeys to report yet.
+    if qualification_path == QualificationPath::PhysicalWork
+        && !scale::has_scale_indicator(raw.scale_units, raw.scale_gfa_sqm, raw.scale_storeys)
+    {
         return Ok(None);
     }
 
@@ -89,7 +105,7 @@ pub async fn extract_entities(
 
     Ok(Some(ExtractionResult {
         physical_work,
-        qualification_path: QualificationPath::PhysicalWork,
+        qualification_path,
         project_name,
         civic_address: raw.civic_address,
         project_type: raw.project_type,
@@ -469,6 +485,50 @@ mod tests {
         let result = extract_entities(
             "Modification de zonage pour permettre une désignation à usage mixte au 400, rue King.",
             "fr",
+            &llm,
+        )
+        .await
+        .unwrap();
+        assert!(result.is_none());
+    }
+
+    /// A land purchase for a future road reconfiguration — no described
+    /// physical construction and no building-scale indicator — still
+    /// qualifies via the infrastructure-land-acquisition path when the LLM
+    /// tags `project_type: "infrastructure"`.
+    #[tokio::test]
+    async fn extract_entities_qualifies_infrastructure_land_acquisition_without_scale() {
+        let llm = FixedResponseProvider::new(
+            r#"{"has_mention":true,"physical_work":false,"project_name":null,"civic_address":"intersection de l'avenue Saint-Pierre et de la rue Notre-Dame","project_type":"infrastructure","scale_units":null,"scale_gfa_sqm":null,"scale_storeys":null,"approval_status_raw":"Adopté à l'unanimité."}"#,
+        );
+        let result = extract_entities(
+            "CM26 0091 — Approuver le projet d'addenda ... la Ville s'est engagée à acquérir un terrain, pour les fins de réaménagement d'infrastructures routières, situé à l'intersection de l'avenue Saint-Pierre et de la rue Notre-Dame. Adopté à l'unanimité.",
+            "fr",
+            &llm,
+        )
+        .await
+        .unwrap();
+        let extraction = result.expect("expected a qualifying extraction");
+        assert_eq!(
+            extraction.qualification_path,
+            QualificationPath::InfrastructureLandAcquisition
+        );
+        assert!(!extraction.physical_work);
+        assert_eq!(extraction.scale_units, None);
+        assert_eq!(extraction.scale_gfa_sqm, None);
+        assert_eq!(extraction.scale_storeys, None);
+    }
+
+    /// An infrastructure-tagged item with no land-acquisition keyword, and
+    /// no scale indicator, still qualifies neither path.
+    #[tokio::test]
+    async fn extract_entities_rejects_infrastructure_type_without_keyword_or_scale() {
+        let llm = FixedResponseProvider::new(
+            r#"{"has_mention":true,"physical_work":false,"project_name":null,"civic_address":"100 Main St","project_type":"infrastructure","scale_units":null,"scale_gfa_sqm":null,"scale_storeys":null,"approval_status_raw":null}"#,
+        );
+        let result = extract_entities(
+            "Item 12: The infrastructure committee received a quarterly report for information.",
+            "en",
             &llm,
         )
         .await
