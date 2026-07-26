@@ -665,44 +665,92 @@ async fn fetch_timeline_events(
     Ok(events)
 }
 
-/// The project-detail page's most recent mention, joined through to its
-/// source document chunk. "Latest" is resolved via `project_timeline_events`
-/// (`ORDER BY pte.created_at DESC LIMIT 1`), the same table
-/// `fetch_timeline_events` above already uses to associate a project with
-/// its mentions — NOT a direct `project_mentions.project_id` filter: that
-/// column is only populated by the pipeline's `resolver::link_mention` in
-/// production (see `pipeline/src/resolver/mod.rs`), and this repo's test
-/// fixtures (`insert_mention` in `tests/timeline_resolver.rs`) deliberately
-/// exercise the resolver-free path, linking project<->mention only through
-/// `project_timeline_events`, mirroring `fetch_timeline_events`'s own join.
-/// `None` means the project has no timeline event (and therefore no
-/// resolvable mention) at all yet (TC-005-2's "graceful degradation" case).
-struct LatestMentionForDescription {
-    civic_address: Option<String>,
-    project_type: Option<String>,
+/// The project's full detail-page data in one query: the canonical
+/// `projects` row's own columns, its public category label (if any,
+/// joined with `category_taxonomy.is_public`), and its most recent
+/// mention's descriptive/scale fields. "Most recent mention" is resolved
+/// via `project_timeline_events` (`ORDER BY pte.created_at DESC LIMIT 1`),
+/// the same table `fetch_timeline_events` uses — NOT a direct
+/// `project_mentions.project_id` filter (see `fetch_timeline_events`'s doc
+/// comment for why).
+///
+/// `mention_id` is `Some` only when the project has at least one timeline
+/// event; it exists purely as a presence marker so callers can distinguish
+/// "no mention at all" from "mention exists but every one of its fields
+/// happens to be null" — the same distinction the former dedicated
+/// single-mention struct drew via its own `Option<..>` wrapper.
+/// `mention_civic_address`/`mention_project_type` are therefore
+/// deliberately NOT coalesced with the canonical `projects` row here (the
+/// description-synthesis call site needs the mention's own value only,
+/// unmixed with canonical data, to preserve existing behavior); the
+/// canonical-row fallback for the *displayed* address/type fields is
+/// computed by the caller instead.
+struct Project {
+    mention_id: Option<Uuid>,
+    mention_civic_address: Option<String>,
+    mention_project_type: Option<String>,
+    canonical_civic_address: Option<String>,
+    canonical_project_type: Option<String>,
+    project_name: Option<String>,
+    reference_number: Option<String>,
     scale_units: Option<i32>,
     scale_gfa_sqm: Option<f64>,
     scale_storeys: Option<i32>,
     approval_status_raw: Option<String>,
     source_url: Option<String>,
     language: Option<String>,
+    category_code: Option<String>,
+    category_label_en: Option<String>,
+    category_label_fr: Option<String>,
+    confidence_level: Option<String>,
+    merged_into_id: Option<Uuid>,
+    first_detected_at: Option<DateTime<Utc>>,
+    source_count: Option<i64>,
 }
 
-async fn fetch_latest_mention_for_description(
-    db: &sqlx::PgPool,
-    project_id: Uuid,
-) -> Result<Option<LatestMentionForDescription>, sqlx::Error> {
+async fn fetch_project(db: &sqlx::PgPool, project_id: Uuid) -> Result<Option<Project>, sqlx::Error> {
     sqlx::query_as!(
-        LatestMentionForDescription,
-        "SELECT pm.civic_address, pm.project_type, pm.scale_units, pm.scale_gfa_sqm, \
-                pm.scale_storeys, pm.approval_status_raw, sd.source_url, dc.language \
-         FROM project_timeline_events pte \
-         JOIN project_mentions pm ON pm.id = pte.project_mention_id \
-         JOIN document_chunks dc ON dc.id = pm.document_chunk_id \
-         JOIN source_documents sd ON sd.id = dc.source_document_id \
-         WHERE pte.project_id = $1 \
-         ORDER BY pte.created_at DESC \
-         LIMIT 1",
+        Project,
+        r#"
+        SELECT
+            m.mention_id AS "mention_id?",
+            m.civic_address AS "mention_civic_address?",
+            m.project_type AS "mention_project_type?",
+            p.civic_address_normalized AS canonical_civic_address,
+            p.project_type AS canonical_project_type,
+            m.project_name AS "project_name?",
+            m.reference_number AS "reference_number?",
+            m.scale_units AS "scale_units?",
+            m.scale_gfa_sqm AS "scale_gfa_sqm?",
+            m.scale_storeys AS "scale_storeys?",
+            m.approval_status_raw AS "approval_status_raw?",
+            m.source_url AS "source_url?",
+            m.language AS "language?",
+            p.category_code,
+            ct.label_en AS "category_label_en?",
+            ct.label_fr AS "category_label_fr?",
+            p.confidence_level,
+            p.merged_into_id,
+            psd.first_detected_at,
+            psd.source_count
+        FROM projects p
+        LEFT JOIN category_taxonomy ct
+            ON ct.code = p.category_code AND ct.is_public
+        LEFT JOIN LATERAL (
+            SELECT pm.id AS mention_id, pm.project_name, pm.civic_address, pm.project_type,
+                   pm.reference_number, pm.scale_units, pm.scale_gfa_sqm, pm.scale_storeys,
+                   pm.approval_status_raw, sd.source_url, dc.language
+            FROM project_timeline_events pte
+            JOIN project_mentions pm ON pm.id = pte.project_mention_id
+            JOIN document_chunks dc ON dc.id = pm.document_chunk_id
+            JOIN source_documents sd ON sd.id = dc.source_document_id
+            WHERE pte.project_id = p.id
+            ORDER BY pte.created_at DESC
+            LIMIT 1
+        ) m ON true
+        LEFT JOIN public_search_documents psd ON psd.project_id = p.id
+        WHERE p.id = $1
+        "#,
         project_id
     )
     .fetch_optional(db)
@@ -710,8 +758,8 @@ async fn fetch_latest_mention_for_description(
 }
 
 /// IMP-REQ-006-05: the project's primary (most recent) source document's
-/// citation-relevant data. Mirrors `fetch_latest_mention_for_description`'s
-/// join pattern exactly (`project_timeline_events` -> `project_mentions` ->
+/// citation-relevant data. Mirrors `fetch_project`'s lateral-join mention
+/// resolution pattern exactly (`project_timeline_events` -> `project_mentions` ->
 /// `document_chunks` -> `source_documents`, "latest" = `ORDER BY
 /// pte.created_at DESC LIMIT 1`) plus one further join to `municipalities`
 /// for the citation text's municipality name. `None` means the project has
@@ -761,7 +809,7 @@ async fn fetch_primary_citation(
 /// `fetch_primary_citation` (joining `project_mentions.document_chunk_id ->
 /// document_chunks.source_document_id -> source_documents ->
 /// municipalities`, "most recent" resolved the same way
-/// `fetch_latest_mention_for_description` does) piped through
+/// `fetch_project`'s mention lateral join does) piped through
 /// `core::resolve_citation_view`'s pure decision. `citation_url` is `None`
 /// when the project has no source document at all (TC-006-4), in which
 /// case the template omits the `#project-source` section entirely.
@@ -823,6 +871,20 @@ async fn fetch_primary_citation(
 /// must query them and IMP-REQ-015-12 must thread them into the template,
 /// rendering the indicator only when both are `Some` (TC-015-5).
 struct ProjectDetailContext {
+    // Added per docs/superpowers/specs/2026-07-26-project-detail-completeness-design.md:
+    // the "Project details" section. `civic_address`/`project_type` prefer
+    // the most recent mention's value, falling back to the canonical
+    // `projects` row when the mention doesn't have one. `category_label` is
+    // `None` whenever the project has no category, or its category isn't
+    // public.
+    project_name: Option<String>,
+    civic_address: Option<String>,
+    project_type: Option<String>,
+    category_label: Option<String>,
+    reference_number: Option<String>,
+    scale_units: Option<i32>,
+    scale_gfa_sqm: Option<f64>,
+    scale_storeys: Option<i32>,
     description: Option<String>,
     confidence_level: Option<String>,
     source_document_url: Option<String>,
@@ -932,6 +994,47 @@ fn cta_labels(lang: &str) -> CtaLabels {
             signup_label: "Sign up",
             collapse_label: "Collapse",
             expand_label: "Expand",
+        },
+    }
+}
+
+/// EN/FR labels for the "Project details" section (project name, civic
+/// address, project type, category, reference number, scale), added per
+/// docs/superpowers/specs/2026-07-26-project-detail-completeness-design.md.
+/// Mirrors `not_found_labels`/`cta_labels`'s plain lang-keyed
+/// literal-struct pattern (no I/O).
+struct ProjectFieldLabels {
+    project_name_label: &'static str,
+    civic_address_label: &'static str,
+    project_type_label: &'static str,
+    category_label: &'static str,
+    reference_number_label: &'static str,
+    scale_units_label: &'static str,
+    scale_gfa_label: &'static str,
+    scale_storeys_label: &'static str,
+}
+
+fn project_field_labels(lang: &str) -> ProjectFieldLabels {
+    match lang {
+        "fr" => ProjectFieldLabels {
+            project_name_label: "Nom du projet : ",
+            civic_address_label: "Adresse : ",
+            project_type_label: "Type de projet : ",
+            category_label: "Catégorie : ",
+            reference_number_label: "Numéro de référence : ",
+            scale_units_label: "Unités : ",
+            scale_gfa_label: "Superficie de plancher (m²) : ",
+            scale_storeys_label: "Étages : ",
+        },
+        _ => ProjectFieldLabels {
+            project_name_label: "Project name: ",
+            civic_address_label: "Address: ",
+            project_type_label: "Project type: ",
+            category_label: "Category: ",
+            reference_number_label: "Reference number: ",
+            scale_units_label: "Units: ",
+            scale_gfa_label: "Floor area (m²): ",
+            scale_storeys_label: "Storeys: ",
         },
     }
 }
@@ -1088,19 +1191,7 @@ pub async fn get_project_detail_page(
     // an existing row with both columns `NULL`: the indicator omits itself
     // entirely, TC-015-5), the same denormalized columns the search-card
     // half (`SearchResult`, `routes/search.rs`) reads.
-    let project_row = match sqlx::query!(
-        r#"
-        SELECT p.id, p.confidence_level, p.merged_into_id,
-               psd.first_detected_at, psd.source_count
-        FROM projects p
-        LEFT JOIN public_search_documents psd ON psd.project_id = p.id
-        WHERE p.id = $1
-        "#,
-        id
-    )
-    .fetch_optional(&state.db)
-    .await
-    {
+    let project_row = match fetch_project(&state.db, id).await {
         Ok(row) => row,
         Err(_) => return render_error_page(&labels, id),
     };
@@ -1129,31 +1220,44 @@ pub async fn get_project_detail_page(
         Err(_) => return render_error_page(&labels, id),
     };
 
-    let mention = match fetch_latest_mention_for_description(&state.db, id).await {
-        Ok(mention) => mention,
-        Err(_) => return render_error_page(&labels, id),
-    };
-
-    // IMP-REQ-005-03: description is synthesized (not stored) from the
-    // project's most recent mention, so it's only present when a mention
-    // exists at all (TC-005-1 vs. TC-005-2's "no mention seeded" case).
-    // `source_document_url` is likewise derived at read time from that same
-    // mention's document chunk's source document, rather than read from
-    // `projects.source_document_url` (migration 020's column, which nothing
-    // populates yet) — see `LatestMentionForDescription`.
-    let description = mention.as_ref().map(|m| {
+    // IMP-REQ-005-03 (unchanged): description is synthesized (not stored)
+    // from the project's most recent mention, so it's only present when a
+    // mention exists at all (`mention_id` is the presence marker —
+    // TC-005-1 vs. TC-005-2's "no mention seeded" case). Deliberately uses
+    // the mention's OWN civic_address/project_type, not the canonical-row
+    // fallback used for the "Project details" section below, so this
+    // synthesis behaves exactly as it did before this pass.
+    let description = project_row.mention_id.map(|_| {
         core::synthesize_description(
-            m.civic_address.as_deref(),
-            m.project_type.as_deref(),
-            m.scale_units,
-            m.scale_gfa_sqm,
-            m.scale_storeys,
-            m.approval_status_raw.as_deref(),
+            project_row.mention_civic_address.as_deref(),
+            project_row.mention_project_type.as_deref(),
+            project_row.scale_units,
+            project_row.scale_gfa_sqm,
+            project_row.scale_storeys,
+            project_row.approval_status_raw.as_deref(),
         )
     });
-    let description_lang = mention.as_ref().and_then(|m| m.language.clone());
+    let description_lang = project_row.language.clone();
     let description_language_diverges =
         core::description_language_diverges(lang, description_lang.as_deref());
+
+    // docs/superpowers/specs/2026-07-26-project-detail-completeness-design.md:
+    // "Project details" section fields. civic_address/project_type prefer
+    // the mention's own value, falling back to the canonical projects row.
+    let field_labels = project_field_labels(lang);
+    let display_civic_address = project_row
+        .mention_civic_address
+        .clone()
+        .or_else(|| project_row.canonical_civic_address.clone());
+    let display_project_type = project_row
+        .mention_project_type
+        .clone()
+        .or_else(|| project_row.canonical_project_type.clone());
+    let category_label = if lang == "fr" {
+        project_row.category_label_fr.clone()
+    } else {
+        project_row.category_label_en.clone()
+    };
 
     // IMP-REQ-006-06: the citation lookup's failure is deliberately isolated
     // from the rest of the page via `.ok()` (never `?`/`SERVICE_UNAVAILABLE`)
@@ -1207,9 +1311,17 @@ pub async fn get_project_detail_page(
 
     let detail_context = ProjectDetailContext {
         description,
-        confidence_level: project_row.confidence_level,
-        source_document_url: mention.as_ref().and_then(|m| m.source_url.clone()),
+        confidence_level: project_row.confidence_level.clone(),
+        source_document_url: project_row.source_url.clone(),
         description_lang,
+        project_name: project_row.project_name.clone(),
+        civic_address: display_civic_address,
+        project_type: display_project_type,
+        category_label,
+        reference_number: project_row.reference_number.clone(),
+        scale_units: project_row.scale_units,
+        scale_gfa_sqm: project_row.scale_gfa_sqm,
+        scale_storeys: project_row.scale_storeys,
         citation_url: citation_view.citation_url,
         citation_url_reliable: citation_view.is_reliable,
         citation_meeting_date: citation_view.meeting_date,
@@ -1244,6 +1356,22 @@ pub async fn get_project_detail_page(
             document_retrieved_fallback_label => labels.document_retrieved_fallback_label,
             canonical_url => detail_context.canonical_url,
             detection_sentence => detail_context.detection_sentence,
+            project_name => detail_context.project_name,
+            civic_address => detail_context.civic_address,
+            civic_address_label => field_labels.civic_address_label,
+            project_type => detail_context.project_type,
+            project_type_label => field_labels.project_type_label,
+            project_name_label => field_labels.project_name_label,
+            category_label => detail_context.category_label,
+            category_label_heading => field_labels.category_label,
+            reference_number => detail_context.reference_number,
+            reference_number_label => field_labels.reference_number_label,
+            scale_units => detail_context.scale_units,
+            scale_units_label => field_labels.scale_units_label,
+            scale_gfa_sqm => detail_context.scale_gfa_sqm,
+            scale_gfa_label => field_labels.scale_gfa_label,
+            scale_storeys => detail_context.scale_storeys,
+            scale_storeys_label => field_labels.scale_storeys_label,
             copy_link_label => labels.copy_link_label,
             copy_link_copied_label => labels.copy_link_copied_label,
             project_id => id.to_string(),
