@@ -194,6 +194,38 @@
     {% endif %}
 
     <div class="project-detail-fields">
+    {% if project_name is defined and project_name %}
+    <p id="project-name">{{ project_name_label | default("Project name: ", true) }}{{ project_name }}</p>
+    {% endif %}
+
+    {% if civic_address is defined and civic_address %}
+    <p id="project-civic-address">{{ civic_address_label | default("Address: ", true) }}{{ civic_address }}</p>
+    {% endif %}
+
+    {% if project_type is defined and project_type %}
+    <p id="project-type">{{ project_type_label | default("Project type: ", true) }}{{ project_type }}</p>
+    {% endif %}
+
+    {% if category_label is defined and category_label %}
+    <p id="project-category">{{ category_label_heading | default("Category: ", true) }}{{ category_label }}</p>
+    {% endif %}
+
+    {% if reference_number is defined and reference_number %}
+    <p id="project-reference-number">{{ reference_number_label | default("Reference number: ", true) }}{{ reference_number }}</p>
+    {% endif %}
+
+    {% if scale_units is defined and scale_units %}
+    <p id="project-scale-units">{{ scale_units_label | default("Units: ", true) }}{{ scale_units }}</p>
+    {% endif %}
+
+    {% if scale_gfa_sqm is defined and scale_gfa_sqm %}
+    <p id="project-scale-gfa">{{ scale_gfa_label | default("Floor area (m²): ", true) }}{{ scale_gfa_sqm }}</p>
+    {% endif %}
+
+    {% if scale_storeys is defined and scale_storeys %}
+    <p id="project-scale-storeys">{{ scale_storeys_label | default("Storeys: ", true) }}{{ scale_storeys }}</p>
+    {% endif %}
+
     {% if description is defined and description %}
     <p id="project-description">{{ description }}</p>
     {% endif %}

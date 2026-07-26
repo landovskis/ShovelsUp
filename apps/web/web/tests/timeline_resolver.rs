@@ -152,6 +152,45 @@ async fn insert_mention(
     .unwrap()
 }
 
+/// Same as `insert_mention`, but accepts every field the project-detail
+/// page's new "Project details" section needs (project_name,
+/// reference_number, scale_units/gfa/storeys), each independently
+/// nullable so tests can exercise both "all present" and "all absent"
+/// cases. `physical_work` is always `true` here (same as `insert_mention`),
+/// so at least one of `scale_units`/`scale_gfa_sqm`/`scale_storeys` must be
+/// `Some` to satisfy `project_mentions`' `scale_indicator_required_for_physical_work`
+/// CHECK constraint.
+#[allow(clippy::too_many_arguments)]
+async fn insert_mention_with_details(
+    pool: &PgPool,
+    chunk_id: Uuid,
+    project_name: Option<&str>,
+    civic_address: Option<&str>,
+    project_type: Option<&str>,
+    reference_number: Option<&str>,
+    scale_units: Option<i32>,
+    scale_gfa_sqm: Option<f64>,
+    scale_storeys: Option<i32>,
+) -> Uuid {
+    sqlx::query_scalar!(
+        "INSERT INTO project_mentions \
+         (document_chunk_id, physical_work, project_name, civic_address, project_type, \
+          reference_number, scale_units, scale_gfa_sqm, scale_storeys) \
+         VALUES ($1, true, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+        chunk_id,
+        project_name,
+        civic_address,
+        project_type,
+        reference_number,
+        scale_units,
+        scale_gfa_sqm,
+        scale_storeys,
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
 async fn seed_timeline_event(
     pool: &PgPool,
     project_id: Uuid,
@@ -949,10 +988,9 @@ async fn imp_req_005_14_detail_fields_are_accessible(pool: PgPool) {
 async fn tc_006_1_reliable_source_renders_hyperlink_citation(pool: PgPool) {
     let project_id = seed_project(&pool, "600 reliable source ave", "residential").await;
     let chunk_id =
-        seed_document_chunk_with_source_url(&pool, "https://test-city.example/reliable-doc")
-            .await;
-    let mention_id = insert_mention(&pool, chunk_id, "600 reliable source ave", "residential")
-        .await;
+        seed_document_chunk_with_source_url(&pool, "https://test-city.example/reliable-doc").await;
+    let mention_id =
+        insert_mention(&pool, chunk_id, "600 reliable source ave", "residential").await;
     seed_timeline_event(
         &pool,
         project_id,
@@ -1005,8 +1043,7 @@ async fn tc_006_2_unreliable_source_renders_citation_text_only(pool: PgPool) {
         "https://montreal.ca/portal/session/8f3c1?token=ephemeral",
     )
     .await;
-    let mention_id = insert_mention(&pool, chunk_id, "601 session scoped blvd", "commercial")
-        .await;
+    let mention_id = insert_mention(&pool, chunk_id, "601 session scoped blvd", "commercial").await;
     seed_timeline_event(
         &pool,
         project_id,
@@ -1171,8 +1208,7 @@ async fn tc_006_5_citation_query_failure_isolated_from_page(pool: PgPool) {
     let project_id = seed_project(&pool, "604 isolated failure pl", "commercial").await;
     let chunk_id =
         seed_document_chunk_with_source_url(&pool, "https://test-city.example/doomed-doc").await;
-    let mention_id = insert_mention(&pool, chunk_id, "604 isolated failure pl", "commercial")
-        .await;
+    let mention_id = insert_mention(&pool, chunk_id, "604 isolated failure pl", "commercial").await;
     seed_timeline_event(
         &pool,
         project_id,
@@ -1280,7 +1316,8 @@ async fn tc_006_6_citation_link_text_is_meaningful_and_unreliable_is_not_a_link(
         .to_bytes();
     let html = String::from_utf8(body.to_vec()).unwrap();
 
-    let link_open = r#"<a id="citation-link" href="https://test-city.example/accessible-reliable-doc">"#;
+    let link_open =
+        r#"<a id="citation-link" href="https://test-city.example/accessible-reliable-doc">"#;
     let link_start = html
         .find(link_open)
         .unwrap_or_else(|| panic!("expected a citation hyperlink in: {html}"));
@@ -1406,8 +1443,13 @@ async fn tc_015_2_project_detail_page_shows_days_and_source_count(pool: PgPool) 
     let chunk_id_one =
         seed_document_chunk_with_source_url(&pool, "https://test-city.example/detail-doc-one")
             .await;
-    let mention_id =
-        insert_mention(&pool, chunk_id_one, "700 rue detection detail", "residential").await;
+    let mention_id = insert_mention(
+        &pool,
+        chunk_id_one,
+        "700 rue detection detail",
+        "residential",
+    )
+    .await;
     // `insert_mention` deliberately leaves `project_mentions.project_id`
     // unset (it's meant to feed `resolve_mention` elsewhere in this file) —
     // link it directly here, since this test wants an already-resolved
@@ -1470,8 +1512,13 @@ async fn tc_015_2_project_detail_page_shows_days_and_source_count(pool: PgPool) 
     .fetch_one(&pool)
     .await
     .unwrap();
-    let mention_id_two =
-        insert_mention(&pool, chunk_id_two, "700 rue detection detail", "residential").await;
+    let mention_id_two = insert_mention(
+        &pool,
+        chunk_id_two,
+        "700 rue detection detail",
+        "residential",
+    )
+    .await;
     sqlx::query!(
         "UPDATE project_mentions SET project_id = $1 WHERE id = $2",
         project_id,
@@ -1490,14 +1537,12 @@ async fn tc_015_2_project_detail_page_shows_days_and_source_count(pool: PgPool) 
     // requirement (`tc_015_1_search_card_shows_days_and_source_count` in
     // `search_integration.rs`) uses, to actually exercise the "N days ago"
     // (N=5) rendering path this test is named for.
-    sqlx::query(
-        "UPDATE public_search_documents SET first_detected_at = $1 WHERE project_id = $2",
-    )
-    .bind(chrono::Utc::now() - chrono::Duration::days(5))
-    .bind(project_id)
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("UPDATE public_search_documents SET first_detected_at = $1 WHERE project_id = $2")
+        .bind(chrono::Utc::now() - chrono::Duration::days(5))
+        .bind(project_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let app = app(test_state(pool).await);
     let response = app
@@ -1522,5 +1567,290 @@ async fn tc_015_2_project_detail_page_shows_days_and_source_count(pool: PgPool) 
         "expected the confidence indicator sentence on the project-detail \
          page once IMP-REQ-015-02/03/04/07/12 land and \
          first_detected_at/source_count are populated, got: {html}"
+    );
+}
+
+// ---------------------------------------------------------------------
+// Project detail page completeness (docs/superpowers/specs/
+// 2026-07-26-project-detail-completeness-design.md): the detail page must
+// show project_name, civic_address, project_type, category (when public),
+// reference_number, and scale (units/gfa/storeys) — fields that exist in
+// the database but the page never rendered before this pass.
+// ---------------------------------------------------------------------
+
+/// A project whose most recent mention carries every new field, and whose
+/// `category_code` points at a public taxonomy row, renders all of them as
+/// labeled rows. The mention's own civic_address/project_type ("123 Main
+/// St"/"residential") deliberately differ from the project's canonical
+/// `civic_address_normalized`/`project_type` ("999 Canonical Fallback
+/// Ave"/"institutional") so this test also pins down that the *mention's*
+/// value wins when both are present (canonical is a fallback only).
+#[sqlx::test(migrations = "./migrations")]
+async fn project_detail_all_new_fields_render_when_present(pool: PgPool) {
+    let project_id = seed_project(&pool, "999 Canonical Fallback Ave", "institutional").await;
+    sqlx::query!(
+        "UPDATE projects SET category_code = 'residential' WHERE id = $1",
+        project_id
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let chunk_id = seed_document_chunk(&pool).await;
+    let mention_id = insert_mention_with_details(
+        &pool,
+        chunk_id,
+        Some("Riverside Towers"),
+        Some("123 Main St"),
+        Some("residential"),
+        Some("REF-2026-001"),
+        Some(42),
+        Some(1234.5),
+        Some(12),
+    )
+    .await;
+    seed_timeline_event(
+        &pool,
+        project_id,
+        mention_id,
+        chrono::Utc::now(),
+        "approved",
+    )
+    .await;
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        html.contains(r#"id="project-name""#) && html.contains("Riverside Towers"),
+        "expected a #project-name row with the mention's project_name, got: {html}"
+    );
+    assert!(
+        html.contains(r#"id="project-civic-address""#) && html.contains("123 Main St"),
+        "expected #project-civic-address to show the MENTION's address (mention wins \
+         over the canonical projects row), got: {html}"
+    );
+    assert!(
+        !html.contains("999 Canonical Fallback Ave"),
+        "the canonical address must not appear when the mention has its own, got: {html}"
+    );
+    assert!(
+        html.contains(r#"id="project-type""#) && html.contains("residential"),
+        "expected #project-type to show the mention's project_type, got: {html}"
+    );
+    assert!(
+        html.contains(r#"id="project-category""#) && html.contains("Residential"),
+        "expected #project-category with the public taxonomy's EN label, got: {html}"
+    );
+    assert!(
+        html.contains(r#"id="project-reference-number""#) && html.contains("REF-2026-001"),
+        "expected #project-reference-number, got: {html}"
+    );
+    assert!(
+        html.contains(r#"id="project-scale-units""#) && html.contains("42"),
+        "expected #project-scale-units, got: {html}"
+    );
+    assert!(
+        html.contains(r#"id="project-scale-gfa""#) && html.contains("1234.5"),
+        "expected #project-scale-gfa, got: {html}"
+    );
+    assert!(
+        html.contains(r#"id="project-scale-storeys""#) && html.contains("12"),
+        "expected #project-scale-storeys, got: {html}"
+    );
+}
+
+/// FR-locale coverage for the same "Project details" fields covered by
+/// `project_detail_all_new_fields_render_when_present` (EN-only): same
+/// seed data (project_name/civic_address/project_type/reference_number/
+/// scale, plus `category_code = 'residential'`, whose `category_taxonomy`
+/// row has `label_fr = 'Résidentiel'` per migration 022), but requested
+/// with `Accept-Language: fr-CA,fr;q=0.9` — asserts the FR field-heading
+/// labels from `project_field_labels`'s `"fr" =>` arm and the FR category
+/// label render, closing the gap where only the EN path had test coverage.
+#[sqlx::test(migrations = "./migrations")]
+async fn project_detail_all_new_fields_render_in_french(pool: PgPool) {
+    let project_id = seed_project(&pool, "999 Canonical Fallback Ave", "institutional").await;
+    sqlx::query!(
+        "UPDATE projects SET category_code = 'residential' WHERE id = $1",
+        project_id
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let chunk_id = seed_document_chunk(&pool).await;
+    let mention_id = insert_mention_with_details(
+        &pool,
+        chunk_id,
+        Some("Riverside Towers"),
+        Some("123 Main St"),
+        Some("residential"),
+        Some("REF-2026-001"),
+        Some(42),
+        Some(1234.5),
+        Some(12),
+    )
+    .await;
+    seed_timeline_event(
+        &pool,
+        project_id,
+        mention_id,
+        chrono::Utc::now(),
+        "approved",
+    )
+    .await;
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .header("accept-language", "fr-CA,fr;q=0.9")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    for label in [
+        "Nom du projet : ",
+        "Adresse : ",
+        "Type de projet : ",
+        "Catégorie : ",
+        "Numéro de référence : ",
+        "Unités : ",
+        "Superficie de plancher (m²) : ",
+        "Étages : ",
+    ] {
+        assert!(
+            html.contains(label),
+            "expected FR label {label:?} to render, got: {html}"
+        );
+    }
+    assert!(
+        html.contains("Résidentiel"),
+        "expected the public taxonomy's FR category label, got: {html}"
+    );
+}
+
+/// A project with no canonical address/type, no category, and no mention
+/// at all must omit every one of the new rows entirely — no empty labels,
+/// no literal "None", and the rest of the page (confidence notice,
+/// timeline empty state) still renders normally. Seeded via a direct
+/// INSERT (not `seed_project`, which requires non-null address/type) so
+/// `civic_address_normalized`/`project_type` are genuinely NULL, not just
+/// absent from a mention.
+#[sqlx::test(migrations = "./migrations")]
+async fn project_detail_new_fields_omitted_when_absent(pool: PgPool) {
+    let project_id = sqlx::query_scalar!(
+        "INSERT INTO projects (civic_address_normalized, project_type) \
+         VALUES (NULL, NULL) RETURNING id"
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    for id in [
+        "project-name",
+        "project-civic-address",
+        "project-type",
+        "project-category",
+        "project-reference-number",
+        "project-scale-units",
+        "project-scale-gfa",
+        "project-scale-storeys",
+    ] {
+        assert!(
+            !html.contains(&format!(r#"id="{id}""#)),
+            "expected #{id} to be omitted entirely when its data is absent, got: {html}"
+        );
+    }
+    assert!(
+        !html.contains(">None<"),
+        "missing fields must never render as a literal None, got: {html}"
+    );
+}
+
+/// A project whose `category_code` points at a `category_taxonomy` row
+/// with `is_public = false` must not show a category row at all, even
+/// though `category_code` itself is set on the project.
+#[sqlx::test(migrations = "./migrations")]
+async fn project_detail_non_public_category_is_hidden(pool: PgPool) {
+    let project_id = seed_project(&pool, "77 internal category way", "commercial").await;
+    sqlx::query!(
+        "INSERT INTO category_taxonomy (code, label_en, label_fr, is_public) \
+         VALUES ('internal-only', 'Internal Only', 'Interne Seulement', false)"
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query!(
+        "UPDATE projects SET category_code = 'internal-only' WHERE id = $1",
+        project_id
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let app = app(test_state(pool).await);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/projects/{project_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        !html.contains(r#"id="project-category""#),
+        "a non-public category must not render a #project-category row, got: {html}"
     );
 }
