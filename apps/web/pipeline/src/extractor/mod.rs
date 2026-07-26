@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::{normalizer, redaction};
 use llm::LlmProvider;
-use schema::{ExtractionResult, RawExtraction};
+use schema::{ExtractionResult, QualificationPath, RawExtraction};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExtractError {
@@ -89,6 +89,7 @@ pub async fn extract_entities(
 
     Ok(Some(ExtractionResult {
         physical_work,
+        qualification_path: QualificationPath::PhysicalWork,
         project_name,
         civic_address: raw.civic_address,
         project_type: raw.project_type,

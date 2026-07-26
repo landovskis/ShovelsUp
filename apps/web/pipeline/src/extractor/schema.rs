@@ -29,10 +29,33 @@ pub struct RawExtraction {
     pub reference_number: Option<String>,
 }
 
+/// Which gate a mention qualified through — `physical_work` is RULE-001's
+/// ordinary physical-construction path; `infrastructure_land_acquisition`
+/// is the narrower land-purchase-for-future-infrastructure path (see
+/// `validator::is_infrastructure_land_acquisition`). Persisted verbatim as
+/// `project_mentions.qualification_path` (migration
+/// `028_project_mentions_qualification_path.sql`), so `as_str()`'s values
+/// must match that column's `CHECK` constraint exactly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QualificationPath {
+    PhysicalWork,
+    InfrastructureLandAcquisition,
+}
+
+impl QualificationPath {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PhysicalWork => "physical_work",
+            Self::InfrastructureLandAcquisition => "infrastructure_land_acquisition",
+        }
+    }
+}
+
 /// A validated extraction ready to persist as a `project_mentions` row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtractionResult {
     pub physical_work: bool,
+    pub qualification_path: QualificationPath,
     pub project_name: Option<String>,
     pub civic_address: Option<String>,
     pub project_type: Option<String>,
@@ -107,6 +130,15 @@ mod tests {
         assert_eq!(
             raw.reference_number.as_deref(),
             Some("Application No. 2026-045")
+        );
+    }
+
+    #[test]
+    fn qualification_path_as_str_matches_migration_check_constraint_values() {
+        assert_eq!(QualificationPath::PhysicalWork.as_str(), "physical_work");
+        assert_eq!(
+            QualificationPath::InfrastructureLandAcquisition.as_str(),
+            "infrastructure_land_acquisition"
         );
     }
 }
