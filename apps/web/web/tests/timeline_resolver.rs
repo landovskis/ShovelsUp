@@ -1640,9 +1640,10 @@ async fn project_detail_all_new_fields_render_when_present(pool: PgPool) {
         "expected a #project-name row with the mention's project_name, got: {html}"
     );
     assert!(
-        html.contains(r#"id="project-civic-address""#) && html.contains("123 Main St"),
-        "expected #project-civic-address to show the MENTION's address (mention wins \
-         over the canonical projects row), got: {html}"
+        html.contains("123 Main St"),
+        "expected the MENTION's address to render as the page title (mention wins \
+         over the canonical projects row); there is no separate #project-civic-address \
+         row anymore — the address only appears as the <h1>/<title>, got: {html}"
     );
     assert!(
         !html.contains("999 Canonical Fallback Ave"),
@@ -1733,10 +1734,14 @@ async fn project_detail_all_new_fields_render_in_french(pool: PgPool) {
         .to_bytes();
     let html = String::from_utf8(body.to_vec()).unwrap();
 
+    // "Type de projet : " is deliberately absent: project_type now renders
+    // as a bare badge next to the <h1>, not a labeled row (see
+    // project_detail.html's .project-title-row), so it carries no label
+    // prefix in either language. "Adresse : " is likewise absent: the
+    // address only renders as the page's <h1>/<title> now, with no
+    // separate labeled row in the fields box.
     for label in [
         "Nom du projet : ",
-        "Adresse : ",
-        "Type de projet : ",
         "Catégorie : ",
         "Numéro de référence : ",
         "Unités : ",
@@ -1791,7 +1796,6 @@ async fn project_detail_new_fields_omitted_when_absent(pool: PgPool) {
 
     for id in [
         "project-name",
-        "project-civic-address",
         "project-type",
         "project-category",
         "project-reference-number",

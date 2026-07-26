@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}{% if project is defined and project.title is defined %}{{ project.title }}{% else %}{{ page_title | default("Project details", true) }}{% endif %} | ShovelsUp{% endblock %}
+{% block title %}{% if civic_address is defined and civic_address %}{{ civic_address }}{% else %}{{ page_title | default("Project details", true) }}{% endif %} | ShovelsUp{% endblock %}
 
 {% block head_extra %}
 {% if canonical_url is defined and canonical_url %}
 <link rel="canonical" href="{{ canonical_url | safe }}">
 <meta property="og:url" content="{{ canonical_url | safe }}">
-<meta property="og:title" content="{{ page_title | default('Project details', true) }} | ShovelsUp">
+<meta property="og:title" content="{% if civic_address is defined and civic_address %}{{ civic_address }}{% else %}{{ page_title | default('Project details', true) }}{% endif %} | ShovelsUp">
 <meta property="og:type" content="website">
 {% endif %}
 {% endblock %}
@@ -19,7 +19,12 @@
 </section>
 {% else %}
 <section class="project-detail" aria-labelledby="project-title">
-    <h1 id="project-title">{% if project is defined and project.title is defined %}{{ project.title }}{% else %}{{ page_title | default("Project details", true) }}{% endif %}</h1>
+    <div class="project-title-row">
+        <h1 id="project-title">{% if civic_address is defined and civic_address %}{{ civic_address }}{% else %}{{ page_title | default("Project details", true) }}{% endif %}</h1>
+        {% if project_type is defined and project_type %}
+        <span id="project-type" class="project-type-badge">{{ project_type }}</span>
+        {% endif %}
+    </div>
 
     {% if detection_sentence is defined and detection_sentence %}
     <p class="project-detection">{{ detection_sentence }}</p>
@@ -93,117 +98,9 @@
     </script>
     {% endif %}
 
-    {% if cta_signup_url is defined and cta_signup_url %}
-    <section id="cta-upsell" class="cta-upsell" aria-labelledby="cta-upsell-heading">
-        <div class="cta-upsell-header">
-            <h3 id="cta-upsell-heading">{{ cta_heading | default("Get alerts", true) }}</h3>
-            <button
-                type="button"
-                id="cta-collapse-toggle"
-                aria-expanded="true"
-                aria-controls="cta-upsell-body"
-                data-collapse-label="{{ cta_collapse_label | default('Collapse', true) }}"
-                data-expand-label="{{ cta_expand_label | default('Expand', true) }}"
-            >{{ cta_collapse_label | default("Collapse", true) }}</button>
-        </div>
-        <div id="cta-upsell-body">
-            <p>{{ cta_body | default("Sign up to get alerts about future council decisions on this project.", true) }}</p>
-            <a id="cta-signup-link" href="{{ cta_signup_url | safe }}" data-project-id="{{ project_id }}">{{ cta_signup_label | default("Sign up", true) }}</a>
-        </div>
-    </section>
-    <script>
-    (function () {
-        var STORAGE_KEY = "cta-upsell-collapsed";
-        var THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-        var section = document.getElementById("cta-upsell");
-        var toggle = document.getElementById("cta-collapse-toggle");
-        var body = document.getElementById("cta-upsell-body");
-        var signupLink = document.getElementById("cta-signup-link");
-        if (!section || !toggle || !body) {
-            return;
-        }
-
-        function readStoredCollapsed() {
-            try {
-                var raw = window.localStorage.getItem(STORAGE_KEY);
-                if (!raw) {
-                    return false;
-                }
-                var parsed = JSON.parse(raw);
-                if (!parsed || typeof parsed.expiresAt !== "number") {
-                    return false;
-                }
-                if (Date.now() > parsed.expiresAt) {
-                    window.localStorage.removeItem(STORAGE_KEY);
-                    return false;
-                }
-                return parsed.collapsed === true;
-            } catch (err) {
-                return false;
-            }
-        }
-
-        function persistCollapsed(collapsed) {
-            try {
-                window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
-                    collapsed: collapsed,
-                    expiresAt: Date.now() + THIRTY_DAYS_MS
-                }));
-            } catch (err) {
-                // localStorage unavailable (private browsing, quota) — the
-                // card still works for this page view, it just won't
-                // remember the collapsed state on the next one.
-            }
-        }
-
-        function setCollapsed(collapsed, persist) {
-            body.hidden = collapsed;
-            toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
-            toggle.textContent = collapsed ? toggle.dataset.expandLabel : toggle.dataset.collapseLabel;
-            if (persist) {
-                persistCollapsed(collapsed);
-            }
-        }
-
-        setCollapsed(readStoredCollapsed(), false);
-
-        toggle.addEventListener("click", function () {
-            setCollapsed(!body.hidden, true);
-        });
-
-        function sendCtaBeacon(eventType) {
-            if (!navigator.sendBeacon) {
-                return;
-            }
-            var payload = JSON.stringify({
-                project_id: "{{ project_id }}",
-                event: eventType
-            });
-            navigator.sendBeacon("/api/v1/cta-events", new Blob([payload], { type: "application/json" }));
-        }
-
-        sendCtaBeacon("impression");
-
-        if (signupLink) {
-            signupLink.addEventListener("click", function () {
-                sendCtaBeacon("click");
-            });
-        }
-    })();
-    </script>
-    {% endif %}
-
     <div class="project-detail-fields">
     {% if project_name is defined and project_name %}
     <p id="project-name">{{ project_name_label | default("Project name: ", true) }}{{ project_name }}</p>
-    {% endif %}
-
-    {% if civic_address is defined and civic_address %}
-    <p id="project-civic-address">{{ civic_address_label | default("Address: ", true) }}{{ civic_address }}</p>
-    {% endif %}
-
-    {% if project_type is defined and project_type %}
-    <p id="project-type">{{ project_type_label | default("Project type: ", true) }}{{ project_type }}</p>
     {% endif %}
 
     {% if category_label is defined and category_label %}
