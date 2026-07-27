@@ -11,9 +11,10 @@
 //! Real municipal building-permit decisions with unit/storey/GFA detail are
 //! made at the arrondissement (borough) level, a separate system this
 //! session couldn't reach; city-level council minutes mostly contain land
-//! transactions, financing bylaws, and appointments, which is why all 3
-//! real items here are non-qualifying (see their comments below) rather
-//! than adding qualifying real coverage. It exercises the real extraction
+//! transactions, financing bylaws, and appointments, which is why 2 of the
+//! 3 real items here are non-qualifying (see their comments below) rather
+//! than adding broader qualifying real coverage; the third qualifies via
+//! the infrastructure-land-acquisition path. It exercises the real extraction
 //! pipeline (RULE-001 with the French keyword lists, scale rule, FR prompt
 //! routing) and — when ANTHROPIC_API_KEY is set — the real Anthropic API,
 //! but is not a substitute for the real labelled set the plan asks for.
@@ -38,31 +39,45 @@ struct Fixture {
     /// Mirrors `has_status` in tests/pipeline_extraction.rs — ground truth
     /// for whether the source text states an approval status at all.
     has_status: bool,
+    /// Ground truth for whether the source text states a building-scale
+    /// indicator (units/GFA/storeys) at all. `false` only for the
+    /// infrastructure-land-acquisition fixture, which is pre-construction by
+    /// design and exempt from the scale gate — counting scale as a required
+    /// field there would report a correct extraction as incomplete.
+    has_scale: bool,
 }
+
+/// The three fixtures below sourced from the real January 26, 2026 Montreal
+/// procès-verbal, identified by the council-decision number their text
+/// starts with. `french_real_fixtures_are_classified_individually` asserts
+/// each of these qualifies/doesn't qualify on its own, so a regression on
+/// any single one fails the suite instead of being absorbed by the
+/// aggregate accuracy gate.
+const REAL_FIXTURE_IDS: &[&str] = &["CM26 0046", "CM26 0082", "CM26 0091"];
 
 const FIXTURES: &[Fixture] = &[
     // --- Qualifying: physical work with a scale indicator ---
-    Fixture { text: "Point 4 : Demande de Constructions Méridien pour la construction d'un nouveau bâtiment résidentiel connu sous le nom de « Cour Érable » au 123, rue Principale, 48 logements, 6 étages. Approuvé.", should_qualify: true, has_name: true, has_status: true },
-    Fixture { text: "Point 7 : Démolition de la structure existante au 45, avenue du Chêne pour permettre la construction d'un projet à usage mixte connu sous le nom de « Rives du Fleuve », 12 000 m² de superficie brute de plancher. Reporté à la prochaine séance.", should_qualify: true, has_name: true, has_status: true },
-    Fixture { text: "Point 9 : Rénovation et agrandissement du centre communautaire institutionnel au 200, rue de l'Orme, ajout de 2 étages. Approuvé.", should_qualify: true, has_name: false, has_status: true },
-    Fixture { text: "Point 11 : Nouveau bâtiment commercial connu sous le nom de « Place du Pin » au 78, chemin du Pin, 3 étages, 4 500 m². Renvoyé au comité.", should_qualify: true, has_name: true, has_status: true },
-    Fixture { text: "Point 15 : Agrandissement de l'entrepôt industriel existant au 500, chemin Industriel, ajout de 20 unités de capacité d'entreposage et 1 étage. Approuvé.", should_qualify: true, has_name: false, has_status: true },
-    Fixture { text: "Point 18 : Érection d'un nouveau bâtiment institutionnel (succursale de bibliothèque) connu sous le nom de « Succursale Bouleau » au 90, rue du Bouleau, 2 étages. Approuvé.", should_qualify: true, has_name: true, has_status: true },
-    Fixture { text: "Point 22 : Conversion de l'ancienne usine industrielle au 15, rue du Moulin en un projet résidentiel de 60 logements. Approuvé.", should_qualify: true, has_name: false, has_status: true },
-    Fixture { text: "Point 25 : Construction d'une nouvelle tour à usage mixte connue sous le nom de « Hauteurs de la Baie » au 1000, rue de la Baie, 24 étages, 300 logements. Reporté.", should_qualify: true, has_name: true, has_status: true },
-    Fixture { text: "Point 29 : Permis de construction délivré pour une nouvelle résidence unifamiliale au 22, allée du Cèdre. Approuvé.", should_qualify: true, has_name: false, has_status: true },
-    Fixture { text: "Point 33 : Démolition de 3 unités existantes au 8, cour de l'Épinette pour permettre la construction d'un projet résidentiel en rangée connu sous le nom de « Maisons de l'Épinette », 18 logements, 3 étages. Approuvé.", should_qualify: true, has_name: true, has_status: true },
-    Fixture { text: "Point 36 : Agrandissement de l'hôpital institutionnel existant au 400, promenade de la Santé, ajout de 5 000 m² de superficie de plancher. Renvoyé au comité.", should_qualify: true, has_name: false, has_status: true },
-    Fixture { text: "Point 40 : Nouvel immeuble de bureaux commercial de 10 étages connu sous le nom de « Tour de l'Avenue des Affaires » au 250, avenue des Affaires, 15 000 m² de SBP. Approuvé.", should_qualify: true, has_name: true, has_status: true },
-    Fixture { text: "Point 44 : Rénovation de l'école institutionnelle existante au 60, avenue du Savoir, ajout de 8 salles de classe (comptées comme 8 unités). Approuvé.", should_qualify: true, has_name: false, has_status: true },
-    Fixture { text: "Point 48 : Construction d'une nouvelle structure de stationnement d'infrastructure de 4 étages au 33, voie du Transit. Approuvé.", should_qualify: true, has_name: false, has_status: true },
-    Fixture { text: "Point 52 : Agrandissement du centre de loisirs institutionnel connu sous le nom de « Centre communautaire de la rue du Sport » au 77, rue du Sport, ajout d'un étage et d'une nouvelle aile piscine. Approuvé.", should_qualify: true, has_name: true, has_status: true },
+    Fixture { text: "Point 4 : Demande de Constructions Méridien pour la construction d'un nouveau bâtiment résidentiel connu sous le nom de « Cour Érable » au 123, rue Principale, 48 logements, 6 étages. Approuvé.", should_qualify: true, has_name: true, has_status: true, has_scale: true },
+    Fixture { text: "Point 7 : Démolition de la structure existante au 45, avenue du Chêne pour permettre la construction d'un projet à usage mixte connu sous le nom de « Rives du Fleuve », 12 000 m² de superficie brute de plancher. Reporté à la prochaine séance.", should_qualify: true, has_name: true, has_status: true, has_scale: true },
+    Fixture { text: "Point 9 : Rénovation et agrandissement du centre communautaire institutionnel au 200, rue de l'Orme, ajout de 2 étages. Approuvé.", should_qualify: true, has_name: false, has_status: true, has_scale: true },
+    Fixture { text: "Point 11 : Nouveau bâtiment commercial connu sous le nom de « Place du Pin » au 78, chemin du Pin, 3 étages, 4 500 m². Renvoyé au comité.", should_qualify: true, has_name: true, has_status: true, has_scale: true },
+    Fixture { text: "Point 15 : Agrandissement de l'entrepôt industriel existant au 500, chemin Industriel, ajout de 20 unités de capacité d'entreposage et 1 étage. Approuvé.", should_qualify: true, has_name: false, has_status: true, has_scale: true },
+    Fixture { text: "Point 18 : Érection d'un nouveau bâtiment institutionnel (succursale de bibliothèque) connu sous le nom de « Succursale Bouleau » au 90, rue du Bouleau, 2 étages. Approuvé.", should_qualify: true, has_name: true, has_status: true, has_scale: true },
+    Fixture { text: "Point 22 : Conversion de l'ancienne usine industrielle au 15, rue du Moulin en un projet résidentiel de 60 logements. Approuvé.", should_qualify: true, has_name: false, has_status: true, has_scale: true },
+    Fixture { text: "Point 25 : Construction d'une nouvelle tour à usage mixte connue sous le nom de « Hauteurs de la Baie » au 1000, rue de la Baie, 24 étages, 300 logements. Reporté.", should_qualify: true, has_name: true, has_status: true, has_scale: true },
+    Fixture { text: "Point 29 : Permis de construction délivré pour une nouvelle résidence unifamiliale au 22, allée du Cèdre. Approuvé.", should_qualify: true, has_name: false, has_status: true, has_scale: true },
+    Fixture { text: "Point 33 : Démolition de 3 unités existantes au 8, cour de l'Épinette pour permettre la construction d'un projet résidentiel en rangée connu sous le nom de « Maisons de l'Épinette », 18 logements, 3 étages. Approuvé.", should_qualify: true, has_name: true, has_status: true, has_scale: true },
+    Fixture { text: "Point 36 : Agrandissement de l'hôpital institutionnel existant au 400, promenade de la Santé, ajout de 5 000 m² de superficie de plancher. Renvoyé au comité.", should_qualify: true, has_name: false, has_status: true, has_scale: true },
+    Fixture { text: "Point 40 : Nouvel immeuble de bureaux commercial de 10 étages connu sous le nom de « Tour de l'Avenue des Affaires » au 250, avenue des Affaires, 15 000 m² de SBP. Approuvé.", should_qualify: true, has_name: true, has_status: true, has_scale: true },
+    Fixture { text: "Point 44 : Rénovation de l'école institutionnelle existante au 60, avenue du Savoir, ajout de 8 salles de classe (comptées comme 8 unités). Approuvé.", should_qualify: true, has_name: false, has_status: true, has_scale: true },
+    Fixture { text: "Point 48 : Construction d'une nouvelle structure de stationnement d'infrastructure de 4 étages au 33, voie du Transit. Approuvé.", should_qualify: true, has_name: false, has_status: true, has_scale: true },
+    Fixture { text: "Point 52 : Agrandissement du centre de loisirs institutionnel connu sous le nom de « Centre communautaire de la rue du Sport » au 77, rue du Sport, ajout d'un étage et d'une nouvelle aile piscine. Approuvé.", should_qualify: true, has_name: true, has_status: true, has_scale: true },
     // --- Non-qualifying: rezoning-only / administrative, no physical work ---
-    Fixture { text: "Point 2 : Modification de zonage pour permettre une désignation à usage mixte au 400, rue du Roi. Aucune construction proposée pour le moment.", should_qualify: false, has_name: false, has_status: true },
-    Fixture { text: "Point 5 : Modification du plan d'urbanisme pour redésigner les terrains au 55, chemin de la Rivière, d'industriel à résidentiel. Renvoyé au comité.", should_qualify: false, has_name: false, has_status: true },
-    Fixture { text: "Point 8 : Motion visant à approuver le budget de fonctionnement annuel du service d'urbanisme. Approuvé.", should_qualify: false, has_name: false, has_status: true },
-    Fixture { text: "Point 13 : Le conseil a reçu le rapport trimestriel de sécurité routière à titre d'information.", should_qualify: false, has_name: false, has_status: true },
-    Fixture { text: "Point 17 : Demande de changement de zonage pour modifier la désignation d'usage du sol au 900, boulevard du Commerce, d'agricole à commercial. Reporté.", should_qualify: false, has_name: false, has_status: true },
+    Fixture { text: "Point 2 : Modification de zonage pour permettre une désignation à usage mixte au 400, rue du Roi. Aucune construction proposée pour le moment.", should_qualify: false, has_name: false, has_status: true, has_scale: true },
+    Fixture { text: "Point 5 : Modification du plan d'urbanisme pour redésigner les terrains au 55, chemin de la Rivière, d'industriel à résidentiel. Renvoyé au comité.", should_qualify: false, has_name: false, has_status: true, has_scale: true },
+    Fixture { text: "Point 8 : Motion visant à approuver le budget de fonctionnement annuel du service d'urbanisme. Approuvé.", should_qualify: false, has_name: false, has_status: true, has_scale: true },
+    Fixture { text: "Point 13 : Le conseil a reçu le rapport trimestriel de sécurité routière à titre d'information.", should_qualify: false, has_name: false, has_status: true, has_scale: true },
+    Fixture { text: "Point 17 : Demande de changement de zonage pour modifier la désignation d'usage du sol au 900, boulevard du Commerce, d'agricole à commercial. Reporté.", should_qualify: false, has_name: false, has_status: true, has_scale: true },
     // --- REAL FIXTURES (IMP-REQ-007-06): sourced from the genuine
     // procès-verbal of the Montreal city council's January 26, 2026
     // ordinary meeting (ville.montreal.qc.ca/documents/Adi_Public/CM/
@@ -86,38 +101,62 @@ const FIXTURES: &[Fixture] = &[
         should_qualify: false,
         has_name: false,
         has_status: true,
+        has_scale: true,
     },
     Fixture {
         text: "CM26 0082 — Accorder un contrat à l'équipe lauréate du concours d'architecture pluridisciplinaire de la Bibliothèque Caroline-Dawson et le parc Le Prévost dans l'arrondissement de Villeray–Saint-Michel–Parc-Extension, pour les services professionnels requis dans le cadre de la construction de la nouvelle bibliothèque du quartier Villeray ainsi que le réaménagement du parc Le Prévost. Adopté à l'unanimité.",
         should_qualify: false,
         has_name: false,
         has_status: true,
+        has_scale: true,
     },
     Fixture {
         text: "CM26 0091 — Approuver le projet d'addenda entre la Ville de Montréal et 9519-5228 Québec inc. modifiant la promesse bilatérale d'achat et de vente par laquelle la Ville s'est engagée à acquérir un terrain, pour les fins de réaménagement d'infrastructures routières, situé à l'intersection de l'avenue Saint-Pierre et de la rue Notre-Dame, dans l'arrondissement de Lachine, d'une superficie totale de 223 mètres carrés. Adopté à l'unanimité.",
         should_qualify: true,
         has_name: false,
         has_status: true,
+        // Pre-construction land acquisition: the only quantity in the text
+        // is the parcel's area (223 m²), never a building's units/GFA/
+        // storeys. The scale gate is deliberately not applied on this path,
+        // so scale must not count against completeness here either.
+        has_scale: false,
     },
 ];
 
-/// Mirrors `field_completeness` in `tests/pipeline_extraction.rs` exactly,
-/// so FR and EN scores are directly comparable (TC-REQ-007-1 parity).
+/// Mirrors `field_completeness` in `tests/pipeline_extraction.rs`, so FR and
+/// EN scores are directly comparable (TC-REQ-007-1 parity), with one
+/// deliberate divergence: scale presence is only a *required* field when the
+/// fixture's source text actually states one (`has_scale`). An
+/// infrastructure-land-acquisition item is pre-construction and has no
+/// building scale to report by design, so counting scale in its denominator
+/// would report a perfectly correct extraction as incomplete.
+///
+/// Only the test-side score is corrected here. `pipeline::metrics`'s
+/// production `average_completeness` still counts scale for every mention;
+/// changing that affects all mentions system-wide and is deliberately out of
+/// this fix's scope.
 fn field_completeness(
     result: &shovelsup_pipeline::extractor::schema::ExtractionResult,
     fixture: &Fixture,
 ) -> f64 {
-    let mut expected = 3;
+    let mut expected = 2;
     let mut present = [
         result.civic_address.is_some(),
         result.project_type.is_some(),
-        result.scale_units.is_some()
-            || result.scale_gfa_sqm.is_some()
-            || result.scale_storeys.is_some(),
     ]
     .iter()
     .filter(|f| **f)
     .count();
+
+    if fixture.has_scale {
+        expected += 1;
+        if result.scale_units.is_some()
+            || result.scale_gfa_sqm.is_some()
+            || result.scale_storeys.is_some()
+        {
+            present += 1;
+        }
+    }
 
     if fixture.has_status {
         expected += 1;
@@ -190,6 +229,58 @@ async fn french_extraction_meets_field_completeness_gate_on_labelled_fixtures() 
     assert!(
         avg_completeness >= 0.90,
         "FR field completeness {avg_completeness:.2} is below the 90% interim launch gate"
+    );
+}
+
+/// Per-fixture classification gate for the three REAL council items
+/// (`CM26 0046`, `CM26 0082`, `CM26 0091`), asserted individually rather
+/// than only folded into the aggregate accuracy score above. The aggregate
+/// gate tolerates 2 misclassifications out of 23, which is wide enough that
+/// `CM26 0091` — the infrastructure-land-acquisition item this whole
+/// qualification path exists for — could stop qualifying against the live
+/// API without failing anything. This test makes each real item's verdict
+/// load-bearing on its own.
+///
+/// Requires a real ANTHROPIC_API_KEY — skips (not fails) when unset,
+/// matching the rest of this file.
+#[tokio::test]
+async fn french_real_fixtures_are_classified_individually() {
+    let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") else {
+        eprintln!("skipping: ANTHROPIC_API_KEY not set");
+        return;
+    };
+    let llm = AnthropicProvider::new(api_key);
+
+    let real_fixtures: Vec<&Fixture> = FIXTURES
+        .iter()
+        .filter(|f| REAL_FIXTURE_IDS.iter().any(|id| f.text.starts_with(id)))
+        .collect();
+    assert_eq!(
+        real_fixtures.len(),
+        REAL_FIXTURE_IDS.len(),
+        "expected exactly one fixture per real council item id {REAL_FIXTURE_IDS:?}"
+    );
+
+    let mut failures: Vec<String> = Vec::new();
+    for fixture in real_fixtures {
+        let id = &fixture.text[..9];
+        let result = extract_entities(fixture.text, "fr", &llm).await;
+        let qualified = matches!(result, Ok(Some(_)));
+        eprintln!(
+            "{id}: qualified={qualified} (expected {})",
+            fixture.should_qualify
+        );
+        if qualified != fixture.should_qualify {
+            failures.push(format!(
+                "{id}: qualified={qualified}, expected {}",
+                fixture.should_qualify
+            ));
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "real-fixture classification regressions: {failures:?}"
     );
 }
 
