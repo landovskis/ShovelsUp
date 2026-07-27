@@ -178,11 +178,12 @@ pub async fn extract_and_store(
         Ok(Some(extraction)) => {
             let mention_id = sqlx::query_scalar!(
                 "INSERT INTO project_mentions \
-                 (document_chunk_id, physical_work, project_name, civic_address, project_type, \
-                  scale_units, scale_gfa_sqm, scale_storeys, approval_status_raw, reference_number) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
+                 (document_chunk_id, physical_work, qualification_path, project_name, civic_address, \
+                  project_type, scale_units, scale_gfa_sqm, scale_storeys, approval_status_raw, reference_number) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id",
                 document_chunk_id,
                 extraction.physical_work,
+                extraction.qualification_path.as_str(),
                 extraction.project_name,
                 extraction.civic_address,
                 extraction.project_type,
@@ -607,6 +608,50 @@ mod tests {
             reference_number.as_deref(),
             Some("Application No. 2026-045")
         );
+    }
+
+    #[sqlx::test(migrations = "../web/migrations")]
+    async fn extract_and_store_persists_infrastructure_land_acquisition_qualification_path(
+        pool: PgPool,
+    ) {
+        let chunk_id = seed_chunk(&pool).await;
+        // seed_chunk leaves document_chunks.language NULL (defaults to "en"
+        // in extract_and_store); the fixture text and the validator keyword
+        // match below are French, so the chunk's language must be set to
+        // "fr" or is_infrastructure_land_acquisition (which selects its
+        // keyword list by language) would never match and no mention would
+        // qualify at all — a fixture gap unrelated to this task's INSERT
+        // change, fixed here rather than papered over.
+        sqlx::query!(
+            "UPDATE document_chunks SET language = 'fr' WHERE id = $1",
+            chunk_id
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let llm = FixedResponseProvider::new(
+            r#"{"has_mention":true,"physical_work":false,"project_name":null,"civic_address":"intersection de l'avenue Saint-Pierre et de la rue Notre-Dame","project_type":"infrastructure","scale_units":null,"scale_gfa_sqm":null,"scale_storeys":null,"approval_status_raw":"Adopté à l'unanimité."}"#,
+        );
+
+        let mention_id = extract_and_store(
+            &pool,
+            chunk_id,
+            "... la Ville s'est engagée à acquérir un terrain, pour les fins de réaménagement d'infrastructures routières, situé à l'intersection de l'avenue Saint-Pierre et de la rue Notre-Dame.",
+            &llm,
+        )
+        .await
+        .unwrap()
+        .expect("expected a qualifying mention");
+
+        let (qualification_path, physical_work): (String, bool) = sqlx::query_as(
+            "SELECT qualification_path, physical_work FROM project_mentions WHERE id = $1",
+        )
+        .bind(mention_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(qualification_path, "infrastructure_land_acquisition");
+        assert!(!physical_work);
     }
 
     #[sqlx::test(migrations = "../web/migrations")]
