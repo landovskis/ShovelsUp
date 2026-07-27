@@ -26,13 +26,22 @@ pub enum ExtractError {
 /// trusted; this is REQ-003's central design decision) and accepts the
 /// mention if at least one scale indicator is present (see `scale`).
 ///
+/// A mention that fails RULE-001 gets a second chance through the narrower
+/// infrastructure-land-acquisition path (see
+/// `validator::is_infrastructure_land_acquisition` and ADR 013): a land
+/// purchase made to enable a described future infrastructure project
+/// qualifies, and is exempt from the scale gate since it is
+/// pre-construction by definition. `qualification_path` on the result
+/// records which of the two paths admitted the mention.
+///
 /// Returns `Ok(None)` when the LLM found no project mention in the chunk
 /// (not an error). Malformed/truncated JSON is a discardable per-chunk
 /// failure (TC-REQ-003-4), not a crash.
 /// `language` selects the extraction prompt (IMP-REQ-007-03): `"fr"` routes
 /// to `prompts::fr`, anything else (including unset/unknown) defaults to
-/// `prompts::en` — RULE-001 validation and scale-indicator acceptance below
-/// are language-agnostic and shared across both.
+/// `prompts::en` — RULE-001 validation, scale-indicator acceptance, and the
+/// infrastructure-land-acquisition gate below are all language-agnostic and
+/// shared across both (each keeps its own per-language keyword list).
 pub async fn extract_entities(
     chunk_text: &str,
     language: &str,
@@ -141,8 +150,11 @@ async fn recover_status(chunk_text: &str, language: &str, llm: &dyn LlmProvider)
 /// Runs extraction for `document_chunk_id`, persists the resulting mention
 /// (if any), and records the outcome on `document_chunks.extraction_status`:
 ///
-/// - A qualifying mention was found: `extracted`, row inserted.
-/// - The LLM found nothing, or RULE-001/scale rejected it: `no_mention`.
+/// - A qualifying mention was found — via either RULE-001 physical work or
+///   the infrastructure-land-acquisition path, recorded per-row in
+///   `project_mentions.qualification_path`: `extracted`, row inserted.
+/// - The LLM found nothing, or RULE-001/scale rejected it and the
+///   infrastructure-land-acquisition path did not admit it: `no_mention`.
 /// - Malformed/truncated JSON: `failed` — zero rows persisted (TC-REQ-003-4).
 /// - LLM transient failure (retries exhausted, IMP-REQ-003-06): `reprocessing`.
 ///
