@@ -12,7 +12,7 @@ littéralement présente dans le texte — ne laissez pas un champ vide (null) s
 son extraction semble incertaine; utilisez null uniquement lorsque l'information est
 véritablement absente de l'extrait.
 
-1. has_mention : si l'extrait décrit un projet de construction/d'aménagement, peu importe lequel.
+1. has_mention : si l'extrait décrit un projet de construction/d'aménagement, peu importe lequel. Une acquisition ou un achat de terrain que la Ville effectue spécifiquement pour permettre un projet d'infrastructure futur décrit dans l'extrait (p. ex. acquérir un terrain pour les fins de réaménagement d'infrastructures routières à une intersection nommée) COMPTE comme la description d'un projet — réglez has_mention à true pour de tels points, même si aucun travail de construction n'est encore en cours.
 2. physical_work : si l'extrait décrit un véritable projet de construction, de démolition ou de rénovation PHYSIQUE — par opposition à une affaire purement administrative, procédurale ou de rezonage sans travaux physiques décrits. Une modification de zonage ou un règlement de zonage qui NE décrit PAS également un projet physique précis (bâtiment/démolition) n'est PAS physical_work, même s'il permettra éventuellement un tel projet.
 3. project_name : le nom du projet, s'il en est donné un (y compris les noms introduits par des expressions comme « connu sous le nom de », « appelé », ou entre guillemets).
 4. civic_address : l'adresse civique (de rue), si elle apparaît n'importe où dans l'extrait.

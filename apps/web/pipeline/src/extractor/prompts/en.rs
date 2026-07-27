@@ -10,7 +10,7 @@ literally present in the text — do not leave a field null just because
 extracting it feels uncertain; only use null when the information is
 genuinely absent from the excerpt.
 
-1. has_mention: whether the excerpt describes any construction/development project at all.
+1. has_mention: whether the excerpt describes any construction/development project at all. A land acquisition or land purchase the city makes specifically to enable a described future infrastructure project (e.g. acquiring a parcel for a road reconfiguration at a named intersection) DOES count as describing a project — set has_mention to true for such items, even though no construction is happening yet.
 2. physical_work: whether it describes an actual PHYSICAL construction, demolition, or renovation project — as opposed to a purely administrative, procedural, or rezoning-only matter with no described physical work. A rezoning or zoning by-law amendment that does NOT also describe a specific physical building/demolition project is NOT physical_work, even if it will eventually enable one.
 3. project_name: the project's name, if one is given (including names introduced with phrasing like 'known as', 'called', or in quotation marks).
 4. civic_address: the civic (street) address, if one appears anywhere in the excerpt.
