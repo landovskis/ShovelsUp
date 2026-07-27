@@ -74,33 +74,50 @@ const INFRASTRUCTURE_LAND_KEYWORDS_EN: &[&str] = &[
     "road reconfiguration",
 ];
 
+/// Keywords are written with ASCII apostrophes; `is_infrastructure_land_acquisition`
+/// folds U+2019 in the input to `'` before matching, so real Montreal PDF text
+/// (which uses the typographic apostrophe) matches these entries too.
 const INFRASTRUCTURE_LAND_KEYWORDS_FR: &[&str] = &[
     "acquérir un terrain",
     "acquisition d'un terrain",
     "réaménagement d'infrastructures",
-    "réaménagement d'infrastructures routières",
-    "aux fins de réaménagement",
+    // Deliberately without a leading "aux"/"pour les": the real motivating
+    // text (CM26 0091) says "pour les fins de réaménagement", while other
+    // items use "aux fins de réaménagement" — the bare phrase matches both.
+    "fins de réaménagement",
 ];
 
 /// Narrower, separate qualification path from `validate_physical_work`:
 /// requires BOTH a land-acquisition keyword match AND an LLM-reported
-/// `project_type` of `"infrastructure"` (case-insensitive). Neither signal
-/// alone is sufficient — an infrastructure-tagged item with no
-/// land-acquisition language, or land-acquisition language on a
+/// `project_type` that starts with `"infrastructure"` (case-insensitive).
+/// Neither signal alone is sufficient — an infrastructure-tagged item with
+/// no land-acquisition language, or land-acquisition language on a
 /// non-infrastructure item (e.g. a housing land sale), does not qualify
 /// through this path.
+///
+/// The `project_type` check is a prefix match, not equality: the field is
+/// documented free text and the FR prompt's own worked examples return
+/// French values, so the real motivating text ("réaménagement
+/// d'infrastructures routières") can plausibly come back as
+/// "infrastructures", "infrastructure routière", or "infrastructures
+/// routières". A prefix match covers all of those while still excluding
+/// unrelated types (residential, institutionnel, …).
 pub fn is_infrastructure_land_acquisition(
     chunk_text: &str,
     language: &str,
     project_type: Option<&str>,
 ) -> bool {
     let is_infrastructure_type = project_type
-        .map(|t| t.eq_ignore_ascii_case("infrastructure"))
+        .map(|t| t.to_lowercase().starts_with("infrastructure"))
         .unwrap_or(false);
     if !is_infrastructure_type {
         return false;
     }
-    let lower = chunk_text.to_lowercase();
+    // Real Montreal PDFs use U+2019 (’), not the ASCII apostrophe the FR
+    // keyword list is written with; fold it so both spellings match.
+    // Scoped to this path deliberately — `validate_physical_work` has the
+    // same latent issue but is out of this change's scope.
+    let lower = chunk_text.to_lowercase().replace('\u{2019}', "'");
     let keywords = match language {
         "fr" => INFRASTRUCTURE_LAND_KEYWORDS_FR,
         _ => INFRASTRUCTURE_LAND_KEYWORDS_EN,
@@ -239,5 +256,69 @@ mod tests {
             "en",
             Some("Infrastructure")
         ));
+    }
+
+    /// `project_type` is documented free text and the FR prompt's worked
+    /// examples return French values, so the real motivating text
+    /// ("réaménagement d'infrastructures routières") can plausibly come back
+    /// as any of these. All must qualify — an exact-equality check would
+    /// have silently dropped every one of them.
+    #[test]
+    fn infrastructure_land_acquisition_accepts_french_project_type_variants() {
+        let text = "La Ville s'est engagée à acquérir un terrain, pour les fins de réaménagement d'infrastructures routières.";
+        for project_type in [
+            "infrastructure",
+            "infrastructures",
+            "infrastructure routière",
+            "Infrastructures routières",
+            "INFRASTRUCTURE",
+        ] {
+            assert!(
+                is_infrastructure_land_acquisition(text, "fr", Some(project_type)),
+                "expected project_type {project_type:?} to qualify"
+            );
+        }
+    }
+
+    /// The prefix match must not widen the gate to unrelated types — in
+    /// particular a type that merely *contains* "infrastructure" later on.
+    #[test]
+    fn infrastructure_land_acquisition_rejects_unrelated_project_type_variants() {
+        let text = "La Ville s'est engagée à acquérir un terrain, pour les fins de réaménagement d'infrastructures routières.";
+        for project_type in ["résidentiel", "institutionnel", "commercial", "industriel"] {
+            assert!(
+                !is_infrastructure_land_acquisition(text, "fr", Some(project_type)),
+                "expected project_type {project_type:?} not to qualify"
+            );
+        }
+    }
+
+    /// Real Montreal PDFs use the typographic apostrophe U+2019 (’), not the
+    /// ASCII `'` the FR keyword list is written with. Without normalization
+    /// this text matches nothing at all.
+    #[test]
+    fn infrastructure_land_acquisition_matches_typographic_apostrophe() {
+        let text = "CM26 0091 — la Ville s\u{2019}est engagée à acquérir un terrain, pour les fins de réaménagement d\u{2019}infrastructures routières, situé à l\u{2019}intersection de l\u{2019}avenue Saint-Pierre et de la rue Notre-Dame.";
+        assert!(text.contains('\u{2019}'), "fixture must use U+2019");
+        assert!(is_infrastructure_land_acquisition(
+            text,
+            "fr",
+            Some("infrastructures routières")
+        ));
+    }
+
+    /// "fins de réaménagement" (no leading "aux"/"pour les") must match both
+    /// real phrasings.
+    #[test]
+    fn infrastructure_land_acquisition_matches_either_fins_de_reamenagement_phrasing() {
+        for text in [
+            "Acquisition d'un terrain pour les fins de réaménagement de la voie publique.",
+            "Acquisition d'un terrain aux fins de réaménagement de la voie publique.",
+        ] {
+            assert!(
+                is_infrastructure_land_acquisition(text, "fr", Some("infrastructure")),
+                "expected {text:?} to qualify"
+            );
+        }
     }
 }
