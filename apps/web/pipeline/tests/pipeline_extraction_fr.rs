@@ -66,17 +66,21 @@ const FIXTURES: &[Fixture] = &[
     // --- REAL FIXTURES (IMP-REQ-007-06): sourced from the genuine
     // procès-verbal of the Montreal city council's January 26, 2026
     // ordinary meeting (ville.montreal.qc.ca/documents/Adi_Public/CM/
-    // CM_PV_ORDI_2026-01-26_13h00_FR.pdf), retrieved 2026-07-11. All three
-    // are non-qualifying, and for different real reasons — city-level
+    // CM_PV_ORDI_2026-01-26_13h00_FR.pdf), retrieved 2026-07-11. City-level
     // council items here skew toward land transactions and financing
     // rather than granular building-permit decisions (that detail is
     // handled at the arrondissement/borough level, a separate system not
-    // reachable in this session): a land sale enabling future housing
+    // reachable in this session). Two of the three are non-qualifying, for
+    // different real reasons: a land sale enabling future housing
     // construction (administrative, no physical work described, mirrors
-    // the rezoning-only exclusion), a real construction item that
+    // the rezoning-only exclusion), and a real construction item that
     // genuinely has no scale indicator in the visible resolution text
-    // (fails the scale gate despite being real physical work), and a land
-    // purchase for a future road reconfiguration (administrative).
+    // (fails the scale gate despite being real physical work). The third —
+    // a land purchase for a future road reconfiguration at a named
+    // intersection — now qualifies via the infrastructure-land-acquisition
+    // path (see `extractor::validator::is_infrastructure_land_acquisition`):
+    // it has no building-scale indicator either, but is exempt from that
+    // gate on this path.
     Fixture {
         text: "CM26 0046 — Approuver le projet d'acte, par lequel la Ville vend à la Coopérative d'habitation Monde-Uni, à des fins d'habitation, notamment de logement social, un immeuble situé au 7965, boulevard de l'Acadie, dans l'arrondissement de Villeray–Saint-Michel–Parc-Extension, d'une superficie totale de 789,6 mètres carrés, sans contrepartie monétaire. Adopté à l'unanimité.",
         should_qualify: false,
@@ -91,7 +95,7 @@ const FIXTURES: &[Fixture] = &[
     },
     Fixture {
         text: "CM26 0091 — Approuver le projet d'addenda entre la Ville de Montréal et 9519-5228 Québec inc. modifiant la promesse bilatérale d'achat et de vente par laquelle la Ville s'est engagée à acquérir un terrain, pour les fins de réaménagement d'infrastructures routières, situé à l'intersection de l'avenue Saint-Pierre et de la rue Notre-Dame, dans l'arrondissement de Lachine, d'une superficie totale de 223 mètres carrés. Adopté à l'unanimité.",
-        should_qualify: false,
+        should_qualify: true,
         has_name: false,
         has_status: true,
     },
