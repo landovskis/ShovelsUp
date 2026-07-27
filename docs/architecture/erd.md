@@ -90,6 +90,7 @@ erDiagram
         UUID document_chunk_id FK
         UUID project_id FK
         BOOLEAN physical_work
+        TEXT qualification_path
         TEXT project_name
         TEXT civic_address
         TEXT project_type
